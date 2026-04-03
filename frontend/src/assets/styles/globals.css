@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-primary: #0F1117;
+    --bg-secondary: #161B27;
+    --bg-tertiary: #1E2330;
+    --border: #2D3347;
+    --text-primary: #E8EAF0;
+    --text-secondary: #8B93A8;
+    --accent: #4F6EF7;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Scrollbars */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg-tertiary); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3D4460; }
+}
+
+@layer components {
+  .panel {
+    @apply bg-canvas-surface border-r border-canvas-border flex flex-col;
+  }
+
+  .panel-header {
+    @apply px-4 py-3 border-b border-canvas-border text-sm font-semibold text-white/80 flex items-center gap-2;
+  }
+
+  .btn-primary {
+    @apply bg-primary-500 hover:bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors;
+  }
+
+  .btn-ghost {
+    @apply hover:bg-white/5 text-white/60 hover:text-white px-3 py-2 rounded-lg text-sm transition-colors;
+  }
+
+  .input-base {
+    @apply bg-canvas-bg border border-canvas-border rounded-lg px-3 py-2 text-sm text-white
+           placeholder:text-white/30 focus:outline-none focus:border-primary-500 transition-colors w-full;
+  }
+
+  .node-card {
+    @apply rounded-xl border transition-all cursor-grab active:cursor-grabbing select-none;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+}
+
+/* ReactFlow custom styles */
+.react-flow__background { background-color: #0F1117; }
+.react-flow__edge-path { stroke: #4F6EF7; stroke-width: 2; }
+.react-flow__handle {
+  width: 10px; height: 10px;
+  border: 2px solid #4F6EF7;
+  background: #0F1117;
+}
+.react-flow__handle:hover { background: #4F6EF7; }
+.react-flow__minimap { background: #161B27 !important; border: 1px solid #2D3347; border-radius: 8px; }
+.react-flow__controls { gap: 4px; }
+.react-flow__controls-button {
+  background: #161B27 !important;
+  border: 1px solid #2D3347 !important;
+  border-radius: 6px !important;
+  color: white !important;
+  fill: white !important;
+}
+.react-flow__controls-button:hover { background: #2D3347 !important; }
+
+/* Timeline */
+.timeline-track { height: 56px; border-bottom: 1px solid #2D3347; }
+.timeline-clip {
+  @apply absolute top-1 bottom-1 rounded cursor-pointer select-none
+         border border-white/10 text-xs flex items-center px-2 overflow-hidden;
+}
