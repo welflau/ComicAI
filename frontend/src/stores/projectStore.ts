@@ -5,6 +5,7 @@ import type {
   NodeData, EdgeData, CollabUser
 } from '@/types'
 import { projectsApi } from '@/api'
+import { useLocalProjectsStore } from '@/stores/localProjectsStore'
 
 interface ProjectState {
   // Current project
@@ -41,6 +42,9 @@ interface ProjectState {
   updateNode: (id: string, updates: Partial<NodeData>) => void
   deleteNode: (id: string) => void
 
+  // Task actions
+  addTask: (task: GenerationTask) => void
+
   // Task polling
   startTaskPolling: (projectId: string, taskId: string) => void
   stopTaskPolling: (taskId: string) => void
@@ -68,6 +72,39 @@ export const useProjectStore = create<ProjectState>()(
     isLoading: false,
 
     loadProject: async (projectId) => {
+      // DEV fallback: load from localStorage for local projects
+      if (import.meta.env.DEV) {
+        const localStore = useLocalProjectsStore.getState()
+        // 'demo' or any local_xxx id
+        const localProject = projectId === 'demo'
+          ? {
+              id: 'demo',
+              name: '三体·红岸基地',
+              user_id: 'dev',
+              status: 'draft' as const,
+              workflow_config: {},
+              tags: [],
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }
+          : localStore.projects.find(p => p.id === projectId) ?? null
+
+        if (localProject) {
+          const savedWorkflow = localStore.getWorkflow(projectId)
+          set({
+            currentProject: localProject,
+            scripts: [],
+            storyboards: [],
+            characters: [],
+            assets: [],
+            // demo has default nodes; new local projects start empty (show template picker)
+            nodes: savedWorkflow?.nodes ?? (projectId === 'demo' ? getDefaultNodes() : []),
+            edges: savedWorkflow?.edges ?? (projectId === 'demo' ? getDefaultEdges() : []),
+            isLoading: false,
+          })
+          return
+        }
+      }
       set({ isLoading: true })
       try {
         const [project, scripts, storyboards, characters, assets] = await Promise.all([
@@ -103,6 +140,12 @@ export const useProjectStore = create<ProjectState>()(
 
       set({ nodes, edges })
 
+      // Local project: save to localStorage
+      if (import.meta.env.DEV && (currentProject.id === 'demo' || currentProject.id.startsWith('local_'))) {
+        useLocalProjectsStore.getState().saveWorkflow(currentProject.id, nodes, edges)
+        return
+      }
+
       // Debounced save (in production use debounce hook)
       try {
         await projectsApi.update(currentProject.id, {
@@ -130,6 +173,8 @@ export const useProjectStore = create<ProjectState>()(
       nodes: state.nodes.filter(n => n.id !== id),
       edges: state.edges.filter(e => e.source !== id && e.target !== id)
     })),
+
+    addTask: (task) => set((state) => ({ tasks: [task, ...state.tasks] })),
 
     startTaskPolling: (projectId, taskId) => {
       const interval = setInterval(async () => {
@@ -169,27 +214,200 @@ export const useProjectStore = create<ProjectState>()(
 
 const pollingIntervals = new Map<string, ReturnType<typeof setInterval>>()
 
-// Default workflow nodes (input → parse → storyboard → image → edit → preview)
+// ─── Template presets ────────────────────────────────────────────────────────
+
+export interface WorkflowTemplate {
+  id: string
+  name: string
+  description: string
+  color: string        // gradient or solid for card bg
+  nodes: NodeData[]
+  edges: EdgeData[]
+}
+
+export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
+  {
+    id: 'script_to_video',
+    name: '故事脚本生成',
+    description: '剧本 → 分镜表格',
+    color: 'linear-gradient(135deg, #1a2a1a 0%, #0d1a0d 100%)',
+    nodes: [
+      {
+        id: 'stv_script_1',
+        type: 'libtv_script' as NodeData['type'],
+        label: '剧本',
+        category: 'input',
+        position: { x: 60, y: 120 },
+        config: {},
+        title: '新剧本',
+        content: '',
+      } as NodeData,
+      {
+        id: 'stv_storyboard_1',
+        type: 'libtv_storyboard' as NodeData['type'],
+        label: '分镜表格',
+        category: 'process',
+        position: { x: 360, y: 40 },
+        config: {},
+        title: '分镜规划',
+      } as NodeData,
+    ],
+    edges: [
+      { id: 'e1', source: 'stv_script_1', target: 'stv_storyboard_1' },
+    ],
+  },
+  {
+    id: 'character_design',
+    name: '角色三视图',
+    description: '角色描述 → 三视图生成',
+    color: 'linear-gradient(135deg, #1a1a2a 0%, #0d0d1a 100%)',
+    nodes: [
+      {
+        id: 'char_script_1',
+        type: 'libtv_script' as NodeData['type'],
+        label: '角色设定',
+        category: 'input',
+        position: { x: 60, y: 120 },
+        config: {},
+        title: '角色设定',
+        content: '描述角色的外貌、性格、服装风格...',
+      } as NodeData,
+      {
+        id: 'char_image_front',
+        type: 'libtv_image' as NodeData['type'],
+        label: '正面',
+        category: 'output',
+        position: { x: 340, y: 40 },
+        config: {},
+      } as NodeData,
+      {
+        id: 'char_image_side',
+        type: 'libtv_image' as NodeData['type'],
+        label: '侧面',
+        category: 'output',
+        position: { x: 340, y: 220 },
+        config: {},
+      } as NodeData,
+      {
+        id: 'char_image_back',
+        type: 'libtv_image' as NodeData['type'],
+        label: '背面',
+        category: 'output',
+        position: { x: 340, y: 400 },
+        config: {},
+      } as NodeData,
+    ],
+    edges: [
+      { id: 'e1', source: 'char_script_1', target: 'char_image_front' },
+      { id: 'e2', source: 'char_script_1', target: 'char_image_side' },
+      { id: 'e3', source: 'char_script_1', target: 'char_image_back' },
+    ],
+  },
+  {
+    id: 'storyboard_to_video',
+    name: '首帧图生视频',
+    description: '分镜图片 → 视频片段',
+    color: 'linear-gradient(135deg, #1a1218 0%, #0d0a0f 100%)',
+    nodes: [
+      {
+        id: 'sb_storyboard_1',
+        type: 'libtv_storyboard' as NodeData['type'],
+        label: '分镜表格',
+        category: 'process',
+        position: { x: 60, y: 60 },
+        config: {},
+        title: '分镜规划',
+      } as NodeData,
+      {
+        id: 'sb_image_1',
+        type: 'libtv_image' as NodeData['type'],
+        label: '首帧图',
+        category: 'output',
+        position: { x: 360, y: 60 },
+        config: {},
+      } as NodeData,
+    ],
+    edges: [
+      { id: 'e1', source: 'sb_storyboard_1', target: 'sb_image_1' },
+    ],
+  },
+  {
+    id: 'music_video',
+    name: '音频生视频',
+    description: '音乐 + 歌词 → 视觉化视频',
+    color: 'linear-gradient(135deg, #1a1a12 0%, #0d0d0a 100%)',
+    nodes: [
+      {
+        id: 'mv_script_1',
+        type: 'libtv_script' as NodeData['type'],
+        label: '歌词 / 概念',
+        category: 'input',
+        position: { x: 60, y: 100 },
+        config: {},
+        title: '歌词与风格',
+        content: '填写歌词或音乐风格描述...',
+      } as NodeData,
+      {
+        id: 'mv_storyboard_1',
+        type: 'libtv_storyboard' as NodeData['type'],
+        label: '分镜',
+        category: 'process',
+        position: { x: 340, y: 20 },
+        config: {},
+        title: 'MV 分镜',
+      } as NodeData,
+      {
+        id: 'mv_image_1',
+        type: 'libtv_image' as NodeData['type'],
+        label: '视觉帧',
+        category: 'output',
+        position: { x: 340, y: 260 },
+        config: {},
+      } as NodeData,
+    ],
+    edges: [
+      { id: 'e1', source: 'mv_script_1', target: 'mv_storyboard_1' },
+      { id: 'e2', source: 'mv_storyboard_1', target: 'mv_image_1' },
+    ],
+  },
+]
+
+// Default workflow nodes — demo project
 function getDefaultNodes(): NodeData[] {
   return [
-    { id: 'script_input', type: 'script_input', label: '剧本输入', category: 'input', position: { x: 80, y: 200 }, config: {} },
-    { id: 'script_parse', type: 'script_parse', label: 'AI 剧本解析', category: 'process', position: { x: 320, y: 200 }, config: {} },
-    { id: 'storyboard_gen', type: 'storyboard_gen', label: '分镜生成', category: 'process', position: { x: 560, y: 200 }, config: { visual_style: 'manga' } },
-    { id: 'image_gen', type: 'image_gen', label: '图像生成', category: 'process', position: { x: 800, y: 120 }, config: { style: 'manga' } },
-    { id: 'tts', type: 'tts', label: '配音合成', category: 'process', position: { x: 800, y: 280 }, config: { voice_id: 'zh_female_gentle' } },
-    { id: 'auto_edit', type: 'auto_edit', label: '智能剪辑', category: 'process', position: { x: 1040, y: 200 }, config: { style: 'dynamic' } },
-    { id: 'preview', type: 'preview', label: '预览', category: 'output', position: { x: 1280, y: 200 }, config: {} },
+    {
+      id: 'libtv_script_1',
+      type: 'libtv_script' as NodeData['type'],
+      label: '剧本',
+      category: 'input',
+      position: { x: 60, y: 80 },
+      config: {},
+      title: '第一章：红岸基地',
+      content: `1967年的冬天，大兴安岭雷达站比往年来得更早。\n\n凛冽的北风从西伯利亚呼啸而来，裹挟着细碎的冰晶，在雷达站的山脊上掀起一片茫茫雪雾。气温已经降到零下三十度，连空气都仿佛被冻成了固体，每一次呼吸像是在吞咽碎玻璃。\n\n叶文洁站在红岸基地的观测平台上，仰望着苍穹。\n\n雷达站大型抛物面天线在夜色中静默矗立，如一只巨眼深邃的眸。`,
+    } as NodeData,
+    {
+      id: 'libtv_storyboard_1',
+      type: 'libtv_storyboard' as NodeData['type'],
+      label: '分镜表格',
+      category: 'process',
+      position: { x: 340, y: 10 },
+      config: {},
+      title: '红岸基地：第一声鸣响',
+    } as NodeData,
+    {
+      id: 'libtv_image_1',
+      type: 'libtv_image' as NodeData['type'],
+      label: '图片节点 2',
+      category: 'output',
+      position: { x: 340, y: 320 },
+      config: {},
+    } as NodeData,
   ]
 }
 
 function getDefaultEdges(): EdgeData[] {
   return [
-    { id: 'e1', source: 'script_input', target: 'script_parse' },
-    { id: 'e2', source: 'script_parse', target: 'storyboard_gen' },
-    { id: 'e3', source: 'storyboard_gen', target: 'image_gen' },
-    { id: 'e4', source: 'storyboard_gen', target: 'tts' },
-    { id: 'e5', source: 'image_gen', target: 'auto_edit' },
-    { id: 'e6', source: 'tts', target: 'auto_edit' },
-    { id: 'e7', source: 'auto_edit', target: 'preview' },
+    { id: 'e1', source: 'libtv_script_1', target: 'libtv_storyboard_1' },
+    { id: 'e2', source: 'libtv_storyboard_1', target: 'libtv_image_1' },
   ]
 }

@@ -262,6 +262,10 @@ export type NodeType =
   | 'auto_edit'
   | 'preview'
   | 'export'
+  // LibTV-style node types
+  | 'libtv_script'
+  | 'libtv_storyboard'
+  | 'libtv_image'
 
 export type NodeCategory = 'input' | 'process' | 'output' | 'control'
 
@@ -275,6 +279,14 @@ export interface NodeData {
   status?: 'idle' | 'running' | 'completed' | 'error'
   progress?: number
   output?: unknown
+  // ScriptNode extra fields
+  title?: string
+  content?: string
+  // StoryboardTableNode extra fields
+  shots?: Shot[]
+  // ImageNode extra fields
+  imageUrl?: string
+  nodeIndex?: number
 }
 
 export interface EdgeData {

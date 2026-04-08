@@ -1,8 +1,7 @@
-import { useCallback, useMemo, useRef } from 'react'
+import { useCallback, useMemo, useEffect } from 'react'
 import ReactFlow, {
   Background,
   Controls,
-  MiniMap,
   BackgroundVariant,
   useNodesState,
   useEdgesState,
@@ -11,16 +10,21 @@ import ReactFlow, {
   Edge,
   Node,
   ReactFlowProvider,
-  Panel,
+  SelectionMode,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
 import ComicFlowNode from '@/components/nodes/ComicFlowNode'
+import ScriptNode from '@/components/nodes/ScriptNode'
+import StoryboardTableNode from '@/components/nodes/StoryboardTableNode'
+import ImageNode from '@/components/nodes/ImageNode'
+import TemplatePicker from '@/components/canvas/TemplatePicker'
 import { useProjectStore } from '@/stores/projectStore'
 import type { NodeData, EdgeData } from '@/types'
 
-// Register custom node types
+// Register all node types
 const nodeTypes = {
+  // Legacy node types
   script_input: ComicFlowNode,
   script_parse: ComicFlowNode,
   storyboard_gen: ComicFlowNode,
@@ -33,9 +37,12 @@ const nodeTypes = {
   auto_edit: ComicFlowNode,
   preview: ComicFlowNode,
   export: ComicFlowNode,
+  // New LibTV-style node types
+  libtv_script: ScriptNode,
+  libtv_storyboard: StoryboardTableNode,
+  libtv_image: ImageNode,
 }
 
-// Convert our NodeData to ReactFlow Node format
 function toRFNode(node: NodeData): Node {
   return {
     id: node.id,
@@ -52,13 +59,15 @@ function toRFEdge(edge: EdgeData): Edge {
     target: edge.target,
     sourceHandle: edge.sourceHandle,
     targetHandle: edge.targetHandle,
-    animated: true,
-    style: { stroke: '#4F6EF7', strokeWidth: 2 },
+    type: 'default',
+    style: { stroke: '#444', strokeWidth: 1.5 },
   }
 }
 
 function WorkflowCanvasInner() {
   const { nodes: storeNodes, edges: storeEdges, updateWorkflow, selectNodes } = useProjectStore()
+
+  const isEmpty = storeNodes.length === 0
 
   const rfNodes = useMemo(() => storeNodes.map(toRFNode), [storeNodes])
   const rfEdges = useMemo(() => storeEdges.map(toRFEdge), [storeEdges])
@@ -66,13 +75,18 @@ function WorkflowCanvasInner() {
   const [nodes, setNodes, onNodesChange] = useNodesState(rfNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(rfEdges)
 
+  // Sync ReactFlow local state whenever the store nodes/edges change
+  // (handles project switching, template selection, etc.)
+  useEffect(() => { setNodes(rfNodes) }, [rfNodes])
+  useEffect(() => { setEdges(rfEdges) }, [rfEdges])
+
   const onConnect = useCallback(
     (params: Connection) => {
       const newEdge: Edge = {
         ...params,
         id: `e-${params.source}-${params.target}`,
-        animated: true,
-        style: { stroke: '#4F6EF7', strokeWidth: 2 },
+        type: 'default',
+        style: { stroke: '#444', strokeWidth: 1.5 },
       } as Edge
       setEdges(eds => addEdge(newEdge, eds))
     },
@@ -95,14 +109,16 @@ function WorkflowCanvasInner() {
       id: e.id,
       source: e.source,
       target: e.target,
-      sourceHandle: e.sourceHandle,
-      targetHandle: e.targetHandle,
+      sourceHandle: e.sourceHandle ?? undefined,
+      targetHandle: e.targetHandle ?? undefined,
     }))
     updateWorkflow(updatedNodes, updatedEdges)
   }, [nodes, edges, updateWorkflow])
 
   return (
-    <ReactFlow
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      {isEmpty && <TemplatePicker />}
+      <ReactFlow
       nodes={nodes}
       edges={edges}
       onNodesChange={onNodesChange}
@@ -112,39 +128,40 @@ function WorkflowCanvasInner() {
       onNodeDragStop={onNodeDragStop}
       nodeTypes={nodeTypes}
       fitView
-      fitViewOptions={{ padding: 0.2 }}
+      fitViewOptions={{ padding: 0.15 }}
       defaultEdgeOptions={{
-        animated: true,
-        style: { stroke: '#4F6EF7', strokeWidth: 2 }
+        type: 'default',
+        style: { stroke: '#444', strokeWidth: 1.5 },
       }}
       proOptions={{ hideAttribution: true }}
+      minZoom={0.1}
+      maxZoom={3}
+      // Left-click drag → rubber-band selection
+      selectionOnDrag
+      selectionMode={SelectionMode.Partial}
+      // Middle mouse button → pan canvas
+      panOnDrag={[1]}
+      // Disable scroll-to-pan (use pinch/wheel for zoom only)
+      panOnScroll={false}
     >
       <Background
         variant={BackgroundVariant.Dots}
-        gap={24}
+        gap={28}
         size={1}
-        color="#2D3347"
+        color="#222"
       />
-      <Controls className="!bottom-4 !left-4" />
-      <MiniMap
-        className="!bottom-4 !right-4"
-        nodeColor={(node) => {
-          const cat = node.data?.category
-          const colors: Record<string, string> = {
-            input: '#3B82F6', process: '#10B981',
-            output: '#EF4444', control: '#8B5CF6'
-          }
-          return colors[cat] || '#4F6EF7'
+      <Controls
+        className="!bottom-4 !left-4"
+        showInteractive={false}
+        style={{
+          background: '#1a1a1a',
+          border: '1px solid #333',
+          borderRadius: 8,
+          gap: 0,
         }}
       />
-
-      {/* Toolbar overlay */}
-      <Panel position="top-center">
-        <div className="flex items-center gap-1 bg-canvas-surface border border-canvas-border rounded-xl px-3 py-2 shadow-xl">
-          <span className="text-xs text-white/40">节点工作流</span>
-        </div>
-      </Panel>
     </ReactFlow>
+    </div>
   )
 }
 
