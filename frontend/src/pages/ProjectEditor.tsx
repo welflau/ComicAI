@@ -38,7 +38,7 @@ function TopBar({ projectName }: { projectName: string }) {
         gap: 0,
         flexShrink: 0,
         position: 'relative',
-        zIndex: 10,
+        zIndex: 30,
       }}
     >
       {/* Logo + dropdown */}
@@ -297,31 +297,41 @@ const TOOLBOX_ITEMS = [
 // ─── Left icon sidebar ─────────────────────────────────────────────────────────
 
 const ADD_NODE_ITEMS = [
-  { id: 'libtv_script',     icon: <FileText size={20} />,  label: '文本',   badge: null },
-  { id: 'libtv_image',      icon: <Image size={20} />,     label: '图片',   badge: null },
-  { id: 'video',            icon: <Video size={20} />,     label: '视频',   badge: null },
-  { id: 'video_compose',    icon: <Scissors size={20} />,  label: '视频合成', badge: 'Beta' },
-  { id: 'audio',            icon: <Music size={20} />,     label: '音频',   badge: null },
-  { id: 'libtv_storyboard', icon: <ScrollText size={20} />,label: '脚本',   badge: 'Beta' },
+  { id: 'libtv_script',     icon: <FileText size={20} />,  label: '文本',    badge: null,   desc: '剧本、广告词、品牌文案' },
+  { id: 'libtv_image',      icon: <Image size={20} />,     label: '图片',    badge: null,   desc: '海报、分镜、角色设计' },
+  { id: 'video',            icon: <Video size={20} />,     label: '视频',    badge: null,   desc: '创意广告、动画、电影' },
+  { id: 'video_compose',    icon: <Scissors size={20} />,  label: '视频合成', badge: 'Beta', desc: '多个视频片段合为一个' },
+  { id: 'audio',            icon: <Music size={20} />,     label: '音频',    badge: null,   desc: '音效、配音、音乐' },
+  { id: 'libtv_storyboard', icon: <ScrollText size={20} />,label: '脚本',    badge: 'Beta', desc: '创意脚本、生成故事板' },
 ]
 
 const ADD_RESOURCE_ITEMS = [
-  { id: 'upload',   icon: <Upload size={20} />,     label: '上传',     badge: null },
-  { id: 'library',  icon: <LayoutGrid size={20} />, label: '从图库选择', badge: null },
+  { id: 'upload',   icon: <Upload size={20} />,     label: '上传',     badge: null, desc: '可上传图片、视频、音频文件' },
+  { id: 'library',  icon: <LayoutGrid size={20} />, label: '从图库选择', badge: null, desc: '从历史生成中选择素材' },
 ]
 
 function LeftSidebar() {
   const [active, setActive] = useState<string | null>(null)
+  const [hoveredId, setHoveredId] = useState<string | null>(null)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const addBtnRef = useRef<HTMLButtonElement>(null)
   const { addNode, nodes } = useProjectStore()
+
+  // IDs that have a real flyout panel
+  const PANEL_IDS = ['add', 'toolbox', 'assets']
 
   const showPanel = (id: string) => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
-    setActive(id)
+    if (PANEL_IDS.includes(id)) {
+      setActive(id)
+    } else {
+      // No panel for this button — close whatever is open immediately
+      setActive(null)
+    }
   }
 
   const scheduleHide = () => {
-    hideTimerRef.current = setTimeout(() => setActive(null), 150)
+    hideTimerRef.current = setTimeout(() => setActive(null), 80)
   }
 
   const cancelHide = () => {
@@ -348,56 +358,63 @@ function LeftSidebar() {
   const sideItems = [
     { id: 'add',     icon: <Plus size={18} />,        label: '添加' },
     { id: 'toolbox', icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <circle cx="6" cy="6" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="18" cy="6" r="2"/>
         <circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/>
         <circle cx="6" cy="18" r="2"/><circle cx="12" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>
       </svg>
     ), label: '工具箱' },
     { id: 'assets',  icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M12 2L2 7l10 5 10-5-10-5z"/>
         <path d="M2 17l10 5 10-5"/>
         <path d="M2 12l10 5 10-5"/>
       </svg>
     ), label: '素材库' },
-    { id: 'history', icon: <History size={16} />,     label: '历史' },
-    { id: 'help',    icon: <HelpCircle size={16} />,  label: '帮助' },
+    { id: 'history', icon: <History size={17} />,     label: '历史' },
+    { id: 'help',    icon: <HelpCircle size={17} />,  label: '帮助' },
     { id: 'more',    icon: (
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>
       </svg>
     ), label: '更多' },
   ]
 
   return (
-    <div style={{ display: 'flex', flexShrink: 0, position: 'relative', zIndex: 20 }}>
+    <div
+      onMouseLeave={scheduleHide}
+      style={{ display: 'flex', flexShrink: 0, position: 'relative', zIndex: 20 }}
+    >
       {/* Icon rail */}
       <div style={{
         width: 44,
-        background: '#111',
-        borderRight: '1px solid #1e1e1e',
+        background: '#1a1a1a',
+        border: '1px solid #2a2a2a',
+        borderRadius: 12,
+        boxShadow: '0 4px 20px rgba(0,0,0,0.55)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '10px 0',
         gap: 2,
+        position: 'relative',
+        zIndex: 30,
       }}>
         {sideItems.map((item) => (
           <button
             key={item.id}
+            ref={item.id === 'add' ? addBtnRef : undefined}
             title={item.label}
             onMouseEnter={() => showPanel(item.id)}
-            onMouseLeave={scheduleHide}
             style={{
-              width: 32, height: 32,
+              width: 36, height: 36,
               border: 'none',
-              borderRadius: 7,
+              borderRadius: 8,
               background: active === item.id ? '#2a2a2a' : 'transparent',
               cursor: 'pointer',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: active === item.id ? '#fff' : '#666',
+              color: active === item.id ? '#fff' : '#555',
               transition: 'background 0.15s, color 0.15s',
             }}
             onFocus={() => showPanel(item.id)}
@@ -417,9 +434,10 @@ function LeftSidebar() {
           />
           <div
             onMouseEnter={cancelHide}
-            onMouseLeave={scheduleHide}
             style={{
-            position: 'absolute', top: 0, left: 44, zIndex: 16,
+            position: 'absolute',
+            top: addBtnRef.current ? addBtnRef.current.offsetTop : 0,
+            left: 44, zIndex: 16,
             width: 220,
             background: '#1c1c1c',
             border: '1px solid #2a2a2a',
@@ -433,15 +451,17 @@ function LeftSidebar() {
               <button
                 key={item.id}
                 onClick={() => handleAddNode(item.id)}
+                onMouseEnter={() => setHoveredId(item.id)}
+                onMouseLeave={() => setHoveredId(null)}
                 style={{
                   width: '100%', display: 'flex', alignItems: 'center',
                   gap: 12, padding: '8px 14px',
-                  background: 'none', border: 'none', cursor: 'pointer',
+                  background: hoveredId === item.id ? '#252525' : 'none',
+                  border: 'none', cursor: 'pointer',
                   color: '#ccc', textAlign: 'left',
                   transition: 'background 0.12s',
+                  borderRadius: 8,
                 }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
               >
                 <span style={{
                   width: 36, height: 36, background: '#252525', borderRadius: 8,
@@ -450,14 +470,23 @@ function LeftSidebar() {
                 }}>
                   {item.icon}
                 </span>
-                <span style={{ fontSize: 13, flex: 1 }}>{item.label}</span>
-                {item.badge && (
-                  <span style={{
-                    fontSize: 10, padding: '1px 5px',
-                    background: '#2a2a2a', border: '1px solid #3a3a3a',
-                    borderRadius: 4, color: '#666',
-                  }}>{item.badge}</span>
-                )}
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 13 }}>{item.label}</span>
+                    {item.badge && (
+                      <span style={{
+                        fontSize: 10, padding: '1px 5px',
+                        background: '#2a2a2a', border: '1px solid #3a3a3a',
+                        borderRadius: 4, color: '#666',
+                      }}>{item.badge}</span>
+                    )}
+                  </span>
+                  {hoveredId === item.id && item.desc && (
+                    <span style={{ display: 'block', fontSize: 11, color: '#666', marginTop: 2, lineHeight: 1.4 }}>
+                      {item.desc}
+                    </span>
+                  )}
+                </span>
               </button>
             ))}
 
@@ -470,15 +499,17 @@ function LeftSidebar() {
               <button
                 key={item.id}
                 onClick={() => setActive(null)}
+                onMouseEnter={() => setHoveredId(item.id)}
+                onMouseLeave={() => setHoveredId(null)}
                 style={{
                   width: '100%', display: 'flex', alignItems: 'center',
                   gap: 12, padding: '8px 14px',
-                  background: 'none', border: 'none', cursor: 'pointer',
+                  background: hoveredId === item.id ? '#252525' : 'none',
+                  border: 'none', cursor: 'pointer',
                   color: '#ccc', textAlign: 'left',
                   transition: 'background 0.12s',
+                  borderRadius: 8,
                 }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
               >
                 <span style={{
                   width: 36, height: 36, background: '#252525', borderRadius: 8,
@@ -487,7 +518,14 @@ function LeftSidebar() {
                 }}>
                   {item.icon}
                 </span>
-                <span style={{ fontSize: 13 }}>{item.label}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 13 }}>{item.label}</span>
+                  {hoveredId === item.id && item.desc && (
+                    <span style={{ display: 'block', fontSize: 11, color: '#666', marginTop: 2, lineHeight: 1.4 }}>
+                      {item.desc}
+                    </span>
+                  )}
+                </span>
               </button>
             ))}
           </div>
@@ -736,17 +774,19 @@ export default function ProjectEditor() {
       {/* Top bar */}
       <TopBar projectName={currentProject?.name || '未命名'} />
 
-      {/* Middle: sidebar + canvas */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-        <LeftSidebar />
+      {/* Middle: canvas fills full width, sidebar floats on top */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {activeView === 'workflow' && <WorkflowCanvas />}
+        {activeView === 'storyboard' && <StoryboardView />}
+        {activeView === 'timeline' && <TimelineView />}
+        {activeView === 'preview' && <PreviewView />}
 
-        {/* Canvas area */}
-        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-          {activeView === 'workflow' && <WorkflowCanvas />}
-          {activeView === 'storyboard' && <StoryboardView />}
-          {activeView === 'timeline' && <TimelineView />}
-          {activeView === 'preview' && <PreviewView />}
-        </div>
+        {/* Floating sidebar — only on workflow view */}
+        {activeView === 'workflow' && (
+          <div style={{ position: 'absolute', top: '50%', left: 16, transform: 'translateY(-50%)', zIndex: 20 }}>
+            <LeftSidebar />
+          </div>
+        )}
       </div>
 
       {/* Bottom bar */}
