@@ -2,7 +2,7 @@ import { memo, useState, useRef, useCallback, useEffect } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import {
   FileText, Video, Image as ImageIcon, Volume2,
-  ChevronDown, Languages, Zap, ArrowUp, Square, CheckCircle2, Clapperboard,
+  ChevronDown, Languages, Zap, ArrowUp, Square, CheckCircle2,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useProjectStore } from '@/stores/projectStore'
@@ -339,11 +339,10 @@ function LinesIcon({ scale = 1 }: { scale?: number }) {
 /* ── Quick actions ───────────────────────────────────────────── */
 
 const QUICK_ACTIONS = [
-  { id: 'write',      Icon: FileText,     label: '自己编写内容' },
-  { id: 'storyboard', Icon: Clapperboard, label: '生成分镜脚本' },
-  { id: 'text2video', Icon: Video,        label: '文生视频' },
-  { id: 'img2prompt', Icon: ImageIcon,    label: '图片反推提示词' },
-  { id: 'text2music', Icon: Volume2,      label: '文字生音乐' },
+  { id: 'write',      Icon: FileText,  label: '自己编写内容' },
+  { id: 'text2video', Icon: Video,     label: '文生视频' },
+  { id: 'img2prompt', Icon: ImageIcon, label: '图片反推提示词' },
+  { id: 'text2music', Icon: Volume2,   label: '文字生音乐' },
 ]
 
 /* ── Handle ──────────────────────────────────────────────────── */
@@ -433,7 +432,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const handlesVisible = isHovered || (selected && !dragging) || mode === 'write' || mode === 'generating'
 
   // handle Y positions — adapt to collapsed/expanded card height
-  const idleCardH      = isExpanded ? IDLE_CARD_H : 150
+  const idleCardH      = IDLE_CARD_H
   const idleHandleY    = TITLE_H + idleCardH / 2
   const writeHandleY   = TITLE_H + WRITE_CARD_MIN_H / 2
   const genHandleY     = TITLE_H + WRITE_CARD_MIN_H / 2
@@ -574,31 +573,29 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
               <LinesIcon />
             </div>
 
-            {/* Quick actions — hidden when collapsed or hideQuickActions */}
+            {/* Quick actions — always visible */}
             {showQuickActions && (
-              <CollapsibleSection expanded={isExpanded}>
-                <div style={{ padding: '10px 16px 12px' }}>
-                  <div style={{ fontSize: 13, color: '#777', marginBottom: 6 }}>尝试:</div>
-                  {QUICK_ACTIONS.map(({ id, Icon, label }) => (
-                    <div
-                      key={id}
-                      className="nodrag nopan"
-                      onClick={() => handleQuickAction(id)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 10,
-                        padding: '7px 10px', borderRadius: 7, cursor: 'pointer',
-                        color: '#aaa', fontSize: 14,
-                        transition: 'background 0.12s, color 0.12s',
-                      }}
-                      onMouseEnter={e => { e.currentTarget.style.background = '#2e2e2e'; e.currentTarget.style.color = '#ddd' }}
-                      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' }}
-                    >
-                      <Icon size={14} style={{ flexShrink: 0, opacity: 0.7 }} />
-                      {label}
-                    </div>
-                  ))}
-                </div>
-              </CollapsibleSection>
+              <div style={{ padding: '10px 16px 12px' }}>
+                <div style={{ fontSize: 13, color: '#777', marginBottom: 6 }}>尝试:</div>
+                {QUICK_ACTIONS.map(({ id, Icon, label }) => (
+                  <div
+                    key={id}
+                    className="nodrag nopan"
+                    onClick={() => handleQuickAction(id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '7px 10px', borderRadius: 7, cursor: 'pointer',
+                      color: '#aaa', fontSize: 14,
+                      transition: 'background 0.12s, color 0.12s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#2e2e2e'; e.currentTarget.style.color = '#ddd' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' }}
+                  >
+                    <Icon size={14} style={{ flexShrink: 0, opacity: 0.7 }} />
+                    {label}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
