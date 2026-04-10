@@ -94,10 +94,15 @@ interface Props {
   nodeType: NodeTypeKey
   /** Source node id — used to create the edge */
   sourceNodeId: string
-  /** Source node position — used to place the new node to the right */
+  /** Source node position — used to place the new node */
   sourcePosition: { x: number; y: number }
-  /** Width of the source node — new node placed at x + nodeWidth + gap */
+  /** Width of the source node — used for positioning */
   sourceNodeWidth?: number
+  /**
+   * 'right' (default): create successor node to the right, edge source→new
+   * 'left': create predecessor node to the left, edge new→source
+   */
+  direction?: 'right' | 'left'
   onClose: () => void
 }
 
@@ -108,6 +113,7 @@ export default function NodeAddMenu({
   sourceNodeId,
   sourcePosition,
   sourceNodeWidth = 200,
+  direction = 'right',
   onClose,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null)
@@ -115,6 +121,7 @@ export default function NodeAddMenu({
   const addEdge = useProjectStore(s => s.addEdge)
 
   const enabledSet = new Set(ENABLED_ITEMS[nodeType] ?? ENABLED_ITEMS.default)
+  const NEW_NODE_W = 260 // estimated width of a newly created node
 
   // Close on outside click
   useEffect(() => {
@@ -140,18 +147,22 @@ export default function NodeAddMenu({
   const handleSelect = (item: MenuItem) => {
     if (!enabledSet.has(item.id)) return
     const newId = `${item.targetType}_${Date.now()}`
+    const newX = direction === 'right'
+      ? sourcePosition.x + sourceNodeWidth + 80
+      : sourcePosition.x - NEW_NODE_W - 80
     addNode({
       id: newId,
       type: item.targetType,
       label: item.targetLabel,
       category: item.targetCategory,
-      position: {
-        x: sourcePosition.x + sourceNodeWidth + 80,
-        y: sourcePosition.y,
-      },
+      position: { x: newX, y: sourcePosition.y },
       config: {},
     })
-    addEdge({ id: `e-${sourceNodeId}-${newId}`, source: sourceNodeId, target: newId })
+    if (direction === 'right') {
+      addEdge({ id: `e-${sourceNodeId}-${newId}`, source: sourceNodeId, target: newId })
+    } else {
+      addEdge({ id: `e-${newId}-${sourceNodeId}`, source: newId, target: sourceNodeId })
+    }
     onClose()
   }
 
@@ -163,11 +174,12 @@ export default function NodeAddMenu({
       onClick={e => e.stopPropagation()}
       style={{
         position: 'absolute',
-        // Position the menu to the right of the handle, centered vertically
-        left: '100%',
+        // Position the menu to the correct side of the handle, centered vertically
+        ...(direction === 'right'
+          ? { left: '100%', marginLeft: 14 }
+          : { right: '100%', marginRight: 14 }),
         top: '50%',
         transform: 'translateY(-50%)',
-        marginLeft: 14,
         zIndex: 9999,
         background: '#1a1a1a',
         border: '1px solid #2e2e2e',
@@ -187,7 +199,7 @@ export default function NodeAddMenu({
         borderBottom: '1px solid #252525',
         marginBottom: 4,
       }}>
-        引用该节点生成
+        {direction === 'left' ? '添加前置节点' : '引用该节点生成'}
       </div>
 
       {MENU_ITEMS.map(item => {

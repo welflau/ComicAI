@@ -74,6 +74,7 @@ function StoryboardTableNode({ data, selected, dragging }: NodeProps<StoryboardT
   const [viewMode, setViewMode] = useState<'table' | 'list'>('table')
   const [isHovered, setIsHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [targetMenuOpen, setTargetMenuOpen] = useState(false)
   const shots = data.shots && data.shots.length > 0 ? data.shots : []
   const title = data.title || '分镜表格'
   const handlesVisible = isHovered || (!!selected && !dragging)
@@ -90,25 +91,43 @@ function StoryboardTableNode({ data, selected, dragging }: NodeProps<StoryboardT
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Input handle — outside overflow:hidden card */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        style={{
-          width: 18, height: 18,
-          background: '#1a1a1a', border: '1.5px solid #606060',
-          borderRadius: '50%', left: -9,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          opacity: handlesVisible ? 1 : 0,
-          pointerEvents: handlesVisible ? 'auto' : 'none',
-          transition: 'opacity 150ms ease',
-        }}
-      >
-        <span style={{
-          pointerEvents: 'none', fontSize: 13, color: '#888', lineHeight: 1,
-          position: 'absolute', top: '50%', left: '50%',
-          transform: 'translate(-50%, -52%)',
-        }}>+</span>
-      </Handle>
+      <div style={{
+        position: 'absolute', left: -9, top: '50%',
+        transform: 'translateY(-50%)', width: 18, height: 18,
+      }}>
+        <Handle
+          type="target"
+          position={Position.Left}
+          style={{
+            width: 18, height: 18,
+            background: '#1a1a1a', border: '1.5px solid #606060',
+            borderRadius: '50%',
+            top: 0, left: 0, transform: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            opacity: handlesVisible ? 1 : 0,
+            pointerEvents: handlesVisible ? 'auto' : 'none',
+            transition: 'opacity 150ms ease',
+            position: 'relative',
+          }}
+          onClick={(e) => { e.stopPropagation(); setTargetMenuOpen(v => !v) }}
+        >
+          <span style={{
+            pointerEvents: 'none', fontSize: 13, color: '#888', lineHeight: 1,
+            position: 'absolute', top: '50%', left: '50%',
+            transform: 'translate(-50%, -52%)',
+          }}>+</span>
+        </Handle>
+        {targetMenuOpen && (
+          <NodeAddMenu
+            nodeType="libtv_storyboard"
+            sourceNodeId={data.id}
+            sourcePosition={data.position}
+            sourceNodeWidth={460}
+            direction="left"
+            onClose={() => setTargetMenuOpen(false)}
+          />
+        )}
+      </div>
 
       {/* Inner card — overflow hidden for border-radius content clipping */}
       <div

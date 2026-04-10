@@ -363,6 +363,8 @@ function CircleHandle({ type, position, top, visible, onSourceClick, menuOpen, o
 }) {
   const side = position === Position.Left ? { left: -11 } : { right: -11 }
   const isSource = type === 'source'
+  const isTarget = type === 'target'
+  const direction = isSource ? 'right' : 'left'
   return (
     <div style={{ position: 'absolute', top, ...side, transform: 'translateY(-50%)', width: 22, height: 22 }}>
       <Handle
@@ -380,7 +382,7 @@ function CircleHandle({ type, position, top, visible, onSourceClick, menuOpen, o
           pointerEvents: visible ? 'auto' : 'none',
           position: 'relative',
         }}
-        onClick={isSource ? (e) => { e.stopPropagation(); onSourceClick?.() } : undefined}
+        onClick={(isSource || isTarget) ? (e) => { e.stopPropagation(); onSourceClick?.() } : undefined}
       >
         <span style={{
           pointerEvents: 'none', fontSize: 16, color: '#888', lineHeight: 1,
@@ -388,12 +390,13 @@ function CircleHandle({ type, position, top, visible, onSourceClick, menuOpen, o
           transform: 'translate(-50%, -52%)',
         }}>+</span>
       </Handle>
-      {isSource && menuOpen && nodeType && sourceNodeId && sourcePosition && (
+      {menuOpen && nodeType && sourceNodeId && sourcePosition && (
         <NodeAddMenu
           nodeType={nodeType}
           sourceNodeId={sourceNodeId}
           sourcePosition={sourcePosition}
           sourceNodeWidth={sourceNodeWidth}
+          direction={direction as 'left' | 'right'}
           onClose={onMenuClose!}
         />
       )}
@@ -412,7 +415,8 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const [focused, setFocused]     = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [showQuickActions, setShowQuickActions] = useState(!data.hideQuickActions)
-  const [menuOpen, setMenuOpen]   = useState(false)
+  const [menuOpen, setMenuOpen]         = useState(false)
+  const [targetMenuOpen, setTargetMenuOpen] = useState(false)
 
   const taRef    = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -602,7 +606,9 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
             <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} />
           </CollapsibleSection>
 
-          <CircleHandle type="target" position={Position.Left}  top={idleHandleY} visible={handlesVisible} />
+          <CircleHandle type="target" position={Position.Left}  top={idleHandleY} visible={handlesVisible}
+            onSourceClick={() => setTargetMenuOpen(v => !v)} menuOpen={targetMenuOpen} onMenuClose={() => setTargetMenuOpen(false)}
+            nodeType="libtv_script" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />
           <CircleHandle type="source" position={Position.Right} top={idleHandleY} visible={handlesVisible}
             onSourceClick={() => setMenuOpen(v => !v)} menuOpen={menuOpen} onMenuClose={() => setMenuOpen(false)}
             nodeType="libtv_script" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />
@@ -773,7 +779,9 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
             <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} />
           </CollapsibleSection>
 
-          <CircleHandle type="target" position={Position.Left}  top={contentHandleY} visible={handlesVisible} />
+          <CircleHandle type="target" position={Position.Left}  top={contentHandleY} visible={handlesVisible}
+            onSourceClick={() => setTargetMenuOpen(v => !v)} menuOpen={targetMenuOpen} onMenuClose={() => setTargetMenuOpen(false)}
+            nodeType="libtv_script" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />
           <CircleHandle type="source" position={Position.Right} top={contentHandleY} visible={handlesVisible}
             onSourceClick={() => setMenuOpen(v => !v)} menuOpen={menuOpen} onMenuClose={() => setMenuOpen(false)}
             nodeType="libtv_script" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />

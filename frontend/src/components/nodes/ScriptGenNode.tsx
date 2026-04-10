@@ -360,6 +360,8 @@ function CircleHandle({ type, position, top, visible, onSourceClick, menuOpen, o
 }) {
   const side = position === Position.Left ? { left: -11 } : { right: -11 }
   const isSource = type === 'source'
+  const isTarget = type === 'target'
+  const direction = isSource ? 'right' : 'left'
   return (
     <div style={{ position: 'absolute', top, ...side, transform: 'translateY(-50%)', width: 22, height: 22 }}>
       <Handle
@@ -377,7 +379,7 @@ function CircleHandle({ type, position, top, visible, onSourceClick, menuOpen, o
           pointerEvents: visible ? 'auto' : 'none',
           position: 'relative',
         }}
-        onClick={isSource ? (e) => { e.stopPropagation(); onSourceClick?.() } : undefined}
+        onClick={(isSource || isTarget) ? (e) => { e.stopPropagation(); onSourceClick?.() } : undefined}
       >
         <span style={{
           pointerEvents: 'none', fontSize: 16, color: '#888', lineHeight: 1,
@@ -385,12 +387,13 @@ function CircleHandle({ type, position, top, visible, onSourceClick, menuOpen, o
           transform: 'translate(-50%, -52%)',
         }}>+</span>
       </Handle>
-      {isSource && menuOpen && nodeType && sourceNodeId && sourcePosition && (
+      {menuOpen && nodeType && sourceNodeId && sourcePosition && (
         <NodeAddMenu
           nodeType={nodeType}
           sourceNodeId={sourceNodeId}
           sourcePosition={sourcePosition}
           sourceNodeWidth={sourceNodeWidth}
+          direction={direction as 'left' | 'right'}
           onClose={onMenuClose!}
         />
       )}
@@ -407,7 +410,8 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
   const [showShimmer, setShimmer] = useState(false)
   const [prompt, setPrompt]       = useState('')
   const [isHovered, setIsHovered] = useState(false)
-  const [menuOpen, setMenuOpen]   = useState(false)
+  const [menuOpen, setMenuOpen]         = useState(false)
+  const [targetMenuOpen, setTargetMenuOpen] = useState(false)
 
   const abortRef  = useRef<AbortController | null>(null)
   const nodeLabel = data.title || data.label || '分镜脚本'
@@ -590,7 +594,9 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
             />
           </CollapsibleSection>
 
-          <CircleHandle type="target" position={Position.Left}  top={idleHandleY} visible={handlesVisible} />
+          <CircleHandle type="target" position={Position.Left}  top={idleHandleY} visible={handlesVisible}
+            onSourceClick={() => setTargetMenuOpen(v => !v)} menuOpen={targetMenuOpen} onMenuClose={() => setTargetMenuOpen(false)}
+            nodeType="libtv_script_gen" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />
           <CircleHandle type="source" position={Position.Right} top={idleHandleY} visible={handlesVisible}
             onSourceClick={() => setMenuOpen(v => !v)} menuOpen={menuOpen} onMenuClose={() => setMenuOpen(false)}
             nodeType="libtv_script_gen" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />
@@ -654,7 +660,9 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
             </div>
           </div>
 
-          <CircleHandle type="target" position={Position.Left}  top={genHandleY} visible={handlesVisible} />
+          <CircleHandle type="target" position={Position.Left}  top={genHandleY} visible={handlesVisible}
+            onSourceClick={() => setTargetMenuOpen(v => !v)} menuOpen={targetMenuOpen} onMenuClose={() => setTargetMenuOpen(false)}
+            nodeType="libtv_script_gen" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />
           <CircleHandle type="source" position={Position.Right} top={genHandleY} visible={handlesVisible}
             onSourceClick={() => setMenuOpen(v => !v)} menuOpen={menuOpen} onMenuClose={() => setMenuOpen(false)}
             nodeType="libtv_script_gen" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />
@@ -732,7 +740,9 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
             />
           </CollapsibleSection>
 
-          <CircleHandle type="target" position={Position.Left}  top={contentHandleY} visible={handlesVisible} />
+          <CircleHandle type="target" position={Position.Left}  top={contentHandleY} visible={handlesVisible}
+            onSourceClick={() => setTargetMenuOpen(v => !v)} menuOpen={targetMenuOpen} onMenuClose={() => setTargetMenuOpen(false)}
+            nodeType="libtv_script_gen" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />
           <CircleHandle type="source" position={Position.Right} top={contentHandleY} visible={handlesVisible}
             onSourceClick={() => setMenuOpen(v => !v)} menuOpen={menuOpen} onMenuClose={() => setMenuOpen(false)}
             nodeType="libtv_script_gen" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />

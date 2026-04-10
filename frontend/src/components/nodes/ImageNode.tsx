@@ -234,6 +234,7 @@ function ImagePromptPanel({ value, onChange }: {
 function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const [isHovered,   setIsHovered]   = useState(false)
   const [menuOpen,    setMenuOpen]    = useState(false)
+  const [targetMenuOpen, setTargetMenuOpen] = useState(false)
   const [prompt,      setPrompt]      = useState('')
   // Rendered image height in pixels (updated on img load)
   const [imgRenderedH,  setImgRenderedH]  = useState<number | null>(null)
@@ -456,27 +457,44 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
         <ImagePromptPanel value={prompt} onChange={setPrompt} />
       </CollapsibleSection>
 
-      {/* Target handle (left) */}
-      <Handle
-        type="target"
-        position={Position.Left}
-        style={{
-          width: 22, height: 22,
-          background: '#1a1a1a', border: '1.5px solid #606060',
-          borderRadius: '50%', left: -11, top: handleY,
-          transform: 'translateY(-50%)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          opacity: handlesVisible ? 1 : 0,
-          pointerEvents: handlesVisible ? 'auto' : 'none',
-          transition: 'opacity 150ms ease',
-        }}
-      >
-        <span style={{
-          pointerEvents: 'none', fontSize: 16, color: '#888', lineHeight: 1,
-          position: 'absolute', top: '50%', left: '50%',
-          transform: 'translate(-50%, -52%)',
-        }}>+</span>
-      </Handle>
+      {/* Target handle (left) + menu */}
+      <div style={{
+        position: 'absolute', left: -11, top: handleY,
+        transform: 'translateY(-50%)', width: 22, height: 22,
+      }}>
+        <Handle
+          type="target"
+          position={Position.Left}
+          style={{
+            width: 22, height: 22,
+            background: '#1a1a1a', border: '1.5px solid #606060',
+            borderRadius: '50%',
+            top: 0, left: 0, transform: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            opacity: handlesVisible ? 1 : 0,
+            pointerEvents: handlesVisible ? 'auto' : 'none',
+            transition: 'opacity 150ms ease',
+            position: 'relative',
+          }}
+          onClick={(e) => { e.stopPropagation(); setTargetMenuOpen(v => !v) }}
+        >
+          <span style={{
+            pointerEvents: 'none', fontSize: 16, color: '#888', lineHeight: 1,
+            position: 'absolute', top: '50%', left: '50%',
+            transform: 'translate(-50%, -52%)',
+          }}>+</span>
+        </Handle>
+        {targetMenuOpen && (
+          <NodeAddMenu
+            nodeType="libtv_image"
+            sourceNodeId={data.id}
+            sourcePosition={data.position}
+            sourceNodeWidth={NODE_W}
+            direction="left"
+            onClose={() => setTargetMenuOpen(false)}
+          />
+        )}
+      </div>
 
       {/* Source handle + menu (right) */}
       <div style={{
