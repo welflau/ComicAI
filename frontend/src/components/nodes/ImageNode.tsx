@@ -529,40 +529,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
                 <Upload size={13} />
               </button>
             </div>
-            {/* Quick actions — shown when selected */}
-            <CollapsibleSection expanded={!!selected && !dragging}>
-              <div style={{ padding: '10px 16px 12px', borderTop: '1px solid #222' }}>
-                {QUICK_ACTIONS.map(a => (
-                  <div
-                    key={a.label}
-                    className="nodrag nopan"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '6px 10px', borderRadius: 7, cursor: 'pointer',
-                      color: '#aaa', fontSize: 13,
-                      transition: 'background 0.12s, color 0.12s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = '#2a2a2a'; e.currentTarget.style.color = '#ddd' }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' }}
-                  >
-                    {'hdBadge' in a ? (
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        width: 20, height: 14,
-                        fontSize: 8, fontWeight: 700, color: '#888',
-                        border: '1px solid #555', borderRadius: 3,
-                        lineHeight: 1, flexShrink: 0,
-                      }}>HD</span>
-                    ) : (
-                      <span style={{ flexShrink: 0, opacity: 0.7, display: 'flex', alignItems: 'center' }}>
-                        <a.icon size={14} />
-                      </span>
-                    )}
-                    {a.label}
-                  </div>
-                ))}
-              </div>
-            </CollapsibleSection>
+            {/* Quick actions removed when image is present */}
           </>
         ) : (
           /* ── Empty mode: placeholder + quick actions ── */
