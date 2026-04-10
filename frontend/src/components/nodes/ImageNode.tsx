@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useRef, useState } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import {
   Image as ImageIcon, Upload, Monitor, Video,
@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import CollapsibleSection from './shared/CollapsibleSection'
 import NodeAddMenu from './shared/NodeAddMenu'
+import { useProjectStore } from '../../stores/projectStore'
 
 export interface ImageNodeData {
   id: string
@@ -233,9 +234,24 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
   const [isHovered, setIsHovered] = useState(false)
   const [menuOpen,  setMenuOpen]  = useState(false)
   const [prompt,    setPrompt]    = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const updateNode   = useProjectStore(s => s.updateNode)
 
   const handlesVisible = isHovered || !!selected
   const nodeLabel      = data.label || '图片'
+
+  function handleUploadClick() {
+    fileInputRef.current?.click()
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const url = URL.createObjectURL(file)
+    updateNode(data.id, { imageUrl: url } as Partial<ImageNodeData>)
+    // reset so the same file can be re-selected next time
+    e.target.value = ''
+  }
 
   return (
     <div
@@ -247,6 +263,15 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handleFileChange}
+      />
+
       {/* Upload button — floats above node when selected */}
       {selected && (
         <div style={{
@@ -255,6 +280,7 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
         }}>
           <button
             className="nodrag nopan"
+            onClick={handleUploadClick}
             style={{
               display: 'flex', alignItems: 'center', gap: 5,
               background: '#1e1e1e', border: '1px solid #3a3a3a',
