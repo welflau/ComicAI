@@ -103,6 +103,11 @@ interface Props {
    * 'left': create predecessor node to the left, edge new→source
    */
   direction?: 'right' | 'left'
+  /**
+   * When the source node is an image node with an image, pass the image ref here.
+   * Used to pre-fill the new script node's prompt with a thumbnail reference.
+   */
+  sourceImageUrl?: string
   onClose: () => void
 }
 
@@ -114,6 +119,7 @@ export default function NodeAddMenu({
   sourcePosition,
   sourceNodeWidth = 200,
   direction = 'right',
+  sourceImageUrl,
   onClose,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null)
@@ -150,13 +156,23 @@ export default function NodeAddMenu({
     const newX = direction === 'right'
       ? sourcePosition.x + sourceNodeWidth + 80
       : sourcePosition.x - NEW_NODE_W - 80
+
+    // When creating a text node from an image source, pre-fill image context
+    const extraConfig: Record<string, unknown> = {}
+    let initialPrompt: string | undefined
+    if (item.targetType === 'libtv_script' && sourceImageUrl) {
+      extraConfig.sourceImageUrl = sourceImageUrl
+      initialPrompt = '根据图片生成提示词'
+    }
+
     addNode({
       id: newId,
       type: item.targetType,
       label: item.targetLabel,
       category: item.targetCategory,
       position: { x: newX, y: sourcePosition.y },
-      config: {},
+      config: extraConfig,
+      ...(initialPrompt ? { initialPrompt } : {}),
     })
     if (direction === 'right') {
       addEdge({ id: `e-${sourceNodeId}-${newId}`, source: sourceNodeId, target: newId })

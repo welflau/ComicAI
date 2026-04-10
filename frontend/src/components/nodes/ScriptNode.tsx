@@ -11,6 +11,7 @@ import CollapsibleSection from './shared/CollapsibleSection'
 import NodeAddMenu from './shared/NodeAddMenu'
 import { streamAI } from '@/api'
 import { addLog } from '@/stores/logStore'
+import { resolveImageUrl } from '@/stores/imageStore'
 
 export interface ScriptNodeData {
   id: string
@@ -218,12 +219,14 @@ function ModelDropdown({
 /* ── Prompt panel ────────────────────────────────────────────── */
 
 function PromptPanel({
-  value, onChange, onSend, disabled = false,
+  value, onChange, onSend, disabled = false, sourceThumbnailUrl,
 }: {
   value: string
   onChange: (v: string) => void
   onSend: () => void
   disabled?: boolean
+  /** Resolved blob/http URL for the source image thumbnail */
+  sourceThumbnailUrl?: string | null
 }) {
   const active = value.trim().length > 0
   const models = useOrderedModels()
@@ -256,6 +259,31 @@ function PromptPanel({
         boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
       }}
     >
+      {/* Source image thumbnail row */}
+      {sourceThumbnailUrl && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <img
+              src={sourceThumbnailUrl}
+              alt=""
+              style={{
+                width: 44, height: 44, objectFit: 'cover',
+                borderRadius: 8, display: 'block',
+                border: '1px solid #333',
+              }}
+            />
+            {/* Badge */}
+            <span style={{
+              position: 'absolute', top: -5, right: -5,
+              width: 16, height: 16,
+              background: '#3a6ff7', borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 9, color: '#fff', fontWeight: 700, lineHeight: 1,
+            }}>1</span>
+          </div>
+        </div>
+      )}
+
       <textarea
         className="nodrag nopan nowheel"
         value={value}
@@ -424,6 +452,25 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const addEdge = useProjectStore(s => s.addEdge)
 
   const nodeLabel = data.title || data.label || '文本'
+
+  // Resolve source image URL (idb:// or plain) → blob URL for thumbnail
+  const sourceImageRef = data.config?.sourceImageUrl as string | undefined
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!sourceImageRef) { setThumbnailUrl(null); return }
+    let revoke: string | null = null
+    let cancelled = false
+    resolveImageUrl(sourceImageRef).then(url => {
+      if (cancelled) return
+      setThumbnailUrl(url)
+      if (url?.startsWith('blob:')) revoke = url
+    })
+    return () => {
+      cancelled = true
+      if (revoke) URL.revokeObjectURL(revoke)
+    }
+  }, [sourceImageRef])
 
   // Expanded when selected (but NOT while dragging) OR in an "active" mode
   const isExpanded = (selected && !dragging) || mode === 'write' || mode === 'generating'
@@ -600,7 +647,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
           </div>
 
           <CollapsibleSection expanded={isExpanded}>
-            <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} />
+            <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} sourceThumbnailUrl={thumbnailUrl} />
           </CollapsibleSection>
 
           <CircleHandle type="target" position={Position.Left}  top={idleHandleY} visible={handlesVisible}
@@ -773,7 +820,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
           </div>
 
           <CollapsibleSection expanded={isExpanded}>
-            <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} />
+            <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} sourceThumbnailUrl={thumbnailUrl} />
           </CollapsibleSection>
 
           <CircleHandle type="target" position={Position.Left}  top={contentHandleY} visible={handlesVisible}

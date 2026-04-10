@@ -663,6 +663,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
             sourceNodeId={data.id}
             sourcePosition={data.position}
             sourceNodeWidth={NODE_W}
+            sourceImageUrl={data.imageUrl}
             onClose={() => setMenuOpen(false)}
           />
         )}
