@@ -4,6 +4,7 @@ import {
   Image as ImageIcon, Upload, Monitor, Video,
   Languages, SlidersHorizontal, ChevronDown, ArrowUp,
   Box, Bookmark, Crosshair, Maximize2, Zap,
+  RefreshCw, Wand2, Download, Fullscreen,
 } from 'lucide-react'
 import CollapsibleSection from './shared/CollapsibleSection'
 import NodeAddMenu from './shared/NodeAddMenu'
@@ -34,6 +35,129 @@ const QUICK_ACTIONS: QuickActionItem[] = [
   { icon: Upload, label: '图生图' },
   { label: '图片高清', hdBadge: true },
 ]
+
+/* ── Image editing toolbar (floats above node when selected + has image) ─── */
+
+const TOOLBAR_GROUPS: Array<{
+  items: Array<{ label: string; chevron: boolean; accent?: boolean }>
+}> = [
+  {
+    items: [
+      { label: '多角度', chevron: false },
+    ],
+  },
+  {
+    items: [
+      { label: '打光', chevron: false },
+    ],
+  },
+  {
+    items: [
+      { label: '九宫格', chevron: true },
+    ],
+  },
+  {
+    items: [
+      { label: 'HD 高清', chevron: true, accent: true },
+    ],
+  },
+  {
+    items: [
+      { label: '宫格切分', chevron: true },
+    ],
+  },
+]
+
+function ImageEditToolbar({ visible }: { visible: boolean }) {
+  return (
+    <div
+      className="nodrag nopan"
+      style={{
+        position: 'absolute',
+        top: -50,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 10,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 2,
+        background: '#1c1c1c',
+        border: '1px solid #333',
+        borderRadius: 24,
+        padding: '6px 14px',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.6)',
+        whiteSpace: 'nowrap',
+        opacity: visible ? 1 : 0,
+        pointerEvents: visible ? 'auto' : 'none',
+        transition: 'opacity 150ms ease',
+      }}
+    >
+      {/* Left groups */}
+      {TOOLBAR_GROUPS.map((group, gi) => (
+        <span key={gi} style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+          {gi > 0 && (
+            <span style={{ width: 1, height: 14, background: '#2e2e2e', margin: '0 10px' }} />
+          )}
+          {group.items.map(item => (
+            <button
+              key={item.label}
+              className="nodrag nopan"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: item.accent ? '#fff' : '#bbb',
+                fontSize: 13, padding: '2px 4px', borderRadius: 6,
+                transition: 'color 0.12s',
+                fontFamily: 'inherit',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = item.accent ? '#fff' : '#bbb' }}
+            >
+              {item.accent && (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 9, fontWeight: 700, color: '#aaa',
+                  border: '1px solid #555', borderRadius: 3,
+                  padding: '1px 3px', lineHeight: 1, marginRight: 2,
+                }}>HD</span>
+              )}
+              {!item.accent && item.label}
+              {item.accent && item.label.replace('HD ', '')}
+              {item.chevron && <ChevronDown size={11} style={{ opacity: 0.5 }} />}
+            </button>
+          ))}
+        </span>
+      ))}
+
+      {/* Separator */}
+      <span style={{ width: 1, height: 14, background: '#2e2e2e', margin: '0 8px' }} />
+
+      {/* Right icon buttons */}
+      {[
+        { Icon: Wand2,    title: '一键优化' },
+        { Icon: RefreshCw, title: '重新生成' },
+        { Icon: Download,  title: '下载' },
+        { Icon: Fullscreen, title: '全屏预览' },
+      ].map(({ Icon, title }) => (
+        <button
+          key={title}
+          className="nodrag nopan"
+          title={title}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 28, height: 28, background: 'none', border: 'none',
+            cursor: 'pointer', color: '#777', borderRadius: 7,
+            transition: 'color 0.12s, background 0.12s',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#ddd'; (e.currentTarget as HTMLButtonElement).style.background = '#2a2a2a' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#777'; (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
+        >
+          <Icon size={14} />
+        </button>
+      ))}
+    </div>
+  )
+}
 
 /* ── Lib Nano Pro icon ─────────────────────────────────────── */
 
@@ -346,6 +470,11 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
             上传
           </button>
         </div>
+      )}
+
+      {/* Edit toolbar — floats above node when selected AND has image */}
+      {hasImage && (
+        <ImageEditToolbar visible={!!selected && !dragging} />
       )}
 
       {/* Title */}
