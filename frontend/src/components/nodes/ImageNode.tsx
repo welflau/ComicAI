@@ -1,6 +1,10 @@
 import { memo, useState } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
-import { Image as ImageIcon, Sparkles, Loader2, Layers, Maximize2, Eraser, Wand2 } from 'lucide-react'
+import {
+  Image as ImageIcon, Upload, Monitor, Video,
+  Languages, SlidersHorizontal, ChevronDown, ArrowUp,
+  Box, Bookmark, Crosshair, Maximize2, Zap,
+} from 'lucide-react'
 import CollapsibleSection from './shared/CollapsibleSection'
 import NodeAddMenu from './shared/NodeAddMenu'
 
@@ -15,46 +19,351 @@ export interface ImageNodeData {
   nodeIndex?: number
 }
 
-const QUICK_ACTIONS = [
-  { icon: <Layers size={11} />,   label: '图生图' },
-  { icon: <Maximize2 size={11} />, label: '图片高清' },
-  { icon: <Eraser size={11} />,   label: '背景去除' },
-  { icon: <Wand2 size={11} />,    label: '风格迁移' },
+const NODE_W   = 400
+const TITLE_H  = 28
+const IMAGE_H  = 220
+const HANDLE_Y = 192   // ≈ TITLE_H + CARD_H/2
+
+type QuickActionItem =
+  | { label: string; icon: React.ElementType }
+  | { label: string; hdBadge: true }
+
+const QUICK_ACTIONS: QuickActionItem[] = [
+  { icon: Upload, label: '图生图' },
+  { label: '图片高清', hdBadge: true },
 ]
 
+/* ── Lib Nano Pro icon ─────────────────────────────────────── */
+
+function LibNanoIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+      <path
+        d="M7 1.5L9 5.5H13L10 8.5L11.5 12.5L7 10L2.5 12.5L4 8.5L1 5.5H5L7 1.5Z"
+        fill="none" stroke="#6b8fff" strokeWidth="1.2" strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/* ── Image prompt panel ────────────────────────────────────── */
+
+function ImagePromptPanel({ value, onChange }: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div
+      className="nodrag nopan"
+      style={{
+        marginTop: 8,
+        background: '#161616',
+        border: '1px solid #2a2a2a',
+        borderRadius: 14,
+        padding: '12px 14px 10px',
+        boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
+      }}
+    >
+      {/* Top pills */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+        {([
+          { Icon: Box,       label: '风格' },
+          { Icon: Bookmark,  label: '标记' },
+          { Icon: Crosshair, label: '聚焦' },
+        ] as const).map(({ Icon, label }) => (
+          <button
+            key={label}
+            className="nodrag nopan"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              background: '#1e1e1e', border: '1px solid #2e2e2e',
+              borderRadius: 8, padding: '4px 10px',
+              color: '#666', fontSize: 12, cursor: 'pointer',
+              transition: 'border-color 0.12s, color 0.12s',
+              whiteSpace: 'nowrap',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = '#444'; e.currentTarget.style.color = '#aaa' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = '#2e2e2e'; e.currentTarget.style.color = '#666' }}
+          >
+            <Icon size={11} />
+            {label}
+          </button>
+        ))}
+        <div style={{ flex: 1 }} />
+        <button
+          className="nodrag nopan"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#444', padding: 4, borderRadius: 4 }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#888' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#444' }}
+        >
+          <Maximize2 size={12} />
+        </button>
+      </div>
+
+      {/* Textarea */}
+      <textarea
+        className="nodrag nopan nowheel"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={e => e.stopPropagation()}
+        placeholder="描述你想要生成的画面内容，按/呼出指令，@引用素材"
+        rows={3}
+        style={{
+          background: 'transparent', border: 'none', outline: 'none',
+          color: '#ccc', fontSize: 13, lineHeight: 1.6,
+          resize: 'none', width: '100%', boxSizing: 'border-box',
+          fontFamily: 'inherit',
+        }}
+      />
+
+      {/* Bottom bar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 4,
+        paddingTop: 8, marginTop: 4,
+        borderTop: '1px solid #272727',
+      }}>
+        {/* Model */}
+        <button className="nodrag nopan" style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#777', fontSize: 11, padding: '2px 4px', borderRadius: 5, flexShrink: 0,
+        }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#252525' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
+        >
+          <LibNanoIcon />
+          <span style={{ fontWeight: 500 }}>Lib Nano Pro</span>
+          <ChevronDown size={9} />
+        </button>
+
+        <div style={{ width: 1, height: 10, background: '#2a2a2a', flexShrink: 0 }} />
+
+        {/* Ratio */}
+        <button className="nodrag nopan" style={{
+          display: 'flex', alignItems: 'center', gap: 3,
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#666', fontSize: 11, padding: '2px 4px', borderRadius: 5, flexShrink: 0,
+        }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#252525' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
+        >
+          <Monitor size={11} />
+          <span>16:9 · 2K</span>
+          <ChevronDown size={9} />
+        </button>
+
+        <div style={{ width: 1, height: 10, background: '#2a2a2a', flexShrink: 0 }} />
+
+        {/* Camera */}
+        <button className="nodrag nopan" style={{
+          display: 'flex', alignItems: 'center', gap: 3,
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#666', fontSize: 11, padding: '2px 4px', borderRadius: 5, flexShrink: 0,
+        }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#252525' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
+        >
+          <Video size={11} />
+          <span>摄像机控制</span>
+        </button>
+
+        <div style={{ flex: 1 }} />
+
+        {/* Lang */}
+        <button className="nodrag nopan" style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#555', padding: 3, borderRadius: 4,
+        }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#888' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#555' }}
+        >
+          <Languages size={13} />
+        </button>
+
+        {/* Sliders */}
+        <button className="nodrag nopan" style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#555', padding: 3, borderRadius: 4,
+        }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#888' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#555' }}
+        >
+          <SlidersHorizontal size={13} />
+        </button>
+
+        {/* Count */}
+        <button className="nodrag nopan" style={{
+          display: 'flex', alignItems: 'center', gap: 2,
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#666', fontSize: 11, padding: '2px 4px', borderRadius: 5, whiteSpace: 'nowrap',
+        }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#252525' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
+        >
+          <span>1张</span>
+          <ChevronDown size={9} />
+        </button>
+
+        {/* Credits */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, color: '#555', fontSize: 11 }}>
+          <Zap size={11} />
+          <span>14</span>
+        </div>
+
+        {/* Send */}
+        <button className="nodrag nopan" style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 28, height: 28, borderRadius: 8, border: 'none',
+          cursor: 'pointer', background: '#252525', color: '#666',
+          transition: 'background 0.15s, color 0.15s', flexShrink: 0,
+        }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#3a6ff7'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#252525'; (e.currentTarget as HTMLButtonElement).style.color = '#666' }}
+        >
+          <ArrowUp size={13} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/* ── Main ──────────────────────────────────────────────────── */
+
 function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
-  const [generating, setGenerating] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [menuOpen,  setMenuOpen]  = useState(false)
+  const [prompt,    setPrompt]    = useState('')
 
-  const handlesVisible = isHovered || selected || generating
-
-  const handleGenerate = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (generating) return
-    setGenerating(true)
-    setTimeout(() => setGenerating(false), 2000)
-  }
+  const handlesVisible = isHovered || !!selected
+  const nodeLabel      = data.label || '图片'
 
   return (
     <div
-      className="relative nodrag"
       style={{
-        width: 200,
-        fontFamily: 'Inter, system-ui, sans-serif',
         position: 'relative',
+        width: NODE_W,
+        fontFamily: 'Inter, system-ui, sans-serif',
       }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Input handle — outside overflow:hidden card */}
+      {/* Upload button — floats above node when selected */}
+      {selected && (
+        <div style={{
+          position: 'absolute', top: -38, left: '50%',
+          transform: 'translateX(-50%)', zIndex: 10,
+        }}>
+          <button
+            className="nodrag nopan"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: '#1e1e1e', border: '1px solid #3a3a3a',
+              borderRadius: 20, padding: '5px 16px',
+              color: '#bbb', fontSize: 12, cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+              whiteSpace: 'nowrap',
+              transition: 'border-color 0.12s, color 0.12s',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#555'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#3a3a3a'; (e.currentTarget as HTMLButtonElement).style.color = '#bbb' }}
+          >
+            <Upload size={12} />
+            上传
+          </button>
+        </div>
+      )}
+
+      {/* Title */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        height: TITLE_H, paddingLeft: 2, paddingBottom: 6,
+      }}>
+        <ImageIcon size={13} color="#888" />
+        <span style={{ fontSize: 13, color: '#bbb', fontWeight: 500 }}>{nodeLabel}</span>
+      </div>
+
+      {/* Card */}
+      <div style={{
+        background: '#1a1a1a',
+        border: selected
+          ? '1.5px solid #707070'
+          : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #2a2a2a',
+        borderRadius: 14,
+        overflow: 'hidden',
+        transition: 'border-color 150ms ease, box-shadow 150ms ease',
+        boxShadow: selected
+          ? '0 0 0 2px rgba(255,255,255,0.04), 0 4px 20px rgba(0,0,0,0.5)'
+          : '0 2px 12px rgba(0,0,0,0.4)',
+      }}>
+        {/* Image area */}
+        <div style={{
+          height: IMAGE_H, background: '#141414',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {data.imageUrl ? (
+            <img
+              src={data.imageUrl} alt=""
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          ) : (
+            <svg width="62" height="52" viewBox="0 0 62 52" fill="none">
+              <path d="M5 47L20 21L30 33.5L40 18L57 47H5Z"
+                fill="#272727" stroke="#363636" strokeWidth="1.5" strokeLinejoin="round"/>
+              <circle cx="18" cy="12" r="5.5"
+                fill="#272727" stroke="#363636" strokeWidth="1.5"/>
+            </svg>
+          )}
+        </div>
+
+        {/* Quick actions — always visible */}
+        <div style={{ padding: '12px 16px 14px' }}>
+          <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>尝试:</div>
+          {QUICK_ACTIONS.map(a => (
+            <div
+              key={a.label}
+              className="nodrag nopan"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '7px 10px', borderRadius: 7, cursor: 'pointer',
+                color: '#aaa', fontSize: 14,
+                transition: 'background 0.12s, color 0.12s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#2a2a2a'; e.currentTarget.style.color = '#ddd' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' }}
+            >
+              {'hdBadge' in a ? (
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: 20, height: 14,
+                  fontSize: 8, fontWeight: 700, color: '#888',
+                  border: '1px solid #555', borderRadius: 3,
+                  lineHeight: 1, flexShrink: 0,
+                }}>HD</span>
+              ) : (
+                <span style={{ flexShrink: 0, opacity: 0.7, display: 'flex', alignItems: 'center' }}>
+                  <a.icon size={14} />
+                </span>
+              )}
+              {a.label}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Prompt panel — expands below when selected */}
+      <CollapsibleSection expanded={!!selected}>
+        <ImagePromptPanel value={prompt} onChange={setPrompt} />
+      </CollapsibleSection>
+
+      {/* Target handle (left) */}
       <Handle
         type="target"
         position={Position.Left}
         style={{
-          width: 18, height: 18,
+          width: 22, height: 22,
           background: '#1a1a1a', border: '1.5px solid #606060',
-          borderRadius: '50%', left: -9, top: 22,
+          borderRadius: '50%', left: -11, top: HANDLE_Y,
+          transform: 'translateY(-50%)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           opacity: handlesVisible ? 1 : 0,
           pointerEvents: handlesVisible ? 'auto' : 'none',
@@ -62,132 +371,25 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
         }}
       >
         <span style={{
-          pointerEvents: 'none', fontSize: 13, color: '#888', lineHeight: 1,
+          pointerEvents: 'none', fontSize: 16, color: '#888', lineHeight: 1,
           position: 'absolute', top: '50%', left: '50%',
           transform: 'translate(-50%, -52%)',
         }}>+</span>
       </Handle>
 
-      {/* Inner card */}
-      <div
-        style={{
-          background: '#1a1a1a',
-          border: selected ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1px solid #2e2e2e',
-          borderRadius: 8,
-          boxShadow: selected
-            ? '0 0 0 2px rgba(255,255,255,0.06), 0 4px 20px rgba(0,0,0,0.5)'
-            : '0 2px 8px rgba(0,0,0,0.4)',
-          overflow: 'hidden',
-          transition: 'border-color 150ms ease, box-shadow 150ms ease',
-        }}
-      >
-
-      {/* Header */}
+      {/* Source handle + menu (right) */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        padding: '7px 10px 6px',
-        borderBottom: '1px solid #242424',
-      }}>
-        <ImageIcon size={11} color="#888" />
-        <span style={{ fontSize: 11, color: '#aaa', fontWeight: 500 }}>
-          {data.label || '图片'}
-        </span>
-      </div>
-
-      {/* Image area */}
-      <div style={{
-        height: 120,
-        background: '#111',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        position: 'relative',
-      }}>
-        {data.imageUrl ? (
-          <img
-            src={data.imageUrl}
-            alt=""
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-        ) : (
-          <svg width="40" height="34" viewBox="0 0 48 40" fill="none">
-            <path d="M4 36L16 16L24 26L32 14L44 36H4Z" fill="#2a2a2a" stroke="#333" strokeWidth="1.5" strokeLinejoin="round"/>
-            <circle cx="14" cy="10" r="4" fill="#2a2a2a" stroke="#333" strokeWidth="1.5"/>
-          </svg>
-        )}
-      </div>
-
-      {/* Generate button */}
-      <div style={{ padding: '8px 10px 8px' }}>
-        <button
-          className="nodrag nopan"
-          onClick={handleGenerate}
-          disabled={generating}
-          style={{
-            width: '100%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
-            padding: '5px 0',
-            background: generating ? '#1a1e2a' : '#141a2a',
-            border: '1px solid #2a3a5a',
-            borderRadius: 5,
-            cursor: generating ? 'default' : 'pointer',
-            fontSize: 11, color: generating ? '#4a6aaa' : '#6a8acc',
-            transition: 'background 0.15s, border-color 0.15s',
-          }}
-          onMouseEnter={e => { if (!generating) { e.currentTarget.style.background = '#1a2540'; e.currentTarget.style.borderColor = '#3a5a8a' } }}
-          onMouseLeave={e => { e.currentTarget.style.background = generating ? '#1a1e2a' : '#141a2a'; e.currentTarget.style.borderColor = '#2a3a5a' }}
-        >
-          {generating
-            ? <><Loader2 size={11} className="animate-spin" /> 生成中...</>
-            : <><Sparkles size={11} /> 生成图片</>
-          }
-        </button>
-      </div>
-
-      {/* Quick actions */}
-      <CollapsibleSection expanded={!!selected}>
-        <div style={{ borderTop: '1px solid #222', padding: '6px 10px 8px' }}>
-          <div style={{ fontSize: 10, color: '#444', marginBottom: 4 }}>尝试:</div>
-          {QUICK_ACTIONS.map(a => (
-            <div
-              key={a.label}
-              className="nodrag nopan"
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                padding: '3px 4px', borderRadius: 4, cursor: 'pointer',
-                color: '#666', fontSize: 11,
-                transition: 'background 0.12s, color 0.12s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#252525'; e.currentTarget.style.color = '#aaa' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}
-            >
-              <span style={{ color: '#555', flexShrink: 0 }}>{a.icon}</span>
-              {a.label}
-            </div>
-          ))}
-        </div>
-      </CollapsibleSection>
-
-      </div>{/* end inner card */}
-
-      {/* Output handle + menu */}
-      <div style={{
-        position: 'absolute',
-        right: -9,
-        top: '50%',
-        transform: 'translateY(-50%)',
-        width: 18,
-        height: 18,
+        position: 'absolute', right: -11, top: HANDLE_Y,
+        transform: 'translateY(-50%)', width: 22, height: 22,
       }}>
         <Handle
           type="source"
           position={Position.Right}
           style={{
-            width: 18, height: 18,
+            width: 22, height: 22,
             background: '#1a1a1a', border: '1.5px solid #606060',
             borderRadius: '50%',
-            top: 0, left: 0,
-            transform: 'none',
+            top: 0, left: 0, transform: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             opacity: handlesVisible ? 1 : 0,
             pointerEvents: handlesVisible ? 'auto' : 'none',
@@ -197,7 +399,7 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
           onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
         >
           <span style={{
-            pointerEvents: 'none', fontSize: 13, color: '#888', lineHeight: 1,
+            pointerEvents: 'none', fontSize: 16, color: '#888', lineHeight: 1,
             position: 'absolute', top: '50%', left: '50%',
             transform: 'translate(-50%, -52%)',
           }}>+</span>
@@ -207,7 +409,7 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
             nodeType="libtv_image"
             sourceNodeId={data.id}
             sourcePosition={data.position}
-            sourceNodeWidth={200}
+            sourceNodeWidth={NODE_W}
             onClose={() => setMenuOpen(false)}
           />
         )}
