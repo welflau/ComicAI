@@ -371,34 +371,70 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
           : '0 2px 12px rgba(0,0,0,0.4)',
       }}>
         {hasImage ? (
-          /* ── Image mode: natural aspect ratio + replace button ── */
-          <div style={{ position: 'relative', lineHeight: 0 }}>
-            <img
-              src={displayUrl!} alt=""
-              onLoad={handleImgLoad}
-              onError={handleImgError}
-              style={{ width: '100%', height: 'auto', display: 'block' }}
-            />
-            {/* Replace button — always visible top-right */}
-            <button
-              className="nodrag nopan"
-              onClick={handleUploadClick}
-              style={{
-                position: 'absolute', top: 10, right: 10,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                width: 30, height: 30,
-                background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)',
-                borderRadius: 8, cursor: 'pointer', color: '#ccc',
-                transition: 'background 150ms ease, color 150ms ease',
-                backdropFilter: 'blur(4px)',
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.85)'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.5)'; (e.currentTarget as HTMLButtonElement).style.color = '#ccc' }}
-              title="替换图片"
-            >
-              <Upload size={13} />
-            </button>
-          </div>
+          /* ── Image mode: natural aspect ratio + replace button + collapsible actions ── */
+          <>
+            <div style={{ position: 'relative', lineHeight: 0 }}>
+              <img
+                src={displayUrl!} alt=""
+                onLoad={handleImgLoad}
+                onError={handleImgError}
+                style={{ width: '100%', height: 'auto', display: 'block' }}
+              />
+              {/* Replace button — always visible top-right */}
+              <button
+                className="nodrag nopan"
+                onClick={handleUploadClick}
+                style={{
+                  position: 'absolute', top: 10, right: 10,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 30, height: 30,
+                  background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: 8, cursor: 'pointer', color: '#ccc',
+                  transition: 'background 150ms ease, color 150ms ease',
+                  backdropFilter: 'blur(4px)',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.85)'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.5)'; (e.currentTarget as HTMLButtonElement).style.color = '#ccc' }}
+                title="替换图片"
+              >
+                <Upload size={13} />
+              </button>
+            </div>
+            {/* Quick actions — shown when selected */}
+            <CollapsibleSection expanded={!!selected && !dragging}>
+              <div style={{ padding: '10px 16px 12px', borderTop: '1px solid #222' }}>
+                {QUICK_ACTIONS.map(a => (
+                  <div
+                    key={a.label}
+                    className="nodrag nopan"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '6px 10px', borderRadius: 7, cursor: 'pointer',
+                      color: '#aaa', fontSize: 13,
+                      transition: 'background 0.12s, color 0.12s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#2a2a2a'; e.currentTarget.style.color = '#ddd' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' }}
+                  >
+                    {'hdBadge' in a ? (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 20, height: 14,
+                        fontSize: 8, fontWeight: 700, color: '#888',
+                        border: '1px solid #555', borderRadius: 3,
+                        lineHeight: 1, flexShrink: 0,
+                      }}>HD</span>
+                    ) : (
+                      <span style={{ flexShrink: 0, opacity: 0.7, display: 'flex', alignItems: 'center' }}>
+                        <a.icon size={14} />
+                      </span>
+                    )}
+                    {a.label}
+                  </div>
+                ))}
+              </div>
+            </CollapsibleSection>
+          </>
         ) : (
           /* ── Empty mode: placeholder + quick actions ── */
           <>
