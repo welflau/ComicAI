@@ -1,15 +1,16 @@
-import { memo, useRef, useState, useEffect } from 'react'
+import { memo, useRef, useState, useEffect, useCallback } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import {
   Image as ImageIcon, Upload, Monitor, Video,
   Languages, SlidersHorizontal, ChevronDown, ArrowUp,
   Box, Bookmark, Crosshair, Maximize2, Zap,
-  RefreshCw, Wand2, Download, Fullscreen,
+  RefreshCw, Wand2, Download, Fullscreen, Loader2,
 } from 'lucide-react'
 import CollapsibleSection from './shared/CollapsibleSection'
 import NodeAddMenu from './shared/NodeAddMenu'
 import { useProjectStore } from '../../stores/projectStore'
 import { saveImage, resolveImageUrl } from '../../stores/imageStore'
+import { lightaiGenerateImage } from '../../api'
 
 export interface ImageNodeData {
   id: string
@@ -20,11 +21,14 @@ export interface ImageNodeData {
   config: Record<string, unknown>
   imageUrl?: string
   nodeIndex?: number
+  imageSource?: 'uploaded' | 'generated'
+  imagePrompt?: string
 }
 
-const NODE_W      = 400
-const TITLE_H     = 28    // title row height (px) — card starts just below
-const PLACEHOLDER_H = 220 // height of the empty placeholder area
+const NODE_W        = 400
+const TITLE_H       = 28    // title row height (px) — card starts just below
+const PLACEHOLDER_H = 220   // height of the empty placeholder area
+const MAX_IMG_H     = 260   // max rendered image height — caps tall portrait images
 const DEFAULT_HANDLE_Y = TITLE_H + PLACEHOLDER_H / 2
 
 type QuickActionItem =
@@ -172,11 +176,51 @@ function LibNanoIcon() {
   )
 }
 
+/* ── Reference image thumbnails ───────────────────────────── */
+
+function RefImageThumbnails({ urls }: { urls: string[] }) {
+  if (!urls.length) return null
+  const first = urls[0]
+  const count = urls.length
+  return (
+    <div
+      className="nodrag nopan"
+      style={{ position: 'relative', flexShrink: 0, display: 'inline-flex', cursor: 'pointer' }}
+      title={`${count} 张参考图`}
+    >
+      <img
+        src={first}
+        alt="参考图"
+        style={{
+          width: 36, height: 36, objectFit: 'cover',
+          borderRadius: 8, border: '1px solid #383838',
+          display: 'block',
+        }}
+      />
+      {count > 0 && (
+        <span style={{
+          position: 'absolute', bottom: -4, right: -4,
+          minWidth: 14, height: 14, lineHeight: '14px',
+          background: '#3a6ff7', color: '#fff',
+          fontSize: 9, fontWeight: 700, textAlign: 'center',
+          borderRadius: 7, padding: '0 3px',
+          border: '1.5px solid #161616',
+          pointerEvents: 'none',
+        }}>{count}</span>
+      )}
+    </div>
+  )
+}
+
 /* ── Image prompt panel ────────────────────────────────────── */
 
-function ImagePromptPanel({ value, onChange }: {
+function ImagePromptPanel({ value, onChange, onSend, generating, hasImage, refImages = [] }: {
   value: string
   onChange: (v: string) => void
+  onSend: () => void
+  generating: boolean
+  hasImage: boolean
+  refImages?: string[]
 }) {
   return (
     <div
@@ -186,66 +230,124 @@ function ImagePromptPanel({ value, onChange }: {
         background: '#161616',
         border: '1px solid #2a2a2a',
         borderRadius: 14,
-        padding: '12px 14px 10px',
+        padding: hasImage ? '12px 14px 12px' : '12px 14px 10px',
         boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
       }}
     >
-      {/* Top pills */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-        {([
-          { Icon: Box,       label: '风格' },
-          { Icon: Bookmark,  label: '标记' },
-          { Icon: Crosshair, label: '聚焦' },
-        ] as const).map(({ Icon, label }) => (
-          <button
-            key={label}
-            className="nodrag nopan"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 4,
-              background: '#1e1e1e', border: '1px solid #2e2e2e',
-              borderRadius: 8, padding: '4px 10px',
-              color: '#666', fontSize: 12, cursor: 'pointer',
-              transition: 'border-color 0.12s, color 0.12s',
-              whiteSpace: 'nowrap',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = '#444'; e.currentTarget.style.color = '#aaa' }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = '#2e2e2e'; e.currentTarget.style.color = '#666' }}
-          >
-            <Icon size={11} />
-            {label}
-          </button>
-        ))}
-        <div style={{ flex: 1 }} />
-        <button
-          className="nodrag nopan"
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#444', padding: 4, borderRadius: 4 }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#888' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#444' }}
-        >
-          <Maximize2 size={12} />
-        </button>
-      </div>
+      {hasImage ? (
+        /* ── Has-image layout: style icon top-left + ref imgs + prompt text + expand ── */
+        <>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            {/* Style icon button */}
+            <button
+              className="nodrag nopan"
+              style={{
+                flexShrink: 0,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                gap: 4, width: 46, height: 46,
+                background: '#1e1e1e', border: '1px solid #2e2e2e',
+                borderRadius: 10, cursor: 'pointer', color: '#666',
+                transition: 'border-color 0.12s, color 0.12s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#444'; e.currentTarget.style.color = '#aaa' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = '#2e2e2e'; e.currentTarget.style.color = '#666' }}
+            >
+              <Box size={16} />
+              <span style={{ fontSize: 10, lineHeight: 1 }}>风格</span>
+            </button>
 
-      {/* Textarea */}
-      <textarea
-        className="nodrag nopan nowheel"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        onKeyDown={e => e.stopPropagation()}
-        placeholder="描述你想要生成的画面内容，按/呼出指令，@引用素材"
-        rows={3}
-        style={{
-          background: 'transparent', border: 'none', outline: 'none',
-          color: '#ccc', fontSize: 13, lineHeight: 1.6,
-          resize: 'none', width: '100%', boxSizing: 'border-box',
-          fontFamily: 'inherit',
-        }}
-      />
+            {/* Reference image thumbnails */}
+            {refImages.length > 0 && <RefImageThumbnails urls={refImages} />}
+
+            {/* Prompt textarea */}
+            <textarea
+              className="nodrag nopan nowheel"
+              value={value}
+              onChange={e => onChange(e.target.value)}
+              onKeyDown={e => e.stopPropagation()}
+              placeholder="描述你想要生成的画面内容..."
+              rows={2}
+              style={{
+                flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                color: value ? '#ccc' : '#555', fontSize: 13, lineHeight: 1.6,
+                resize: 'none', boxSizing: 'border-box',
+                fontFamily: 'inherit', paddingTop: 2,
+              }}
+            />
+
+            {/* Expand */}
+            <button
+              className="nodrag nopan"
+              style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: '#444', padding: 4, borderRadius: 4, marginTop: -2 }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#888' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#444' }}
+            >
+              <Maximize2 size={12} />
+            </button>
+          </div>
+        </>
+      ) : (
+        /* ── No-image layout: pill buttons + ref imgs + textarea ── */
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+            {([
+              { Icon: Box,       label: '风格' },
+              { Icon: Bookmark,  label: '标记' },
+              { Icon: Crosshair, label: '聚焦' },
+            ] as const).map(({ Icon, label }) => (
+              <button
+                key={label}
+                className="nodrag nopan"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  background: '#1e1e1e', border: '1px solid #2e2e2e',
+                  borderRadius: 8, padding: '4px 10px',
+                  color: '#666', fontSize: 12, cursor: 'pointer',
+                  transition: 'border-color 0.12s, color 0.12s',
+                  whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = '#444'; e.currentTarget.style.color = '#aaa' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = '#2e2e2e'; e.currentTarget.style.color = '#666' }}
+              >
+                <Icon size={11} />
+                {label}
+              </button>
+            ))}
+
+            {/* Reference image thumbnails (inline, after pill buttons) */}
+            {refImages.length > 0 && <RefImageThumbnails urls={refImages} />}
+
+            <div style={{ flex: 1 }} />
+            <button
+              className="nodrag nopan"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#444', padding: 4, borderRadius: 4 }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#888' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#444' }}
+            >
+              <Maximize2 size={12} />
+            </button>
+          </div>
+          <textarea
+            className="nodrag nopan nowheel"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            onKeyDown={e => e.stopPropagation()}
+            placeholder="描述你想要生成的画面内容，按/呼出指令，@引用素材"
+            rows={3}
+            style={{
+              background: 'transparent', border: 'none', outline: 'none',
+              color: '#ccc', fontSize: 13, lineHeight: 1.6,
+              resize: 'none', width: '100%', boxSizing: 'border-box',
+              fontFamily: 'inherit',
+            }}
+          />
+        </>
+      )}
 
       {/* Bottom bar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 4,
-        paddingTop: 8, marginTop: 4,
+        paddingTop: 8, marginTop: hasImage ? 10 : 4,
         borderTop: '1px solid #272727',
       }}>
         {/* Model */}
@@ -290,10 +392,9 @@ function ImagePromptPanel({ value, onChange }: {
           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
         >
           <Video size={11} />
-          <span>摄像机控制</span>
         </button>
 
-        <div style={{ flex: 1 }} />
+        <div style={{ flex: 1, minWidth: 0 }} />
 
         {/* Lang */}
         <button className="nodrag nopan" style={{
@@ -337,16 +438,34 @@ function ImagePromptPanel({ value, onChange }: {
         </div>
 
         {/* Send */}
-        <button className="nodrag nopan" style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          width: 28, height: 28, borderRadius: 8, border: 'none',
-          cursor: 'pointer', background: '#252525', color: '#666',
-          transition: 'background 0.15s, color 0.15s', flexShrink: 0,
-        }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#3a6ff7'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#252525'; (e.currentTarget as HTMLButtonElement).style.color = '#666' }}
+        <button className="nodrag nopan"
+          onClick={onSend}
+          disabled={generating || !value.trim()}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 28, height: 28, borderRadius: 8, border: 'none',
+            cursor: generating || !value.trim() ? 'not-allowed' : 'pointer',
+            background: generating ? '#2a4a9a' : '#252525',
+            color: generating ? '#fff' : '#666',
+            opacity: !value.trim() && !generating ? 0.45 : 1,
+            transition: 'background 0.15s, color 0.15s', flexShrink: 0,
+          }}
+          onMouseEnter={e => {
+            if (!generating && value.trim()) {
+              (e.currentTarget as HTMLButtonElement).style.background = '#3a6ff7'
+              ;(e.currentTarget as HTMLButtonElement).style.color = '#fff'
+            }
+          }}
+          onMouseLeave={e => {
+            if (!generating) {
+              (e.currentTarget as HTMLButtonElement).style.background = '#252525'
+              ;(e.currentTarget as HTMLButtonElement).style.color = '#666'
+            }
+          }}
         >
-          <ArrowUp size={13} />
+          {generating
+            ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+            : <ArrowUp size={13} />}
         </button>
       </div>
     </div>
@@ -359,19 +478,37 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const [isHovered,   setIsHovered]   = useState(false)
   const [menuOpen,    setMenuOpen]    = useState(false)
   const [targetMenuOpen, setTargetMenuOpen] = useState(false)
-  const [prompt,      setPrompt]      = useState('')
-  // Rendered image height in pixels (updated on img load)
+  const [prompt,      setPrompt]      = useState(() => data.imagePrompt ?? '')
+  const [generating,  setGenerating]  = useState(false)
+  const [genError,    setGenError]    = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  // Rendered image size (updated on img load)
   const [imgRenderedH,  setImgRenderedH]  = useState<number | null>(null)
+  const [imgRenderedW,  setImgRenderedW]  = useState<number | null>(null)
   const [imgBroken,     setImgBroken]     = useState(false)
   // Resolved display URL (blob URL from IndexedDB or plain URL)
   const [displayUrl,    setDisplayUrl]    = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const updateNode   = useProjectStore(s => s.updateNode)
+  const updateNode     = useProjectStore(s => s.updateNode)
   const currentProject = useProjectStore(s => s.currentProject)
+  const allEdges       = useProjectStore(s => s.edges)
+  const allNodes       = useProjectStore(s => s.nodes)
+
+  // Resolved blob URLs for connected reference images
+  const [refImages, setRefImages] = useState<string[]>([])
 
   const hasImage       = !!displayUrl && !imgBroken
+  const isUploadedOnly = data.imageSource === 'uploaded'
   const handlesVisible = isHovered || (!!selected && !dragging)
   const nodeLabel      = data.label || '图片'
+
+  // Sync imagePrompt from data (e.g. after node reload) into local state,
+  // but only when it actually changes and local state hasn't diverged
+  useEffect(() => {
+    if (data.imagePrompt !== undefined) {
+      setPrompt(data.imagePrompt)
+    }
+  }, [data.imagePrompt])
 
   // Resolve idb:// reference → blob URL for display
   useEffect(() => {
@@ -393,13 +530,89 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
     }
   }, [data.imageUrl])
 
+  // Resolve reference images from connected source nodes
+  useEffect(() => {
+    const incomingEdges = allEdges.filter(e => e.target === data.id)
+    const sourceImageUrls = incomingEdges
+      .map(e => allNodes.find(n => n.id === e.source))
+      .filter((n): n is NonNullable<typeof n> => !!n && !!n.imageUrl)
+      .map(n => n.imageUrl as string)
+
+    if (!sourceImageUrls.length) {
+      setRefImages([])
+      return
+    }
+
+    let cancelled = false
+    const revokeList: string[] = []
+
+    Promise.all(sourceImageUrls.map(u => resolveImageUrl(u))).then(urls => {
+      if (cancelled) return
+      const valid = urls.filter((u): u is string => !!u)
+      valid.forEach(u => { if (u.startsWith('blob:')) revokeList.push(u) })
+      setRefImages(valid)
+    })
+
+    return () => {
+      cancelled = true
+      revokeList.forEach(u => URL.revokeObjectURL(u))
+    }
+  }, [allEdges, allNodes, data.id])
+
   // Handle Y: center of the image area
+  const nodeW      = hasImage ? (imgRenderedW ?? NODE_W) : NODE_W
   const imageAreaH = hasImage ? (imgRenderedH ?? PLACEHOLDER_H) : PLACEHOLDER_H
   const handleY    = TITLE_H + imageAreaH / 2
 
   function handleUploadClick() {
     fileInputRef.current?.click()
   }
+
+  const handleGenerate = useCallback(async () => {
+    if (!prompt.trim() || generating) return
+    setGenerating(true)
+    setGenError(null)
+
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+
+    try {
+      // Call LightAI and get image URL
+      const imageUrl = await lightaiGenerateImage(prompt.trim(), ctrl.signal)
+
+      // Fetch image bytes — try direct first (pre-signed COS URLs are public),
+      // fall back to cors-proxy if blocked by CORS
+      let resp: Response
+      try {
+        resp = await fetch(imageUrl, { signal: ctrl.signal })
+      } catch {
+        // CORS blocked — retry via cors-proxy
+        const encoded = encodeURIComponent(imageUrl)
+        resp = await fetch(`/api/cors-proxy/${encoded}`, { signal: ctrl.signal })
+      }
+      if (!resp.ok) throw new Error(`下载图片失败 ${resp.status}`)
+      const blob = await resp.blob()
+      const ext = blob.type.includes('png') ? 'png' : 'jpg'
+      const file = new File([blob], `generated_${Date.now()}.${ext}`, { type: blob.type || 'image/jpeg' })
+
+      const projectId = currentProject?.id ?? 'local'
+      const ref = await saveImage(projectId, file)
+      const usedPrompt = prompt.trim()
+      updateNode(data.id, { imageUrl: ref, imageSource: 'generated', imagePrompt: usedPrompt } as Partial<ImageNodeData>)
+      // keep prompt visible so user can see what was used
+    } catch (err: unknown) {
+      if ((err as Error)?.name === 'AbortError' || (err as Error)?.message === '已取消') return
+      const msg = (err as Error)?.message || String(err)
+      setGenError(msg)
+      console.error('[ImageNode] LightAI 生成失败:', msg)
+    } finally {
+      setGenerating(false)
+      abortRef.current = null
+    }
+  }, [prompt, generating, currentProject, data.id, updateNode])
+
+  // Clean up pending request on unmount
+  useEffect(() => () => { abortRef.current?.abort() }, [])
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -410,13 +623,27 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
 
     const projectId = currentProject?.id ?? 'local'
     const ref = await saveImage(projectId, file)
-    updateNode(data.id, { imageUrl: ref } as Partial<ImageNodeData>)
+    updateNode(data.id, { imageUrl: ref, imageSource: 'uploaded' } as Partial<ImageNodeData>)
   }
 
   function handleImgLoad(e: React.SyntheticEvent<HTMLImageElement>) {
     const img = e.currentTarget
-    const naturalRatio = img.naturalHeight / img.naturalWidth
-    setImgRenderedH(Math.round(NODE_W * naturalRatio))
+    const ratio = img.naturalWidth / img.naturalHeight
+    // Cap by both MAX_IMG_H (height) and NODE_W (width), keep aspect ratio
+    let w: number, h: number
+    if (img.naturalWidth >= img.naturalHeight) {
+      // landscape: full node width, cap height
+      w = NODE_W
+      h = Math.min(NODE_W / ratio, MAX_IMG_H)
+      if (h < NODE_W / ratio) w = Math.round(h * ratio)
+    } else {
+      // portrait: cap height, derive width from ratio
+      h = Math.min(NODE_W / ratio, MAX_IMG_H)
+      w = Math.round(h * ratio)
+      if (w > NODE_W) { w = NODE_W; h = Math.round(w / ratio) }
+    }
+    setImgRenderedW(Math.round(w))
+    setImgRenderedH(Math.round(h))
     setImgBroken(false)
   }
 
@@ -424,14 +651,16 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
     // Blob URL expired or broken — treat as no image
     setImgBroken(true)
     setImgRenderedH(null)
+    setImgRenderedW(null)
   }
 
   return (
     <div
       style={{
         position: 'relative',
-        width: NODE_W,
+        width: nodeW,
         fontFamily: 'Inter, system-ui, sans-serif',
+        transition: 'width 150ms ease',
       }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -507,7 +736,11 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
                 src={displayUrl!} alt=""
                 onLoad={handleImgLoad}
                 onError={handleImgError}
-                style={{ width: '100%', height: 'auto', display: 'block' }}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  height: 'auto',
+                }}
               />
               {/* Replace button — always visible top-right */}
               <button
@@ -538,13 +771,31 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
             <div style={{
               height: PLACEHOLDER_H, background: '#141414',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
+              position: 'relative', overflow: 'hidden',
             }}>
-              <svg width="62" height="52" viewBox="0 0 62 52" fill="none">
-                <path d="M5 47L20 21L30 33.5L40 18L57 47H5Z"
-                  fill="#272727" stroke="#363636" strokeWidth="1.5" strokeLinejoin="round"/>
-                <circle cx="18" cy="12" r="5.5"
-                  fill="#272727" stroke="#363636" strokeWidth="1.5"/>
-              </svg>
+              {generating ? (
+                <>
+                  {/* Shimmer overlay */}
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    background: 'linear-gradient(90deg, #141414 0%, #1e1e1e 50%, #141414 100%)',
+                    backgroundSize: '200% 100%',
+                    animation: 'shimmer 1.5s infinite',
+                  }} />
+                  <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} } @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }`}</style>
+                  <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                    <Loader2 size={28} color="#555" style={{ animation: 'spin 1s linear infinite' }} />
+                    <span style={{ color: '#555', fontSize: 12 }}>正在生成图片...</span>
+                  </div>
+                </>
+              ) : (
+                <svg width="62" height="52" viewBox="0 0 62 52" fill="none">
+                  <path d="M5 47L20 21L30 33.5L40 18L57 47H5Z"
+                    fill="#272727" stroke="#363636" strokeWidth="1.5" strokeLinejoin="round"/>
+                  <circle cx="18" cy="12" r="5.5"
+                    fill="#272727" stroke="#363636" strokeWidth="1.5"/>
+                </svg>
+              )}
             </div>
 
             {/* Quick actions */}
@@ -584,10 +835,26 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
         )}
       </div>
 
-      {/* Prompt panel — expands below when selected, only when no image */}
-      {!hasImage && (
+      {/* Prompt panel — expands below when selected (both with and without image), hidden for upload-only nodes */}
+      {!isUploadedOnly && (
         <CollapsibleSection expanded={!!selected && !dragging}>
-          <ImagePromptPanel value={prompt} onChange={setPrompt} />
+          <ImagePromptPanel
+            value={prompt}
+            onChange={setPrompt}
+            onSend={handleGenerate}
+            generating={generating}
+            hasImage={hasImage}
+            refImages={refImages}
+          />
+          {genError && (
+            <div style={{
+              marginTop: 6, padding: '6px 10px',
+              background: '#2a1515', border: '1px solid #5a2a2a',
+              borderRadius: 8, color: '#f87171', fontSize: 11, lineHeight: 1.5,
+            }}>
+              ⚠️ {genError}
+            </div>
+          )}
         </CollapsibleSection>
       )}
 

@@ -291,6 +291,8 @@ export interface NodeData {
   // ImageNode extra fields
   imageUrl?: string
   nodeIndex?: number
+  imageSource?: 'uploaded' | 'generated'   // how the image was set
+  imagePrompt?: string                      // prompt used to generate the image
 }
 
 export interface EdgeData {
