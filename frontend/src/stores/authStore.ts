@@ -29,6 +29,20 @@ export const useAuthStore = create<AuthState>()(
           localStorage.setItem('comicflow_token', data.access_token)
           set({ user: data.user, token: data.access_token, isAuthenticated: true, isLoading: false })
         } catch (e) {
+          // DEV fallback: accept any email/password when backend is offline
+          if (import.meta.env.DEV) {
+            const mockUser: User = {
+              id: 'dev_user',
+              email,
+              username: email.split('@')[0],
+              plan: 'pro',
+              credits: 100,
+              created_at: new Date().toISOString(),
+            }
+            localStorage.setItem('comicflow_token', 'dev_token')
+            set({ user: mockUser, token: 'dev_token', isAuthenticated: true, isLoading: false })
+            return
+          }
           set({ isLoading: false })
           throw e
         }
@@ -54,6 +68,20 @@ export const useAuthStore = create<AuthState>()(
       loadUser: async () => {
         const token = localStorage.getItem('comicflow_token')
         if (!token) return
+        // DEV: restore mock session without hitting the backend
+        if (import.meta.env.DEV && token === 'dev_token') {
+          const stored = get().user
+          if (stored) {
+            set({ isAuthenticated: true, token })
+          } else {
+            set({
+              user: { id: 'dev_user', email: 'dev@comicai.local', username: 'dev', plan: 'pro', credits: 100, created_at: new Date().toISOString() },
+              token,
+              isAuthenticated: true,
+            })
+          }
+          return
+        }
         try {
           const user = await authApi.me()
           set({ user, token, isAuthenticated: true })

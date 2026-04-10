@@ -47,7 +47,7 @@ export default function Login() {
             <Zap className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="font-bold text-xl leading-none">ComicFlow</h1>
+            <h1 className="font-bold text-xl leading-none">ComicAI</h1>
             <p className="text-xs text-white/40 mt-0.5">AI 漫剧创作平台</p>
           </div>
         </div>

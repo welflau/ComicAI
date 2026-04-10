@@ -31,7 +31,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     OPENAI_MODEL_TEXT: str = "gpt-4o"
     ANTHROPIC_API_KEY: Optional[str] = None
-    ANTHROPIC_MODEL: str = "claude-3-5-sonnet-20241022"
+    ANTHROPIC_BASE_URL: Optional[str] = None
+    ANTHROPIC_CUSTOM_HEADERS: Optional[str] = None  # e.g. "x-api-key: xxxxx"
+    ANTHROPIC_MODEL: str = "claude-sonnet-4-6"
     STABILITY_API_KEY: Optional[str] = None
     REPLICATE_API_KEY: Optional[str] = None
     AZURE_TTS_KEY: Optional[str] = None
@@ -54,6 +56,12 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        env_file_encoding = "utf-8"
+
+    @classmethod
+    def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings, **kwargs):
+        # dotenv (.env file) takes priority over system environment variables
+        return dotenv_settings, env_settings, init_settings
 
 
 settings = Settings()

@@ -2,15 +2,20 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   Plus, Share2, Star, History, HelpCircle,
-  Loader2, User2, Coins,
+  Loader2, User2, Coins, User, LogOut, Settings,
   FileText, Image, Video, Scissors, Music, ScrollText,
   Upload, LayoutGrid,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useProjectStore } from '@/stores/projectStore'
+import { getViewportCenter } from '@/stores/viewportCenter'
+import { useLogStore } from '@/stores/logStore'
+import { useAuthStore } from '@/stores/authStore'
 import WorkflowCanvas from '@/components/canvas/WorkflowCanvas'
 import StoryboardView from '@/components/canvas/StoryboardView'
 import TimelineView from '@/components/canvas/TimelineView'
+import LogPanel from '@/components/panels/LogPanel'
+import SettingsModal from '@/components/settings/SettingsModal'
 import { projectsApi } from '@/api'
 
 // ─── Top bar brand/navigation icons ────────────────────────────────────────────
@@ -18,174 +23,274 @@ import { projectsApi } from '@/api'
 function TopBar({ projectName }: { projectName: string }) {
   const navigate = useNavigate()
   const [showMenu, setShowMenu] = useState(false)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const [name, setName] = useState(projectName || '未命名')
   const { currentProject } = useProjectStore()
+  const { user, logout } = useAuthStore()
+  const userMenuRef = useRef<HTMLDivElement>(null)
 
   // sync when project loads
   useEffect(() => {
     if (projectName) setName(projectName)
   }, [projectName])
 
+  // close user menu on outside click
+  useEffect(() => {
+    if (!showUserMenu) return
+    const handler = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showUserMenu])
+
+  // avatar letter
+  const avatarLetter = (user?.username ?? user?.email ?? 'A')[0].toUpperCase()
+
   return (
-    <header
-      style={{
-        height: 44,
-        background: '#111',
-        borderBottom: '1px solid #222',
-        display: 'flex',
-        alignItems: 'center',
-        padding: '0 16px',
-        gap: 0,
-        flexShrink: 0,
-        position: 'relative',
-        zIndex: 30,
-      }}
-    >
-      {/* Logo + dropdown */}
-      <div style={{ position: 'relative', marginRight: 16 }}>
-        <div
-          onClick={() => setShowMenu(v => !v)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
-        >
-          <div style={{
-            width: 22, height: 22,
-            background: 'linear-gradient(135deg, #4f6ef7, #8b5cf6)',
+    <>
+      <header
+        style={{
+          height: 44,
+          background: '#111',
+          borderBottom: '1px solid #222',
+          display: 'flex',
+          alignItems: 'center',
+          padding: '0 16px',
+          gap: 0,
+          flexShrink: 0,
+          position: 'relative',
+          zIndex: 30,
+        }}
+      >
+        {/* Logo + dropdown */}
+        <div style={{ position: 'relative', marginRight: 16 }}>
+          <div
+            onClick={() => setShowMenu(v => !v)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+          >
+            <div style={{
+              width: 22, height: 22,
+              background: 'linear-gradient(135deg, #4f6ef7, #8b5cf6)',
+              borderRadius: 5,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span style={{ fontSize: 10, color: '#fff', fontWeight: 700 }}>C</span>
+            </div>
+            <span style={{ fontSize: 13, color: '#ccc', fontWeight: 600, letterSpacing: 0.2 }}>ComicAI</span>
+          </div>
+
+          {showMenu && (
+            <>
+              <div
+                style={{ position: 'fixed', inset: 0, zIndex: 99 }}
+                onClick={() => setShowMenu(false)}
+              />
+              <div style={{
+                position: 'absolute', top: 30, left: 0, zIndex: 100,
+                background: '#1a1a1a', border: '1px solid #2a2a2a',
+                borderRadius: 8, minWidth: 140,
+                boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                overflow: 'hidden',
+              }}>
+                {[
+                  { label: '回到主页', action: () => navigate('/dashboard') },
+                  { label: '全部项目', action: () => navigate('/dashboard') },
+                  { label: '创建新项目', action: () => navigate('/dashboard') },
+                ].map(item => (
+                  <button
+                    key={item.label}
+                    onClick={() => { item.action(); setShowMenu(false) }}
+                    style={{
+                      display: 'block', width: '100%', textAlign: 'left',
+                      padding: '8px 14px', fontSize: 13, color: '#ccc',
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      borderBottom: '1px solid #222',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Project name — inline editable */}
+        <input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          style={{
+            fontSize: 13,
+            color: '#ccc',
+            marginRight: 'auto',
+            background: 'transparent',
+            border: '1px solid transparent',
             borderRadius: 5,
+            padding: '2px 8px',
+            outline: 'none',
+            minWidth: 80,
+            maxWidth: 280,
+            transition: 'border-color 0.15s',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.borderColor = '#333')}
+          onMouseLeave={e => { if (document.activeElement !== e.currentTarget) e.currentTarget.style.borderColor = 'transparent' }}
+          onFocus={e => (e.currentTarget.style.borderColor = '#4f6ef7')}
+          onBlur={e => (e.currentTarget.style.borderColor = 'transparent')}
+        />
+
+        {/* Right side controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* ComicAI Skills button */}
+          <button style={{
+            height: 28, padding: '0 12px',
+            background: '#1e1e1e', border: '1px solid #333',
+            borderRadius: 6, fontSize: 12, color: '#ccc',
+            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+          }}>
+            ComicAI Skills
+          </button>
+
+          {/* Share */}
+          <button style={{
+            width: 28, height: 28,
+            background: '#1e1e1e', border: '1px solid #333',
+            borderRadius: 6, cursor: 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <span style={{ fontSize: 10, color: '#fff', fontWeight: 700 }}>C</span>
+            <Share2 size={13} color="#888" />
+          </button>
+
+          {/* Notification bell */}
+          <button style={{
+            width: 28, height: 28, position: 'relative',
+            background: '#1e1e1e', border: '1px solid #333',
+            borderRadius: 6, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+            <span style={{
+              position: 'absolute', top: 2, right: 2,
+              width: 7, height: 7, background: '#ef4444',
+              borderRadius: '50%', border: '1px solid #111',
+            }} />
+          </button>
+
+          {/* User info chip */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            height: 28, padding: '0 8px',
+            background: '#1e1e1e', border: '1px solid #333', borderRadius: 6,
+          }}>
+            <User2 size={12} color="#888" />
+            <span style={{ fontSize: 11, color: '#888' }}>会员特惠39折</span>
+            <span style={{ fontSize: 10, color: '#555', margin: '0 2px' }}>•</span>
+            <Coins size={11} color="#f59e0b" />
+            <span style={{ fontSize: 11, color: '#aaa' }}>100</span>
+            <span style={{ fontSize: 11, color: '#666' }}>免费发布</span>
           </div>
-          <span style={{ fontSize: 13, color: '#ccc', fontWeight: 600, letterSpacing: 0.2 }}>ComicAI</span>
-        </div>
 
-        {showMenu && (
-          <>
-            {/* backdrop */}
+          {/* Avatar — user menu trigger */}
+          <div ref={userMenuRef} style={{ position: 'relative' }}>
             <div
-              style={{ position: 'fixed', inset: 0, zIndex: 99 }}
-              onClick={() => setShowMenu(false)}
-            />
-            <div style={{
-              position: 'absolute', top: 30, left: 0, zIndex: 100,
-              background: '#1a1a1a', border: '1px solid #2a2a2a',
-              borderRadius: 8, minWidth: 140,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
-              overflow: 'hidden',
-            }}>
-              {[
-                { label: '回到主页', action: () => navigate('/dashboard') },
-                { label: '全部项目', action: () => navigate('/dashboard') },
-                { label: '创建新项目', action: () => navigate('/dashboard') },
-              ].map(item => (
-                <button
-                  key={item.label}
-                  onClick={() => { item.action(); setShowMenu(false) }}
-                  style={{
-                    display: 'block', width: '100%', textAlign: 'left',
-                    padding: '8px 14px', fontSize: 13, color: '#ccc',
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    borderBottom: '1px solid #222',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#252525')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                >
-                  {item.label}
-                </button>
-              ))}
+              onClick={() => setShowUserMenu(v => !v)}
+              style={{
+                width: 28, height: 28,
+                background: showUserMenu ? '#6366f1' : '#4f6ef7',
+                borderRadius: 6,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'background 0.15s',
+                outline: showUserMenu ? '2px solid rgba(99,102,241,0.4)' : 'none',
+              }}
+              onMouseEnter={e => { if (!showUserMenu) (e.currentTarget as HTMLDivElement).style.background = '#6366f1' }}
+              onMouseLeave={e => { if (!showUserMenu) (e.currentTarget as HTMLDivElement).style.background = '#4f6ef7' }}
+            >
+              <span style={{ fontSize: 12, color: '#fff', fontWeight: 600 }}>{avatarLetter}</span>
             </div>
-          </>
-        )}
-      </div>
 
-      {/* Project name — inline editable */}
-      <input
-        value={name}
-        onChange={e => setName(e.target.value)}
-        style={{
-          fontSize: 13,
-          color: '#ccc',
-          marginRight: 'auto',
-          background: 'transparent',
-          border: '1px solid transparent',
-          borderRadius: 5,
-          padding: '2px 8px',
-          outline: 'none',
-          minWidth: 80,
-          maxWidth: 280,
-          transition: 'border-color 0.15s',
-        }}
-        onMouseEnter={e => (e.currentTarget.style.borderColor = '#333')}
-        onMouseLeave={e => { if (document.activeElement !== e.currentTarget) e.currentTarget.style.borderColor = 'transparent' }}
-        onFocus={e => (e.currentTarget.style.borderColor = '#4f6ef7')}
-        onBlur={e => (e.currentTarget.style.borderColor = 'transparent')}
-      />
+            {showUserMenu && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+                background: '#1a1a1a', border: '1px solid #2e2e2e',
+                borderRadius: 12, minWidth: 190,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                overflow: 'hidden', zIndex: 200,
+              }}>
+                {/* User info */}
+                <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid #252525' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                    <div style={{
+                      width: 34, height: 34, borderRadius: '50%',
+                      background: 'rgba(99,102,241,0.2)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexShrink: 0,
+                    }}>
+                      <User size={16} color="#818cf8" />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#e0e0e0' }}>
+                        {user?.username ?? '用户'}
+                      </div>
+                      {user?.email && (
+                        <div style={{ fontSize: 11, color: '#555', marginTop: 1 }}>
+                          {user.email}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-      {/* Right side controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {/* ComicAI Skills button */}
-        <button style={{
-          height: 28, padding: '0 12px',
-          background: '#1e1e1e', border: '1px solid #333',
-          borderRadius: 6, fontSize: 12, color: '#ccc',
-          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
-        }}>
-          ComicAI Skills
-        </button>
-
-        {/* Share */}
-        <button style={{
-          width: 28, height: 28,
-          background: '#1e1e1e', border: '1px solid #333',
-          borderRadius: 6, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Share2 size={13} color="#888" />
-        </button>
-
-        {/* Notification bell */}
-        <button style={{
-          width: 28, height: 28, position: 'relative',
-          background: '#1e1e1e', border: '1px solid #333',
-          borderRadius: 6, cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-          {/* badge */}
-          <span style={{
-            position: 'absolute', top: 2, right: 2,
-            width: 7, height: 7, background: '#ef4444',
-            borderRadius: '50%', border: '1px solid #111',
-          }} />
-        </button>
-
-        {/* User info chip */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          height: 28, padding: '0 8px',
-          background: '#1e1e1e', border: '1px solid #333', borderRadius: 6,
-        }}>
-          <User2 size={12} color="#888" />
-          <span style={{ fontSize: 11, color: '#888' }}>会员特惠39折</span>
-          <span style={{ fontSize: 10, color: '#555', margin: '0 2px' }}>•</span>
-          <Coins size={11} color="#f59e0b" />
-          <span style={{ fontSize: 11, color: '#aaa' }}>100</span>
-          <span style={{ fontSize: 11, color: '#666' }}>免费发布</span>
+                {/* Menu items */}
+                <div style={{ padding: '6px 0' }}>
+                  {[
+                    { icon: Settings, label: '系统设置', onClick: () => { setShowSettings(true); setShowUserMenu(false) }, danger: false },
+                    { icon: LogOut,   label: '退出登录',  onClick: () => { logout(); navigate('/login') }, danger: true },
+                  ].map(({ icon: Icon, label, onClick, danger }) => (
+                    <button
+                      key={label}
+                      onClick={onClick}
+                      style={{
+                        width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+                        padding: '8px 14px', background: 'none', border: 'none',
+                        cursor: 'pointer', fontSize: 13,
+                        color: danger ? '#f87171' : '#aaa',
+                        transition: 'background 0.1s, color 0.1s',
+                        textAlign: 'left',
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.background = '#242424'
+                        e.currentTarget.style.color = danger ? '#fca5a5' : '#e0e0e0'
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.background = 'none'
+                        e.currentTarget.style.color = danger ? '#f87171' : '#aaa'
+                      }}
+                    >
+                      <Icon size={14} />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
+      </header>
 
-        {/* Avatar */}
-        <div style={{
-          width: 28, height: 28,
-          background: '#4f6ef7', borderRadius: 6,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          cursor: 'pointer',
-        }}>
-          <span style={{ fontSize: 12, color: '#fff', fontWeight: 600 }}>A</span>
-        </div>
-      </div>
-    </header>
+      {/* Settings modal */}
+      {showSettings && (
+        <SettingsModal onClose={() => setShowSettings(false)} />
+      )}
+    </>
   )
 }
 
@@ -302,7 +407,7 @@ const ADD_NODE_ITEMS = [
   { id: 'video',            icon: <Video size={20} />,     label: '视频',    badge: null,   desc: '创意广告、动画、电影' },
   { id: 'video_compose',    icon: <Scissors size={20} />,  label: '视频合成', badge: 'Beta', desc: '多个视频片段合为一个' },
   { id: 'audio',            icon: <Music size={20} />,     label: '音频',    badge: null,   desc: '音效、配音、音乐' },
-  { id: 'libtv_storyboard', icon: <ScrollText size={20} />,label: '脚本',    badge: 'Beta', desc: '创意脚本、生成故事板' },
+  { id: 'libtv_script_gen', icon: <ScrollText size={20} />,label: '脚本',    badge: 'Beta', desc: '创意脚本、AI 生成故事板' },
 ]
 
 const ADD_RESOURCE_ITEMS = [
@@ -340,16 +445,18 @@ function LeftSidebar() {
 
   const handleAddNode = (typeId: string) => {
     // Only add supported node types
-    if (!['libtv_script', 'libtv_storyboard', 'libtv_image'].includes(typeId)) return
+    if (!['libtv_script', 'libtv_script_gen', 'libtv_storyboard', 'libtv_image'].includes(typeId)) return
     const id = `${typeId}_${Date.now()}`
-    // Offset new node slightly from existing ones
-    const offset = nodes.length * 20
+    // Place node at current viewport centre with a small random jitter so
+    // multiple nodes don't stack exactly on top of each other
+    const centre = getViewportCenter()
+    const jitter = () => (Math.random() - 0.5) * 60
     addNode({
       id,
       type: typeId as any,
-      label: typeId === 'libtv_script' ? '文本' : typeId === 'libtv_image' ? '图片' : '脚本',
-      category: typeId === 'libtv_script' ? 'input' : typeId === 'libtv_storyboard' ? 'process' : 'output',
-      position: { x: 100 + offset, y: 100 + offset },
+      label: typeId === 'libtv_script' ? '文本' : typeId === 'libtv_script_gen' ? '脚本' : typeId === 'libtv_image' ? '图片' : '分镜',
+      category: typeId === 'libtv_script' || typeId === 'libtv_script_gen' ? 'input' : typeId === 'libtv_storyboard' ? 'process' : 'output',
+      position: { x: centre.x + jitter(), y: centre.y + jitter() },
       config: {},
     })
     setActive(null)
@@ -751,6 +858,10 @@ export default function ProjectEditor() {
   } = useProjectStore()
 
   const [runningTask, setRunningTask] = useState<string | null>(null)
+  const [logOpen, setLogOpen] = useState(false)
+
+  // Badge: count unread errors/warns
+  const errorCount = useLogStore(s => s.entries.filter(e => e.level === 'error' || e.level === 'warn').length)
 
   useEffect(() => {
     if (projectId) {
@@ -774,18 +885,76 @@ export default function ProjectEditor() {
       {/* Top bar */}
       <TopBar projectName={currentProject?.name || '未命名'} />
 
-      {/* Middle: canvas fills full width, sidebar floats on top */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        {activeView === 'workflow' && <WorkflowCanvas />}
-        {activeView === 'storyboard' && <StoryboardView />}
-        {activeView === 'timeline' && <TimelineView />}
-        {activeView === 'preview' && <PreviewView />}
+      {/* Middle: canvas fills full width, sidebars float on top */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex' }}>
+        {/* Canvas area */}
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+          {activeView === 'workflow' && <WorkflowCanvas />}
+          {activeView === 'storyboard' && <StoryboardView />}
+          {activeView === 'timeline' && <TimelineView />}
+          {activeView === 'preview' && <PreviewView />}
 
-        {/* Floating sidebar — only on workflow view */}
-        {activeView === 'workflow' && (
-          <div style={{ position: 'absolute', top: '50%', left: 16, transform: 'translateY(-50%)', zIndex: 20 }}>
-            <LeftSidebar />
-          </div>
+          {/* Floating left sidebar — only on workflow view */}
+          {activeView === 'workflow' && (
+            <div style={{ position: 'absolute', top: '50%', left: 16, transform: 'translateY(-50%)', zIndex: 20 }}>
+              <LeftSidebar />
+            </div>
+          )}
+
+          {/* Floating Log dock toggle button — right side */}
+          {!logOpen && (
+            <div style={{ position: 'absolute', top: '50%', right: 16, transform: 'translateY(-50%)', zIndex: 20 }}>
+              <button
+                onClick={() => setLogOpen(true)}
+                title="打开日志面板"
+                style={{
+                  width: 44,
+                  background: '#1a1a1a',
+                  border: '1px solid #2a2a2a',
+                  borderRadius: 12,
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.55)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  padding: '10px 0',
+                  gap: 4,
+                  cursor: 'pointer',
+                  position: 'relative',
+                }}
+              >
+                <span style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 36, height: 36, borderRadius: 8,
+                  color: '#555',
+                  transition: 'color 0.15s, background 0.15s',
+                }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = '#ccc'; (e.currentTarget as HTMLElement).style.background = '#2a2a2a' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = '#555'; (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                >
+                  {/* Terminal/log icon */}
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="4 17 10 11 4 5"/>
+                    <line x1="12" y1="19" x2="20" y2="19"/>
+                  </svg>
+                </span>
+                <span style={{ fontSize: 10, color: '#555', letterSpacing: 0.2 }}>日志</span>
+                {/* Error/warn badge */}
+                {errorCount > 0 && (
+                  <span style={{
+                    position: 'absolute', top: 6, right: 6,
+                    width: 8, height: 8,
+                    background: '#ef4444', borderRadius: '50%',
+                    border: '1px solid #1a1a1a',
+                  }} />
+                )}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Log panel — slides in from right */}
+        {logOpen && (
+          <LogPanel onClose={() => setLogOpen(false)} />
         )}
       </div>
 

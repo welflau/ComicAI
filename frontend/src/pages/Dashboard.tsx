@@ -1,14 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { clsx } from 'clsx'
 import {
   Plus, Search, Film, MoreHorizontal, Trash2,
-  Clock, Grid3X3, List, LogOut, User, Zap, Loader2
+  Clock, Grid3X3, List, LogOut, User, Zap, Loader2, Settings
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { projectsApi } from '@/api'
 import { useAuthStore } from '@/stores/authStore'
+import { useLocalProjectsStore } from '@/stores/localProjectsStore'
+import SettingsModal from '@/components/settings/SettingsModal'
 import type { Project } from '@/types'
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
@@ -22,6 +24,7 @@ function CreateProjectModal({ onClose, onCreate }: { onClose: () => void; onCrea
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
   const [loading, setLoading] = useState(false)
+  const localCreate = useLocalProjectsStore(s => s.createProject)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -33,6 +36,14 @@ function CreateProjectModal({ onClose, onCreate }: { onClose: () => void; onCrea
       toast.success('项目创建成功')
       onClose()
     } catch {
+      // DEV fallback: save locally and navigate to local project
+      if (import.meta.env.DEV) {
+        const project = localCreate(name.trim(), desc.trim())
+        onCreate(project)
+        toast.success('项目已创建（本地模式）')
+        onClose()
+        return
+      }
       toast.error('创建失败，请重试')
     } finally {
       setLoading(false)
@@ -194,18 +205,29 @@ function ProjectCard({
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
+  const localProjects = useLocalProjectsStore(s => s.projects)
+  const localDelete = useLocalProjectsStore(s => s.deleteProject)
   const [projects, setProjects] = useState<Project[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [showCreate, setShowCreate] = useState(false)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const userMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     projectsApi.list()
       .then(setProjects)
-      .catch(() => toast.error('加载项目失败'))
+      .catch(() => {
+        // DEV: backend offline, use local projects
+        if (!import.meta.env.DEV) toast.error('加载项目失败')
+      })
       .finally(() => setLoading(false))
   }, [])
+
+  // Merge server projects with local ones (local shown when backend is offline)
+  const allProjects = projects.length > 0 ? projects : localProjects
 
   const handleDelete = async (id: string) => {
     if (!confirm('确认删除该项目？此操作不可撤销。')) return
@@ -214,25 +236,48 @@ export default function Dashboard() {
       setProjects(prev => prev.filter(p => p.id !== id))
       toast.success('项目已删除')
     } catch {
+      if (import.meta.env.DEV) {
+        localDelete(id)
+        setProjects(prev => prev.filter(p => p.id !== id))
+        toast.success('项目已删除')
+        return
+      }
       toast.error('删除失败')
     }
   }
 
-  const filtered = projects.filter(p =>
+  const filtered = allProjects.filter(p =>
     !search || p.name.toLowerCase().includes(search.toLowerCase())
   )
+
+  const handleCreate = (p: Project) => {
+    setProjects(prev => [p, ...prev])
+    navigate(`/project/${p.id}`)
+  }
+
+  // Close user menu on outside click
+  useEffect(() => {
+    if (!showUserMenu) return
+    const handle = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setShowUserMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [showUserMenu])
 
   return (
     <div className="min-h-screen bg-canvas-bg">
       {/* Header */}
-      <header className="border-b border-canvas-border bg-canvas-surface sticky top-0 z-20">
+      <header className="border-b border-canvas-border sticky top-0 z-20" style={{ background: '#111' }}>
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center gap-4">
           {/* Logo */}
           <div className="flex items-center gap-2 mr-6">
             <div className="w-8 h-8 rounded-xl bg-primary-500 flex items-center justify-center">
               <Zap className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold text-white">ComicFlow</span>
+            <span className="font-bold text-white">ComicAI</span>
           </div>
 
           {/* Search */}
@@ -275,14 +320,82 @@ export default function Dashboard() {
             </button>
 
             {/* User menu */}
-            <div className="flex items-center gap-2 pl-3 border-l border-canvas-border">
-              <div className="w-8 h-8 rounded-full bg-primary-500/20 flex items-center justify-center">
-                <User className="w-4 h-4 text-primary-400" />
-              </div>
-              <span className="text-sm text-white/70 hidden sm:block">{user?.username}</span>
-              <button onClick={logout} className="btn-ghost p-1.5 text-white/40 hover:text-white/70">
-                <LogOut className="w-4 h-4" />
+            <div ref={userMenuRef} className="relative pl-3 border-l border-canvas-border">
+              <button
+                onClick={() => setShowUserMenu(v => !v)}
+                className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+              >
+                <div className="w-8 h-8 rounded-full bg-primary-500/20 flex items-center justify-center">
+                  <User className="w-4 h-4 text-primary-400" />
+                </div>
+                <span className="text-sm text-white/70 hidden sm:block">{user?.username}</span>
               </button>
+
+              {showUserMenu && (
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+                  background: '#1a1a1a', border: '1px solid #2e2e2e',
+                  borderRadius: 12, minWidth: 180,
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                  overflow: 'hidden', zIndex: 50,
+                }}>
+                  {/* User info */}
+                  <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid #252525' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                      <div style={{
+                        width: 34, height: 34, borderRadius: '50%',
+                        background: 'rgba(99,102,241,0.2)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                      }}>
+                        <User size={16} color="#818cf8" />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#e0e0e0' }}>
+                          {user?.username ?? '用户'}
+                        </div>
+                        {user?.email && (
+                          <div style={{ fontSize: 11, color: '#555', marginTop: 1 }}>
+                            {user.email}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Menu items */}
+                  <div style={{ padding: '6px 0' }}>
+                    {[
+                      { icon: Settings, label: '系统设置', onClick: () => { setShowSettings(true); setShowUserMenu(false) } },
+                      { icon: LogOut,   label: '退出登录',  onClick: logout, danger: true },
+                    ].map(({ icon: Icon, label, onClick, danger }) => (
+                      <button
+                        key={label}
+                        onClick={onClick}
+                        style={{
+                          width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+                          padding: '8px 14px', background: 'none', border: 'none',
+                          cursor: 'pointer', fontSize: 13,
+                          color: danger ? '#f87171' : '#aaa',
+                          transition: 'background 0.1s, color 0.1s',
+                          textAlign: 'left',
+                        }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.background = '#242424'
+                          e.currentTarget.style.color = danger ? '#fca5a5' : '#e0e0e0'
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.background = 'none'
+                          e.currentTarget.style.color = danger ? '#f87171' : '#aaa'
+                        }}
+                      >
+                        <Icon size={14} />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -293,9 +406,9 @@ export default function Dashboard() {
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4 mb-8">
           {[
-            { label: '总项目', value: projects.length, color: 'text-primary-400' },
-            { label: '制作中', value: projects.filter(p => p.status === 'in_progress').length, color: 'text-yellow-400' },
-            { label: '已完成', value: projects.filter(p => p.status === 'completed').length, color: 'text-green-400' },
+            { label: '总项目', value: allProjects.length, color: 'text-primary-400' },
+            { label: '制作中', value: allProjects.filter(p => p.status === 'in_progress').length, color: 'text-yellow-400' },
+            { label: '已完成', value: allProjects.filter(p => p.status === 'completed').length, color: 'text-green-400' },
           ].map(stat => (
             <div key={stat.label} className="bg-canvas-surface rounded-xl p-4 border border-canvas-border">
               <p className="text-xs text-white/40 mb-1">{stat.label}</p>
@@ -358,8 +471,15 @@ export default function Dashboard() {
         {showCreate && (
           <CreateProjectModal
             onClose={() => setShowCreate(false)}
-            onCreate={p => setProjects(prev => [p, ...prev])}
+            onCreate={handleCreate}
           />
+        )}
+      </AnimatePresence>
+
+      {/* Settings modal */}
+      <AnimatePresence>
+        {showSettings && (
+          <SettingsModal onClose={() => setShowSettings(false)} />
         )}
       </AnimatePresence>
     </div>

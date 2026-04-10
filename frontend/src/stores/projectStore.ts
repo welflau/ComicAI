@@ -39,6 +39,7 @@ interface ProjectState {
   setActiveView: (view: 'workflow' | 'storyboard' | 'timeline' | 'preview') => void
   selectNodes: (ids: string[]) => void
   addNode: (node: NodeData) => void
+  addEdge: (edge: EdgeData) => void
   updateNode: (id: string, updates: Partial<NodeData>) => void
   deleteNode: (id: string) => void
 
@@ -165,6 +166,8 @@ export const useProjectStore = create<ProjectState>()(
 
     addNode: (node) => set((state) => ({ nodes: [...state.nodes, node] })),
 
+    addEdge: (edge) => set((state) => ({ edges: [...state.edges, edge] })),
+
     updateNode: (id, updates) => set((state) => ({
       nodes: state.nodes.map(n => n.id === id ? { ...n, ...updates } : n)
     })),
@@ -240,7 +243,8 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
         position: { x: 60, y: 120 },
         config: {},
         title: '新剧本',
-        content: '',
+        initialMode: 'content',
+        content: `第一幕：相遇\n\n深夜的咖啡馆，只剩最后一盏灯。\n\n林夏坐在靠窗的位置，手边是一杯已经凉透的拿铁，她的目光落在窗外的雨幕上，出神。\n\n推门声。\n\n一个男人走进来，雨水打湿了他的肩头。他环顾四周，目光最终停在林夏身旁的空椅子上。\n\n"这里有人吗？"\n\n林夏抬起头，看了他一眼，摇了摇头。`,
       } as NodeData,
       {
         id: 'stv_storyboard_1',
@@ -383,6 +387,7 @@ function getDefaultNodes(): NodeData[] {
       position: { x: 60, y: 80 },
       config: {},
       title: '第一章：红岸基地',
+      initialMode: 'content',
       content: `1967年的冬天，大兴安岭雷达站比往年来得更早。\n\n凛冽的北风从西伯利亚呼啸而来，裹挟着细碎的冰晶，在雷达站的山脊上掀起一片茫茫雪雾。气温已经降到零下三十度，连空气都仿佛被冻成了固体，每一次呼吸像是在吞咽碎玻璃。\n\n叶文洁站在红岸基地的观测平台上，仰望着苍穹。\n\n雷达站大型抛物面天线在夜色中静默矗立，如一只巨眼深邃的眸。`,
     } as NodeData,
     {

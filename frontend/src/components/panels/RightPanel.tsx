@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { clsx } from 'clsx'
-import { Send, Bot, User, Settings, Activity, ChevronDown, ChevronRight, Play, X } from 'lucide-react'
+import { Send, Bot, User, Settings, Activity, Save, FileText } from 'lucide-react'
 import { useProjectStore } from '@/stores/projectStore'
-import { aiApi } from '@/api'
+import { aiApi, projectsApi } from '@/api'
 import type { NodeData, GenerationTask } from '@/types'
+import toast from 'react-hot-toast'
 
 // ── Properties Panel ──────────────────────────────────────────────────────────
 
@@ -30,7 +31,7 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
 }
 
 function PropertiesPanel({ nodeId }: { nodeId: string }) {
-  const { nodes, updateNode } = useProjectStore()
+  const { nodes, updateNode, currentProject, scripts } = useProjectStore()
   const node = nodes.find(n => n.id === nodeId)
   if (!node) return null
 
@@ -38,7 +39,7 @@ function PropertiesPanel({ nodeId }: { nodeId: string }) {
   const badge = STATUS_BADGE[status] || STATUS_BADGE.idle
 
   return (
-    <div className="p-3 space-y-4">
+    <div className="p-3 space-y-4 h-full overflow-y-auto">
       {/* Node header */}
       <div>
         <div className="flex items-center justify-between mb-1">
@@ -64,8 +65,13 @@ function PropertiesPanel({ nodeId }: { nodeId: string }) {
         </div>
       )}
 
-      {/* Config fields */}
-      {node.config && Object.keys(node.config).length > 0 && (
+      {/* Script input node: show script editor */}
+      {node.type === 'script_input' && currentProject && (
+        <ScriptEditor projectId={currentProject.id} existingScript={scripts[0] || null} />
+      )}
+
+      {/* Other nodes: config fields */}
+      {node.type !== 'script_input' && node.config && Object.keys(node.config).length > 0 && (
         <div>
           <p className="text-[11px] text-white/40 uppercase tracking-wider mb-2">配置参数</p>
           <div className="space-y-2">
@@ -84,6 +90,80 @@ function PropertiesPanel({ nodeId }: { nodeId: string }) {
             ))}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ── Script Editor (inside Properties Panel) ────────────────────────────────────
+
+function ScriptEditor({ projectId, existingScript }: {
+  projectId: string
+  existingScript: { id: string; title?: string; content?: string } | null
+}) {
+  const [title, setTitle] = useState(existingScript?.title || '未命名剧本')
+  const [content, setContent] = useState(existingScript?.content || '')
+  const [saving, setSaving] = useState(false)
+  const { loadProject } = useProjectStore()
+
+  // Sync if existingScript changes (e.g. after load)
+  useEffect(() => {
+    if (existingScript) {
+      setTitle(existingScript.title || '未命名剧本')
+      setContent(existingScript.content || '')
+    }
+  }, [existingScript?.id])
+
+  const handleSave = async () => {
+    if (!content.trim()) { toast.error('请先输入剧本内容'); return }
+    setSaving(true)
+    try {
+      if (existingScript) {
+        await projectsApi.updateScript(projectId, existingScript.id, { title, content })
+      } else {
+        await projectsApi.createScript(projectId, { title, content })
+      }
+      await loadProject(projectId)
+      toast.success('剧本已保存')
+    } catch {
+      toast.error('保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1 text-[11px] text-white/40 uppercase tracking-wider">
+        <FileText className="w-3 h-3" />
+        <span>剧本内容</span>
+      </div>
+      <input
+        type="text"
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+        placeholder="剧本标题"
+        className="input-base w-full text-xs py-1.5"
+      />
+      <textarea
+        value={content}
+        onChange={e => setContent(e.target.value)}
+        placeholder={"在此输入剧本内容...\n\n例如：\n第一幕：主角出场\n主角走在街上，突然发现一只小猫..."}
+        rows={14}
+        className="input-base w-full text-xs py-2 resize-none leading-relaxed"
+      />
+      <button
+        onClick={handleSave}
+        disabled={saving}
+        className="btn-primary w-full py-1.5 text-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+      >
+        <Save className="w-3 h-3" />
+        {saving ? '保存中...' : existingScript ? '更新剧本' : '创建剧本'}
+      </button>
+      {existingScript && (
+        <p className="text-[10px] text-white/20 text-center">
+          已有剧本 · 点击节点"解析剧本"开始处理
+        </p>
       )}
     </div>
   )
@@ -307,13 +387,24 @@ type RightTab = 'properties' | 'ai' | 'log'
 
 export default function RightPanel() {
   const [activeTab, setActiveTab] = useState<RightTab>('properties')
-  const { selectedNodeIds } = useProjectStore()
+  const { selectedNodeIds, tasks } = useProjectStore()
 
-  const tabs: { id: RightTab; label: string }[] = [
+  const runningCount = tasks.filter(t => t.status === 'running' || t.status === 'pending').length
+
+  const tabs: { id: RightTab; label: string; badge?: number }[] = [
     { id: 'properties', label: '属性' },
     { id: 'ai', label: 'AI 助手' },
-    { id: 'log', label: '运行日志' },
+    { id: 'log', label: '运行日志', badge: runningCount || undefined },
   ]
+
+  // Auto-switch to log tab when a task starts running
+  const prevRunningCount = useRef(0)
+  useEffect(() => {
+    if (runningCount > prevRunningCount.current) {
+      setActiveTab('log')
+    }
+    prevRunningCount.current = runningCount
+  }, [runningCount])
 
   return (
     <div className="h-full flex flex-col bg-canvas-surface border-l border-canvas-border">
@@ -324,13 +415,18 @@ export default function RightPanel() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={clsx(
-              'flex-1 py-2.5 text-xs font-medium transition-colors',
+              'flex-1 py-2.5 text-xs font-medium transition-colors relative',
               activeTab === tab.id
                 ? 'text-white border-b-2 border-primary-500'
                 : 'text-white/40 hover:text-white/70'
             )}
           >
             {tab.label}
+            {tab.badge ? (
+              <span className="absolute top-1.5 right-2 w-4 h-4 rounded-full bg-yellow-400 text-black text-[9px] font-bold flex items-center justify-center">
+                {tab.badge}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>

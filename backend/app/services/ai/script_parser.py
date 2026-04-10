@@ -76,7 +76,17 @@ class ScriptParser:
                 self._llm_client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
             elif settings.ANTHROPIC_API_KEY:
                 import anthropic
-                self._llm_client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+                client_kwargs = {"api_key": settings.ANTHROPIC_API_KEY}
+                if settings.ANTHROPIC_BASE_URL:
+                    client_kwargs["base_url"] = settings.ANTHROPIC_BASE_URL
+                if settings.ANTHROPIC_CUSTOM_HEADERS:
+                    headers = {}
+                    for line in settings.ANTHROPIC_CUSTOM_HEADERS.split(","):
+                        if ":" in line:
+                            k, v = line.split(":", 1)
+                            headers[k.strip()] = v.strip()
+                    client_kwargs["default_headers"] = headers
+                self._llm_client = anthropic.AsyncAnthropic(**client_kwargs)
         return self._llm_client
 
     async def parse_script(self, script_content: str) -> dict:

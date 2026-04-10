@@ -52,6 +52,7 @@ function ComicFlowNode({ data, selected }: ComicNodeProps) {
   const Icon = NODE_ICONS[data.type] || Cpu
   const isInput = data.category === 'input'
   const isOutput = data.category === 'output'
+  const handlesVisible = isHovered || selected
 
   return (
     <div
@@ -59,8 +60,8 @@ function ComicFlowNode({ data, selected }: ComicNodeProps) {
         'node-card min-w-[160px] max-w-[200px] border-2',
         CATEGORY_COLORS[data.category],
         selected ? 'ring-2 ring-white/30 scale-105' : 'scale-100',
-        isHovered ? 'shadow-lg shadow-black/40' : ''
       )}
+      style={{ transition: 'box-shadow 150ms ease' }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -70,6 +71,11 @@ function ComicFlowNode({ data, selected }: ComicNodeProps) {
           type="target"
           position={Position.Left}
           className={clsx('!w-3 !h-3', CATEGORY_HANDLE_COLORS[data.category])}
+          style={{
+            opacity: handlesVisible ? 1 : 0,
+            pointerEvents: handlesVisible ? 'auto' : 'none',
+            transition: 'opacity 150ms ease',
+          }}
         />
       )}
 
@@ -125,6 +131,11 @@ function ComicFlowNode({ data, selected }: ComicNodeProps) {
           type="source"
           position={Position.Right}
           className={clsx('!w-3 !h-3', CATEGORY_HANDLE_COLORS[data.category])}
+          style={{
+            opacity: handlesVisible ? 1 : 0,
+            pointerEvents: handlesVisible ? 'auto' : 'none',
+            transition: 'opacity 150ms ease',
+          }}
         />
       )}
     </div>

@@ -14,10 +14,10 @@ export default {
           900: '#1a2a7a',
         },
         canvas: {
-          bg: '#0F1117',
-          grid: '#1E2330',
-          surface: '#161B27',
-          border: '#2D3347',
+          bg: '#0d0d0d',
+          grid: '#1a1a1a',
+          surface: '#1a1a1a',
+          border: '#2e2e2e',
         },
         node: {
           input: '#3B82F6',    // blue - input nodes

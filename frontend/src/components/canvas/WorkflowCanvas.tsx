@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useEffect, useRef, useState } from 'react'
 import ReactFlow, {
   Background,
-  Controls,
+  MiniMap,
   BackgroundVariant,
   useNodesState,
   useEdgesState,
@@ -12,17 +12,20 @@ import ReactFlow, {
   ReactFlowProvider,
   SelectionMode,
   useReactFlow,
+  Panel,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
 import ComicFlowNode from '@/components/nodes/ComicFlowNode'
 import ScriptNode from '@/components/nodes/ScriptNode'
+import ScriptGenNode from '@/components/nodes/ScriptGenNode'
 import StoryboardTableNode from '@/components/nodes/StoryboardTableNode'
 import ImageNode from '@/components/nodes/ImageNode'
 import TemplatePicker from '@/components/canvas/TemplatePicker'
 import CanvasContextMenu from '@/components/canvas/CanvasContextMenu'
 import NodeContextMenu from '@/components/canvas/NodeContextMenu'
 import { useProjectStore } from '@/stores/projectStore'
+import { registerViewportCenter } from '@/stores/viewportCenter'
 import type { NodeData, EdgeData } from '@/types'
 
 const nodeTypes = {
@@ -39,6 +42,7 @@ const nodeTypes = {
   preview: ComicFlowNode,
   export: ComicFlowNode,
   libtv_script: ScriptNode,
+  libtv_script_gen: ScriptGenNode,
   libtv_storyboard: StoryboardTableNode,
   libtv_image: ImageNode,
 }
@@ -70,6 +74,7 @@ function WorkflowCanvasInner() {
   const [paneMenu, setPaneMenu]   = useState<{ x: number; y: number; flowX: number; flowY: number } | null>(null)
   const [nodeMenu, setNodeMenu]   = useState<{ x: number; y: number; nodeId: string } | null>(null)
   const [clipboard, setClipboard] = useState<Node | null>(null)
+  const [minimapVisible, setMinimapVisible] = useState(true)
 
   const rfNodes = useMemo(() => storeNodes.map(toRFNode), [storeNodes])
   const rfEdges = useMemo(() => storeEdges.map(toRFEdge), [storeEdges])
@@ -80,7 +85,28 @@ function WorkflowCanvasInner() {
   const prevStoreNodes = useRef(storeNodes)
   const prevStoreEdges = useRef(storeEdges)
 
-  const { project } = useReactFlow()
+  const { project, getViewport, zoomIn, zoomOut, fitView, setViewport } = useReactFlow()
+  const [zoom, setZoom] = useState(100)
+  const [snapToGrid, setSnapToGrid] = useState(false)
+
+  // Track zoom level
+  const onMoveEnd = useCallback((_: unknown, vp: { zoom: number }) => {
+    setZoom(Math.round(vp.zoom * 100))
+  }, [])
+
+  // Register viewport-centre helper so LeftSidebar can place new nodes in view
+  useEffect(() => {
+    registerViewportCenter(() => {
+      const vp = getViewport()
+      // canvas container size (approximation via window; accurate enough)
+      const w = window.innerWidth
+      const h = window.innerHeight
+      return {
+        x: (-vp.x + w / 2) / vp.zoom,
+        y: (-vp.y + h / 2) / vp.zoom,
+      }
+    })
+  }, [getViewport])
 
   // Sync store → ReactFlow, preserving selection state
   useEffect(() => {
@@ -230,15 +256,120 @@ function WorkflowCanvasInner() {
         selectionOnDrag={true}
         selectionMode={SelectionMode.Partial}
         panOnDrag={[1]}
+        snapToGrid={snapToGrid}
+        snapGrid={[16, 16]}
+        onMoveEnd={onMoveEnd}
         panOnScroll={false}
         deleteKeyCode="Delete"
       >
         <Background variant={BackgroundVariant.Dots} gap={28} size={1} color="#222" />
-        <Controls
-          className="!bottom-4 !left-4"
-          showInteractive={false}
-          style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 8, gap: 0 }}
-        />
+
+        {/* MiniMap — above toolbar when visible */}
+        {minimapVisible && (
+          <MiniMap
+            position="bottom-left"
+            className="!bottom-[60px] !left-4 !m-0"
+            style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 10 }}
+            maskColor="rgba(0,0,0,0.55)"
+            nodeColor={(node) => {
+              const colors: Record<string, string> = {
+                script: '#6366f1', scriptGen: '#8b5cf6',
+                storyboardTable: '#3b82f6', image: '#10b981', comicFlow: '#f59e0b',
+              }
+              return colors[node.type ?? ''] ?? '#555'
+            }}
+            nodeBorderRadius={4}
+            pannable
+            zoomable
+          />
+        )}
+
+        {/* Custom bottom toolbar */}
+        <Panel position="bottom-left" className="!m-0 !bottom-4 !left-4">
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 2,
+            background: '#1a1a1a', border: '1px solid #333',
+            borderRadius: 10, padding: '4px 8px', height: 40,
+          }}>
+            {/* Minimap toggle */}
+            <button
+              onClick={() => setMinimapVisible(v => !v)}
+              title="画布小地图"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 30, height: 30, borderRadius: 7, border: 'none',
+                background: minimapVisible ? '#333' : 'none',
+                cursor: 'pointer', color: minimapVisible ? '#fff' : '#666',
+                transition: 'all .15s',
+              }}
+            >
+              {/* map pin icon */}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+            </button>
+
+            {/* Snap-to-grid toggle */}
+            <button
+              onClick={() => setSnapToGrid(v => !v)}
+              title="网格吸附"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 30, height: 30, borderRadius: 7, border: 'none',
+                background: snapToGrid ? '#333' : 'none',
+                cursor: 'pointer', color: snapToGrid ? '#fff' : '#666',
+                transition: 'all .15s',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2v20M2 12h20M2 6h20M2 18h20M6 2v20M18 2v20"/>
+              </svg>
+            </button>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 20, background: '#333', margin: '0 4px' }} />
+
+            {/* Zoom out */}
+            <button
+              onClick={() => zoomOut({ duration: 200 })}
+              title="缩小"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 30, height: 30, borderRadius: 7, border: 'none',
+                background: 'none', cursor: 'pointer', color: '#aaa',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+
+            {/* Zoom label — click to reset 100% */}
+            <button
+              onClick={() => { setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 200 }); setZoom(100) }}
+              title="重置缩放"
+              style={{
+                minWidth: 46, height: 30, borderRadius: 7, border: 'none',
+                background: 'none', cursor: 'pointer',
+                color: '#ccc', fontSize: 13, fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {zoom}%
+            </button>
+
+            {/* Zoom in */}
+            <button
+              onClick={() => zoomIn({ duration: 200 })}
+              title="放大"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 30, height: 30, borderRadius: 7, border: 'none',
+                background: 'none', cursor: 'pointer', color: '#aaa',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+        </Panel>
       </ReactFlow>
 
       {paneMenu && (

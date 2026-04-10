@@ -1,6 +1,8 @@
 import { memo, useState } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import { Image as ImageIcon, Sparkles, Loader2, Layers, Maximize2, Eraser, Wand2 } from 'lucide-react'
+import CollapsibleSection from './shared/CollapsibleSection'
+import NodeAddMenu from './shared/NodeAddMenu'
 
 export interface ImageNodeData {
   id: string
@@ -22,6 +24,10 @@ const QUICK_ACTIONS = [
 
 function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
   const [generating, setGenerating] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  const handlesVisible = isHovered || selected || generating
 
   const handleGenerate = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -32,29 +38,49 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
 
   return (
     <div
-      className="relative"
+      className="relative nodrag"
       style={{
         width: 200,
-        background: '#1a1a1a',
-        border: selected ? '1.5px solid #4f6ef7' : '1px solid #2e2e2e',
-        borderRadius: 8,
-        boxShadow: selected
-          ? '0 0 0 3px rgba(79,110,247,0.18), 0 4px 20px rgba(0,0,0,0.5)'
-          : '0 2px 8px rgba(0,0,0,0.4)',
         fontFamily: 'Inter, system-ui, sans-serif',
-        overflow: 'hidden',
+        position: 'relative',
       }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Input handle */}
+      {/* Input handle — outside overflow:hidden card */}
       <Handle
         type="target"
         position={Position.Left}
         style={{
-          width: 8, height: 8,
-          background: '#333', border: '1.5px solid #666',
-          left: -5, top: 20,
+          width: 18, height: 18,
+          background: '#1a1a1a', border: '1.5px solid #606060',
+          borderRadius: '50%', left: -9, top: 22,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          opacity: handlesVisible ? 1 : 0,
+          pointerEvents: handlesVisible ? 'auto' : 'none',
+          transition: 'opacity 150ms ease',
         }}
-      />
+      >
+        <span style={{
+          pointerEvents: 'none', fontSize: 13, color: '#888', lineHeight: 1,
+          position: 'absolute', top: '50%', left: '50%',
+          transform: 'translate(-50%, -52%)',
+        }}>+</span>
+      </Handle>
+
+      {/* Inner card */}
+      <div
+        style={{
+          background: '#1a1a1a',
+          border: selected ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1px solid #2e2e2e',
+          borderRadius: 8,
+          boxShadow: selected
+            ? '0 0 0 2px rgba(255,255,255,0.06), 0 4px 20px rgba(0,0,0,0.5)'
+            : '0 2px 8px rgba(0,0,0,0.4)',
+          overflow: 'hidden',
+          transition: 'border-color 150ms ease, box-shadow 150ms ease',
+        }}
+      >
 
       {/* Header */}
       <div style={{
@@ -119,37 +145,73 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
       </div>
 
       {/* Quick actions */}
-      <div style={{ borderTop: '1px solid #222', padding: '6px 10px 8px' }}>
-        <div style={{ fontSize: 10, color: '#444', marginBottom: 4 }}>尝试:</div>
-        {QUICK_ACTIONS.map(a => (
-          <div
-            key={a.label}
-            className="nodrag nopan"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '3px 4px', borderRadius: 4, cursor: 'pointer',
-              color: '#666', fontSize: 11,
-              transition: 'background 0.12s, color 0.12s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = '#252525'; e.currentTarget.style.color = '#aaa' }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}
-          >
-            <span style={{ color: '#555', flexShrink: 0 }}>{a.icon}</span>
-            {a.label}
-          </div>
-        ))}
-      </div>
+      <CollapsibleSection expanded={!!selected}>
+        <div style={{ borderTop: '1px solid #222', padding: '6px 10px 8px' }}>
+          <div style={{ fontSize: 10, color: '#444', marginBottom: 4 }}>尝试:</div>
+          {QUICK_ACTIONS.map(a => (
+            <div
+              key={a.label}
+              className="nodrag nopan"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '3px 4px', borderRadius: 4, cursor: 'pointer',
+                color: '#666', fontSize: 11,
+                transition: 'background 0.12s, color 0.12s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#252525'; e.currentTarget.style.color = '#aaa' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#666' }}
+            >
+              <span style={{ color: '#555', flexShrink: 0 }}>{a.icon}</span>
+              {a.label}
+            </div>
+          ))}
+        </div>
+      </CollapsibleSection>
 
-      {/* Output handle */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        style={{
-          width: 8, height: 8,
-          background: '#333', border: '1.5px solid #666',
-          right: -5,
-        }}
-      />
+      </div>{/* end inner card */}
+
+      {/* Output handle + menu */}
+      <div style={{
+        position: 'absolute',
+        right: -9,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        width: 18,
+        height: 18,
+      }}>
+        <Handle
+          type="source"
+          position={Position.Right}
+          style={{
+            width: 18, height: 18,
+            background: '#1a1a1a', border: '1.5px solid #606060',
+            borderRadius: '50%',
+            top: 0, left: 0,
+            transform: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            opacity: handlesVisible ? 1 : 0,
+            pointerEvents: handlesVisible ? 'auto' : 'none',
+            transition: 'opacity 150ms ease',
+            position: 'relative',
+          }}
+          onClick={(e) => { e.stopPropagation(); setMenuOpen(v => !v) }}
+        >
+          <span style={{
+            pointerEvents: 'none', fontSize: 13, color: '#888', lineHeight: 1,
+            position: 'absolute', top: '50%', left: '50%',
+            transform: 'translate(-50%, -52%)',
+          }}>+</span>
+        </Handle>
+        {menuOpen && (
+          <NodeAddMenu
+            nodeType="libtv_image"
+            sourceNodeId={data.id}
+            sourcePosition={data.position}
+            sourceNodeWidth={200}
+            onClose={() => setMenuOpen(false)}
+          />
+        )}
+      </div>
     </div>
   )
 }

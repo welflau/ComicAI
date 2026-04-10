@@ -264,6 +264,7 @@ export type NodeType =
   | 'export'
   // LibTV-style node types
   | 'libtv_script'
+  | 'libtv_script_gen'
   | 'libtv_storyboard'
   | 'libtv_image'
 
@@ -282,6 +283,9 @@ export interface NodeData {
   // ScriptNode extra fields
   title?: string
   content?: string
+  initialMode?: 'idle' | 'write' | 'generating' | 'content'
+  initialPrompt?: string
+  hideQuickActions?: boolean
   // StoryboardTableNode extra fields
   shots?: Shot[]
   // ImageNode extra fields
