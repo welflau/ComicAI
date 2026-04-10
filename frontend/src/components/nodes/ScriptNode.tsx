@@ -3,6 +3,7 @@ import { Handle, Position, NodeProps } from 'reactflow'
 import {
   FileText, Video, Image as ImageIcon, Volume2,
   ChevronDown, Languages, Zap, ArrowUp, Square, CheckCircle2,
+  Download, PenLine,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useProjectStore } from '@/stores/projectStore'
@@ -476,7 +477,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const isExpanded = (selected && !dragging) || mode === 'write' || mode === 'generating'
 
   // Handles visible when hovered or selected (or in active modes)
-  const handlesVisible = isHovered || (selected && !dragging) || mode === 'write' || mode === 'generating'
+  const handlesVisible = isHovered || (selected && !dragging) || mode === 'generating'
 
   // handle Y positions — adapt to collapsed/expanded card height
   const idleCardH      = IDLE_CARD_H
@@ -485,9 +486,13 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const genHandleY     = TITLE_H + WRITE_CARD_MIN_H / 2
   const contentHandleY = TITLE_H + CONTENT_CARD_MIN_H / 2
 
+  // Deselecting while in write mode exits editing (blur the textarea)
   useEffect(() => {
-    if (mode === 'write') setTimeout(() => taRef.current?.focus(), 0)
-  }, [mode])
+    if (mode === 'write' && !selected && focused) {
+      taRef.current?.blur()
+      setFocused(false)
+    }
+  }, [selected, mode, focused])
 
   useEffect(() => () => { abortRef.current?.abort() }, [])
 
@@ -662,59 +667,101 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
       {/* ══════════ WRITE ══════════ */}
       {mode === 'write' && (
         <>
+          {/* Download button — floats above when selected AND has text */}
+          {selected && !dragging && text.trim().length > 0 && (
+            <div style={{
+              position: 'absolute', top: -52, left: '50%',
+              transform: 'translateX(-50%)', zIndex: 10,
+            }}>
+              <button
+                className="nodrag nopan"
+                onClick={() => {
+                  const blob = new Blob([text], { type: 'text/plain' })
+                  const a = document.createElement('a')
+                  a.href = URL.createObjectURL(blob)
+                  a.download = `${nodeLabel}.txt`
+                  a.click()
+                  URL.revokeObjectURL(a.href)
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 44, height: 44,
+                  background: '#2a2a2a', border: 'none',
+                  borderRadius: 12, cursor: 'pointer', color: '#ccc',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                  transition: 'background 0.15s, color 0.15s',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#3a3a3a'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#2a2a2a'; (e.currentTarget as HTMLButtonElement).style.color = '#ccc' }}
+              >
+                <Download size={18} />
+              </button>
+            </div>
+          )}
+
           <div
-            onClick={() => taRef.current?.focus()}
+            onDoubleClick={() => { setFocused(true); setTimeout(() => taRef.current?.focus(), 0) }}
             style={{
               background: '#161616',
-              border: '1.5px solid #484848',
+              border: focused
+                ? '1.5px solid #555'
+                : (selected && !dragging) ? '1.5px solid #484848'
+                : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #2a2a2a',
               borderRadius: 14,
               minHeight: WRITE_CARD_MIN_H,
               position: 'relative',
-              cursor: 'text',
+              cursor: focused ? 'text' : 'grab',
               overflow: 'hidden',
+              transition: 'border-color 150ms ease',
             }}
           >
-            {/* Placeholder */}
+            {/* Placeholder (empty + not editing) */}
             {!text && !focused && (
               <div style={{
                 position: 'absolute', inset: 0,
                 display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
                 padding: '18px 20px', gap: 18,
                 pointerEvents: 'none',
               }}>
-                <span style={{ fontSize: 14, color: '#555', lineHeight: 1.6 }}>
+                <span style={{ fontSize: 14, color: '#555', lineHeight: 1.6, alignSelf: 'flex-start' }}>
                   请编写内容，开始你的创作。
                 </span>
-                <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 8 }}>
-                  <LinesIcon scale={0.75} />
-                </div>
+                <LinesIcon scale={0.75} />
               </div>
             )}
 
             <textarea
               ref={taRef}
               className="nodrag nopan nowheel"
-              autoFocus={data.initialMode === 'write'}
               placeholder=""
               value={text}
               onChange={e => setText(e.target.value)}
               onKeyDown={e => e.stopPropagation()}
               onFocus={() => setFocused(true)}
-              onBlur={() => {
-                setFocused(false)
-                if (text.length > 0) setMode('content')
-              }}
+              onBlur={() => setFocused(false)}
               style={{
                 position: 'relative', zIndex: 1,
                 width: '100%', minHeight: WRITE_CARD_MIN_H,
+                // Only pointer-interactive when focused
                 pointerEvents: focused ? 'auto' : 'none',
                 boxSizing: 'border-box',
                 background: 'transparent', border: 'none', outline: 'none',
                 color: '#e0e0e0', fontSize: 15, lineHeight: 1.7,
                 padding: '18px 20px',
-                resize: 'vertical', fontFamily: 'inherit',
+                resize: 'none', fontFamily: 'inherit',
               }}
             />
+
+            {/* Pencil hint — bottom right when hovered and not focused */}
+            {isHovered && !focused && (
+              <div style={{
+                position: 'absolute', bottom: 10, right: 12,
+                pointerEvents: 'none',
+              }}>
+                <PenLine size={13} color="#444" />
+              </div>
+            )}
           </div>
 
           <CircleHandle type="source" position={Position.Right} top={writeHandleY} visible={handlesVisible}
