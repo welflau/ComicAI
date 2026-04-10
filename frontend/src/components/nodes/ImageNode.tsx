@@ -235,16 +235,16 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
   const [menuOpen,    setMenuOpen]    = useState(false)
   const [prompt,      setPrompt]      = useState('')
   // Rendered image height in pixels (updated on img load)
-  const [imgRenderedH, setImgRenderedH] = useState<number | null>(null)
+  const [imgRenderedH,  setImgRenderedH]  = useState<number | null>(null)
+  const [imgBroken,     setImgBroken]     = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const updateNode   = useProjectStore(s => s.updateNode)
 
-  const hasImage       = !!data.imageUrl
+  const hasImage       = !!data.imageUrl && !imgBroken
   const handlesVisible = isHovered || !!selected
   const nodeLabel      = data.label || '图片'
 
   // Handle Y: center of the image area
-  // When image is loaded, use actual rendered height; otherwise use placeholder height
   const imageAreaH = hasImage ? (imgRenderedH ?? PLACEHOLDER_H) : PLACEHOLDER_H
   const handleY    = TITLE_H + imageAreaH / 2
 
@@ -255,17 +255,29 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    // Reset rendered height so handle repositions after new image loads
     setImgRenderedH(null)
-    const url = URL.createObjectURL(file)
-    updateNode(data.id, { imageUrl: url } as Partial<ImageNodeData>)
+    setImgBroken(false)
+    // Use FileReader → base64 data URL so it persists across page reloads
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string
+      updateNode(data.id, { imageUrl: dataUrl } as Partial<ImageNodeData>)
+    }
+    reader.readAsDataURL(file)
     e.target.value = ''
   }
 
   function handleImgLoad(e: React.SyntheticEvent<HTMLImageElement>) {
-    const img  = e.currentTarget
+    const img = e.currentTarget
     const naturalRatio = img.naturalHeight / img.naturalWidth
     setImgRenderedH(Math.round(NODE_W * naturalRatio))
+    setImgBroken(false)
+  }
+
+  function handleImgError() {
+    // Blob URL expired or broken — treat as no image
+    setImgBroken(true)
+    setImgRenderedH(null)
   }
 
   return (
@@ -342,6 +354,7 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
             <img
               src={data.imageUrl} alt=""
               onLoad={handleImgLoad}
+              onError={handleImgError}
               style={{ width: '100%', height: 'auto', display: 'block' }}
             />
             {/* Replace button — always visible top-right */}
