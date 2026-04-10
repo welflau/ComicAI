@@ -403,14 +403,13 @@ function CircleHandle({ type, position, top, visible, onSourceClick, menuOpen, o
 
 /* ── Main ────────────────────────────────────────────────────── */
 
-function ScriptNode({ data, selected }: NodeProps<ScriptNodeData>) {
+function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const [mode, setMode]           = useState<Mode>(data.initialMode ?? 'idle')
   const [text, setText]           = useState(data.content ?? '')
   const [streamText, setStream]   = useState('')
   const [showShimmer, setShimmer] = useState(false)
   const [prompt, setPrompt]       = useState(data.initialPrompt ?? '')
   const [focused, setFocused]     = useState(false)
-  const [dragging, setDragging]   = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [showQuickActions, setShowQuickActions] = useState(!data.hideQuickActions)
   const [menuOpen, setMenuOpen]   = useState(false)
@@ -423,11 +422,11 @@ function ScriptNode({ data, selected }: NodeProps<ScriptNodeData>) {
 
   const nodeLabel = data.title || data.label || '文本'
 
-  // Expanded when selected OR in an "active" mode
-  const isExpanded = selected || mode === 'write' || mode === 'generating'
+  // Expanded when selected (but NOT while dragging) OR in an "active" mode
+  const isExpanded = (selected && !dragging) || mode === 'write' || mode === 'generating'
 
   // Handles visible when hovered or selected (or in active modes)
-  const handlesVisible = isHovered || selected || mode === 'write' || mode === 'generating'
+  const handlesVisible = isHovered || (selected && !dragging) || mode === 'write' || mode === 'generating'
 
   // handle Y positions — adapt to collapsed/expanded card height
   const idleCardH      = isExpanded ? IDLE_CARD_H : 150
@@ -541,9 +540,7 @@ function ScriptNode({ data, selected }: NodeProps<ScriptNodeData>) {
           : dragging ? 'grabbing' : 'grab',
       }}
       onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => { setIsHovered(false); setDragging(false) }}
-      onMouseDown={() => mode !== 'write' && mode !== 'generating' && setDragging(true)}
-      onMouseUp={() => setDragging(false)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       {/* Title */}
       <div style={{
@@ -559,9 +556,9 @@ function ScriptNode({ data, selected }: NodeProps<ScriptNodeData>) {
         <>
           <div style={{
             background: '#1e1e1e',
-            border: selected ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #2e2e2e',
+            border: (selected && !dragging) ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #2e2e2e',
             borderRadius: 14,
-            boxShadow: selected ? '0 0 0 2px rgba(255,255,255,0.06)' : '0 2px 12px rgba(0,0,0,0.4)',
+            boxShadow: (selected && !dragging) ? '0 0 0 2px rgba(255,255,255,0.06)' : '0 2px 12px rgba(0,0,0,0.4)',
             overflow: 'hidden',
             transition: 'border-color 150ms ease, box-shadow 150ms ease',
           }}>
@@ -742,7 +739,7 @@ function ScriptNode({ data, selected }: NodeProps<ScriptNodeData>) {
         <>
           <div style={{
             background: '#1a1a1a',
-            border: selected ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #333',
+            border: (selected && !dragging) ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #333',
             borderRadius: 14,
             minHeight: CONTENT_CARD_MIN_H,
             position: 'relative',

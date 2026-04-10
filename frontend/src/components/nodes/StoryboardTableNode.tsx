@@ -70,13 +70,13 @@ const MOCK_SHOTS: ShotRow[] = [
   },
 ]
 
-function StoryboardTableNode({ data, selected }: NodeProps<StoryboardTableNodeData>) {
+function StoryboardTableNode({ data, selected, dragging }: NodeProps<StoryboardTableNodeData>) {
   const [viewMode, setViewMode] = useState<'table' | 'list'>('table')
   const [isHovered, setIsHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const shots = data.shots && data.shots.length > 0 ? data.shots : []
   const title = data.title || '分镜表格'
-  const handlesVisible = isHovered || selected
+  const handlesVisible = isHovered || (!!selected && !dragging)
 
   return (
     <div
@@ -114,9 +114,9 @@ function StoryboardTableNode({ data, selected }: NodeProps<StoryboardTableNodeDa
       <div
         style={{
           background: '#1a1a1a',
-          border: selected ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1px solid #2e2e2e',
+          border: (selected && !dragging) ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1px solid #2e2e2e',
           borderRadius: 8,
-          boxShadow: selected
+          boxShadow: (selected && !dragging)
             ? '0 0 0 2px rgba(255,255,255,0.06), 0 4px 20px rgba(0,0,0,0.5)'
             : '0 4px 20px rgba(0,0,0,0.5)',
           overflow: 'hidden',

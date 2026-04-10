@@ -1,4 +1,4 @@
-import { memo, useRef, useState } from 'react'
+import { memo, useRef, useState, useEffect } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import {
   Image as ImageIcon, Upload, Monitor, Video,
@@ -8,6 +8,7 @@ import {
 import CollapsibleSection from './shared/CollapsibleSection'
 import NodeAddMenu from './shared/NodeAddMenu'
 import { useProjectStore } from '../../stores/projectStore'
+import { saveImage, resolveImageUrl } from '../../stores/imageStore'
 
 export interface ImageNodeData {
   id: string
@@ -230,19 +231,42 @@ function ImagePromptPanel({ value, onChange }: {
 
 /* ── Main ──────────────────────────────────────────────────── */
 
-function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
+function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const [isHovered,   setIsHovered]   = useState(false)
   const [menuOpen,    setMenuOpen]    = useState(false)
   const [prompt,      setPrompt]      = useState('')
   // Rendered image height in pixels (updated on img load)
   const [imgRenderedH,  setImgRenderedH]  = useState<number | null>(null)
   const [imgBroken,     setImgBroken]     = useState(false)
+  // Resolved display URL (blob URL from IndexedDB or plain URL)
+  const [displayUrl,    setDisplayUrl]    = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const updateNode   = useProjectStore(s => s.updateNode)
+  const currentProject = useProjectStore(s => s.currentProject)
 
-  const hasImage       = !!data.imageUrl && !imgBroken
-  const handlesVisible = isHovered || !!selected
+  const hasImage       = !!displayUrl && !imgBroken
+  const handlesVisible = isHovered || (!!selected && !dragging)
   const nodeLabel      = data.label || '图片'
+
+  // Resolve idb:// reference → blob URL for display
+  useEffect(() => {
+    let revoke: string | null = null
+    let cancelled = false
+
+    resolveImageUrl(data.imageUrl).then(url => {
+      if (cancelled) return
+      setDisplayUrl(url)
+      setImgBroken(false)
+      setImgRenderedH(null)
+      // Track blob URLs so we can revoke them when imageUrl changes
+      if (url && url.startsWith('blob:')) revoke = url
+    })
+
+    return () => {
+      cancelled = true
+      if (revoke) URL.revokeObjectURL(revoke)
+    }
+  }, [data.imageUrl])
 
   // Handle Y: center of the image area
   const imageAreaH = hasImage ? (imgRenderedH ?? PLACEHOLDER_H) : PLACEHOLDER_H
@@ -252,19 +276,16 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
     fileInputRef.current?.click()
   }
 
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     setImgRenderedH(null)
     setImgBroken(false)
-    // Use FileReader → base64 data URL so it persists across page reloads
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string
-      updateNode(data.id, { imageUrl: dataUrl } as Partial<ImageNodeData>)
-    }
-    reader.readAsDataURL(file)
     e.target.value = ''
+
+    const projectId = currentProject?.id ?? 'local'
+    const ref = await saveImage(projectId, file)
+    updateNode(data.id, { imageUrl: ref } as Partial<ImageNodeData>)
   }
 
   function handleImgLoad(e: React.SyntheticEvent<HTMLImageElement>) {
@@ -300,7 +321,7 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
       />
 
       {/* Upload button — floats above node when selected AND no image */}
-      {selected && !hasImage && (
+      {selected && !dragging && !hasImage && (
         <div style={{
           position: 'absolute', top: -38, left: '50%',
           transform: 'translateX(-50%)', zIndex: 10,
@@ -338,13 +359,13 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
       {/* Card */}
       <div style={{
         background: '#1a1a1a',
-        border: selected
+        border: (selected && !dragging)
           ? '1.5px solid #707070'
           : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #2a2a2a',
         borderRadius: 14,
         overflow: 'hidden',
         transition: 'border-color 150ms ease, box-shadow 150ms ease',
-        boxShadow: selected
+        boxShadow: (selected && !dragging)
           ? '0 0 0 2px rgba(255,255,255,0.04), 0 4px 20px rgba(0,0,0,0.5)'
           : '0 2px 12px rgba(0,0,0,0.4)',
       }}>
@@ -352,7 +373,7 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
           /* ── Image mode: natural aspect ratio + replace button ── */
           <div style={{ position: 'relative', lineHeight: 0 }}>
             <img
-              src={data.imageUrl} alt=""
+              src={displayUrl!} alt=""
               onLoad={handleImgLoad}
               onError={handleImgError}
               style={{ width: '100%', height: 'auto', display: 'block' }}
@@ -431,7 +452,7 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
       </div>
 
       {/* Prompt panel — expands below when selected */}
-      <CollapsibleSection expanded={!!selected}>
+      <CollapsibleSection expanded={!!selected && !dragging}>
         <ImagePromptPanel value={prompt} onChange={setPrompt} />
       </CollapsibleSection>
 

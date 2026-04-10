@@ -400,13 +400,12 @@ function CircleHandle({ type, position, top, visible, onSourceClick, menuOpen, o
 
 /* ── Main component ──────────────────────────────────────────── */
 
-function ScriptGenNode({ data, selected }: NodeProps<ScriptGenNodeData>) {
+function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData>) {
   const [mode, setMode]           = useState<Mode>(data.initialMode ?? 'idle')
   const [text, setText]           = useState(data.content ?? '')
   const [streamText, setStream]   = useState('')
   const [showShimmer, setShimmer] = useState(false)
   const [prompt, setPrompt]       = useState('')
-  const [dragging, setDragging]   = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const [menuOpen, setMenuOpen]   = useState(false)
 
@@ -416,10 +415,10 @@ function ScriptGenNode({ data, selected }: NodeProps<ScriptGenNodeData>) {
   const addNode = useProjectStore(s => s.addNode)
   const addEdge = useProjectStore(s => s.addEdge)
 
-  // Expanded when selected OR in active mode
-  const isExpanded = selected || mode === 'generating'
+  // Expanded when selected (but NOT while dragging) OR in active mode
+  const isExpanded = (selected && !dragging) || mode === 'generating'
   // Handles visible when hovered or selected (or active)
-  const handlesVisible = isHovered || selected || mode === 'generating'
+  const handlesVisible = isHovered || (selected && !dragging) || mode === 'generating'
 
   // handle Y — collapsed idle shows only preview area
   const QUICK_ACTIONS_H = 44 + QUICK_ACTIONS.length * 36   // label + items
@@ -523,12 +522,10 @@ function ScriptGenNode({ data, selected }: NodeProps<ScriptGenNodeData>) {
         position: 'relative',
         width: NODE_W,
         fontFamily: 'Inter, system-ui, sans-serif',
-        cursor: mode === 'generating' ? 'default' : (selected ? 'default' : dragging ? 'grabbing' : 'grab'),
+        cursor: mode === 'generating' ? 'default' : (selected && !dragging) ? 'default' : dragging ? 'grabbing' : 'grab',
       }}
       onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => { setIsHovered(false); setDragging(false) }}
-      onMouseDown={() => mode !== 'generating' && setDragging(true)}
-      onMouseUp={() => setDragging(false)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       {/* Title */}
       <div style={{
@@ -544,9 +541,9 @@ function ScriptGenNode({ data, selected }: NodeProps<ScriptGenNodeData>) {
         <>
           <div style={{
             background: '#1e1e1e',
-            border: selected ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #2e2e2e',
+            border: (selected && !dragging) ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #2e2e2e',
             borderRadius: 14,
-            boxShadow: selected ? '0 0 0 2px rgba(255,255,255,0.06)' : '0 2px 12px rgba(0,0,0,0.4)',
+            boxShadow: (selected && !dragging) ? '0 0 0 2px rgba(255,255,255,0.06)' : '0 2px 12px rgba(0,0,0,0.4)',
             overflow: 'hidden',
             transition: 'border-color 150ms ease, box-shadow 150ms ease',
           }}>
@@ -669,11 +666,11 @@ function ScriptGenNode({ data, selected }: NodeProps<ScriptGenNodeData>) {
         <>
           <div style={{
             background: '#1c1c1c',
-            border: selected ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #2a2a2a',
+            border: (selected && !dragging) ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #2a2a2a',
             borderRadius: 14,
             minHeight: CONTENT_CARD_MIN_H,
             padding: '16px 18px',
-            boxShadow: selected ? '0 0 0 2px rgba(255,255,255,0.06)' : '0 2px 12px rgba(0,0,0,0.4)',
+            boxShadow: (selected && !dragging) ? '0 0 0 2px rgba(255,255,255,0.06)' : '0 2px 12px rgba(0,0,0,0.4)',
             overflowY: 'auto',
             maxHeight: 480,
             transition: 'border-color 150ms ease, box-shadow 150ms ease',

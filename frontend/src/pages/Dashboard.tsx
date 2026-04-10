@@ -38,7 +38,7 @@ function CreateProjectModal({ onClose, onCreate }: { onClose: () => void; onCrea
     } catch {
       // DEV fallback: save locally and navigate to local project
       if (import.meta.env.DEV) {
-        const project = localCreate(name.trim(), desc.trim())
+        const project = await localCreate(name.trim(), desc.trim())
         onCreate(project)
         toast.success('项目已创建（本地模式）')
         onClose()
@@ -206,6 +206,7 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
   const localProjects = useLocalProjectsStore(s => s.projects)
+  const localInit = useLocalProjectsStore(s => s.init)
   const localDelete = useLocalProjectsStore(s => s.deleteProject)
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(false)
@@ -215,6 +216,11 @@ export default function Dashboard() {
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const userMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    // Ensure IndexedDB local projects are loaded (runs migration if needed)
+    localInit()
+  }, [localInit])
 
   useEffect(() => {
     projectsApi.list()
@@ -237,7 +243,7 @@ export default function Dashboard() {
       toast.success('项目已删除')
     } catch {
       if (import.meta.env.DEV) {
-        localDelete(id)
+        await localDelete(id)
         setProjects(prev => prev.filter(p => p.id !== id))
         toast.success('项目已删除')
         return

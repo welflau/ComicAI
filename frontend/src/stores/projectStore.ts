@@ -73,10 +73,12 @@ export const useProjectStore = create<ProjectState>()(
     isLoading: false,
 
     loadProject: async (projectId) => {
-      // DEV fallback: load from localStorage for local projects
+      // DEV fallback: load from IndexedDB for local projects
       if (import.meta.env.DEV) {
         const localStore = useLocalProjectsStore.getState()
-        // 'demo' or any local_xxx id
+        // Ensure IndexedDB is initialised (and legacy localStorage migrated)
+        await localStore.init()
+
         const localProject = projectId === 'demo'
           ? {
               id: 'demo',
@@ -88,17 +90,16 @@ export const useProjectStore = create<ProjectState>()(
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
             }
-          : localStore.projects.find(p => p.id === projectId) ?? null
+          : useLocalProjectsStore.getState().projects.find(p => p.id === projectId) ?? null
 
         if (localProject) {
-          const savedWorkflow = localStore.getWorkflow(projectId)
+          const savedWorkflow = await localStore.getWorkflow(projectId)
           set({
             currentProject: localProject,
             scripts: [],
             storyboards: [],
             characters: [],
             assets: [],
-            // demo has default nodes; new local projects start empty (show template picker)
             nodes: savedWorkflow?.nodes ?? (projectId === 'demo' ? getDefaultNodes() : []),
             edges: savedWorkflow?.edges ?? (projectId === 'demo' ? getDefaultEdges() : []),
             isLoading: false,
@@ -141,9 +142,9 @@ export const useProjectStore = create<ProjectState>()(
 
       set({ nodes, edges })
 
-      // Local project: save to localStorage
+      // Local project: save to IndexedDB
       if (import.meta.env.DEV && (currentProject.id === 'demo' || currentProject.id.startsWith('local_'))) {
-        useLocalProjectsStore.getState().saveWorkflow(currentProject.id, nodes, edges)
+        await useLocalProjectsStore.getState().saveWorkflow(currentProject.id, nodes, edges)
         return
       }
 
