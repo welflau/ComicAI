@@ -20,10 +20,10 @@ export interface ImageNodeData {
   nodeIndex?: number
 }
 
-const NODE_W   = 400
-const TITLE_H  = 28
-const IMAGE_H  = 220
-const HANDLE_Y = 192   // ≈ TITLE_H + CARD_H/2
+const NODE_W      = 400
+const TITLE_H     = 28    // title row height (px) — card starts just below
+const PLACEHOLDER_H = 220 // height of the empty placeholder area
+const DEFAULT_HANDLE_Y = TITLE_H + PLACEHOLDER_H / 2
 
 type QuickActionItem =
   | { label: string; icon: React.ElementType }
@@ -231,14 +231,22 @@ function ImagePromptPanel({ value, onChange }: {
 /* ── Main ──────────────────────────────────────────────────── */
 
 function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
-  const [isHovered, setIsHovered] = useState(false)
-  const [menuOpen,  setMenuOpen]  = useState(false)
-  const [prompt,    setPrompt]    = useState('')
+  const [isHovered,   setIsHovered]   = useState(false)
+  const [menuOpen,    setMenuOpen]    = useState(false)
+  const [prompt,      setPrompt]      = useState('')
+  // Rendered image height in pixels (updated on img load)
+  const [imgRenderedH, setImgRenderedH] = useState<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const updateNode   = useProjectStore(s => s.updateNode)
 
+  const hasImage       = !!data.imageUrl
   const handlesVisible = isHovered || !!selected
   const nodeLabel      = data.label || '图片'
+
+  // Handle Y: center of the image area
+  // When image is loaded, use actual rendered height; otherwise use placeholder height
+  const imageAreaH = hasImage ? (imgRenderedH ?? PLACEHOLDER_H) : PLACEHOLDER_H
+  const handleY    = TITLE_H + imageAreaH / 2
 
   function handleUploadClick() {
     fileInputRef.current?.click()
@@ -247,10 +255,17 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
+    // Reset rendered height so handle repositions after new image loads
+    setImgRenderedH(null)
     const url = URL.createObjectURL(file)
     updateNode(data.id, { imageUrl: url } as Partial<ImageNodeData>)
-    // reset so the same file can be re-selected next time
     e.target.value = ''
+  }
+
+  function handleImgLoad(e: React.SyntheticEvent<HTMLImageElement>) {
+    const img  = e.currentTarget
+    const naturalRatio = img.naturalHeight / img.naturalWidth
+    setImgRenderedH(Math.round(NODE_W * naturalRatio))
   }
 
   return (
@@ -272,8 +287,8 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
         onChange={handleFileChange}
       />
 
-      {/* Upload button — floats above node when selected AND no image yet */}
-      {selected && !data.imageUrl && (
+      {/* Upload button — floats above node when selected AND no image */}
+      {selected && !hasImage && (
         <div style={{
           position: 'absolute', top: -38, left: '50%',
           transform: 'translateX(-50%)', zIndex: 10,
@@ -321,82 +336,85 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
           ? '0 0 0 2px rgba(255,255,255,0.04), 0 4px 20px rgba(0,0,0,0.5)'
           : '0 2px 12px rgba(0,0,0,0.4)',
       }}>
-        {/* Image area */}
-        <div style={{
-          position: 'relative',
-          height: IMAGE_H, background: '#141414',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          {data.imageUrl ? (
-            <>
-              <img
-                src={data.imageUrl} alt=""
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-              {/* Replace button — top-right corner, visible on hover */}
-              <button
-                className="nodrag nopan"
-                onClick={handleUploadClick}
-                style={{
-                  position: 'absolute', top: 10, right: 10,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: 30, height: 30,
-                  background: 'rgba(0,0,0,0.55)', border: '1px solid rgba(255,255,255,0.12)',
-                  borderRadius: 8, cursor: 'pointer', color: '#ccc',
-                  opacity: isHovered ? 1 : 0,
-                  transition: 'opacity 150ms ease, background 150ms ease',
-                  backdropFilter: 'blur(4px)',
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.8)'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.55)'; (e.currentTarget as HTMLButtonElement).style.color = '#ccc' }}
-                title="替换图片"
-              >
-                <Upload size={13} />
-              </button>
-            </>
-          ) : (
-            <svg width="62" height="52" viewBox="0 0 62 52" fill="none">
-              <path d="M5 47L20 21L30 33.5L40 18L57 47H5Z"
-                fill="#272727" stroke="#363636" strokeWidth="1.5" strokeLinejoin="round"/>
-              <circle cx="18" cy="12" r="5.5"
-                fill="#272727" stroke="#363636" strokeWidth="1.5"/>
-            </svg>
-          )}
-        </div>
-
-        {/* Quick actions — always visible */}
-        <div style={{ padding: '12px 16px 14px' }}>
-          <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>尝试:</div>
-          {QUICK_ACTIONS.map(a => (
-            <div
-              key={a.label}
+        {hasImage ? (
+          /* ── Image mode: natural aspect ratio + replace button ── */
+          <div style={{ position: 'relative', lineHeight: 0 }}>
+            <img
+              src={data.imageUrl} alt=""
+              onLoad={handleImgLoad}
+              style={{ width: '100%', height: 'auto', display: 'block' }}
+            />
+            {/* Replace button — always visible top-right */}
+            <button
               className="nodrag nopan"
+              onClick={handleUploadClick}
               style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '7px 10px', borderRadius: 7, cursor: 'pointer',
-                color: '#aaa', fontSize: 14,
-                transition: 'background 0.12s, color 0.12s',
+                position: 'absolute', top: 10, right: 10,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 30, height: 30,
+                background: 'rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.15)',
+                borderRadius: 8, cursor: 'pointer', color: '#ccc',
+                transition: 'background 150ms ease, color 150ms ease',
+                backdropFilter: 'blur(4px)',
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#2a2a2a'; e.currentTarget.style.color = '#ddd' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.85)'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.5)'; (e.currentTarget as HTMLButtonElement).style.color = '#ccc' }}
+              title="替换图片"
             >
-              {'hdBadge' in a ? (
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  width: 20, height: 14,
-                  fontSize: 8, fontWeight: 700, color: '#888',
-                  border: '1px solid #555', borderRadius: 3,
-                  lineHeight: 1, flexShrink: 0,
-                }}>HD</span>
-              ) : (
-                <span style={{ flexShrink: 0, opacity: 0.7, display: 'flex', alignItems: 'center' }}>
-                  <a.icon size={14} />
-                </span>
-              )}
-              {a.label}
+              <Upload size={13} />
+            </button>
+          </div>
+        ) : (
+          /* ── Empty mode: placeholder + quick actions ── */
+          <>
+            {/* Placeholder image area */}
+            <div style={{
+              height: PLACEHOLDER_H, background: '#141414',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <svg width="62" height="52" viewBox="0 0 62 52" fill="none">
+                <path d="M5 47L20 21L30 33.5L40 18L57 47H5Z"
+                  fill="#272727" stroke="#363636" strokeWidth="1.5" strokeLinejoin="round"/>
+                <circle cx="18" cy="12" r="5.5"
+                  fill="#272727" stroke="#363636" strokeWidth="1.5"/>
+              </svg>
             </div>
-          ))}
-        </div>
+
+            {/* Quick actions */}
+            <div style={{ padding: '12px 16px 14px' }}>
+              <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>尝试:</div>
+              {QUICK_ACTIONS.map(a => (
+                <div
+                  key={a.label}
+                  className="nodrag nopan"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '7px 10px', borderRadius: 7, cursor: 'pointer',
+                    color: '#aaa', fontSize: 14,
+                    transition: 'background 0.12s, color 0.12s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#2a2a2a'; e.currentTarget.style.color = '#ddd' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' }}
+                >
+                  {'hdBadge' in a ? (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      width: 20, height: 14,
+                      fontSize: 8, fontWeight: 700, color: '#888',
+                      border: '1px solid #555', borderRadius: 3,
+                      lineHeight: 1, flexShrink: 0,
+                    }}>HD</span>
+                  ) : (
+                    <span style={{ flexShrink: 0, opacity: 0.7, display: 'flex', alignItems: 'center' }}>
+                      <a.icon size={14} />
+                    </span>
+                  )}
+                  {a.label}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Prompt panel — expands below when selected */}
@@ -411,7 +429,7 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
         style={{
           width: 22, height: 22,
           background: '#1a1a1a', border: '1.5px solid #606060',
-          borderRadius: '50%', left: -11, top: HANDLE_Y,
+          borderRadius: '50%', left: -11, top: handleY,
           transform: 'translateY(-50%)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           opacity: handlesVisible ? 1 : 0,
@@ -428,7 +446,7 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
 
       {/* Source handle + menu (right) */}
       <div style={{
-        position: 'absolute', right: -11, top: HANDLE_Y,
+        position: 'absolute', right: -11, top: handleY,
         transform: 'translateY(-50%)', width: 22, height: 22,
       }}>
         <Handle
