@@ -617,10 +617,12 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
         )}
       </div>
 
-      {/* Prompt panel — expands below when selected */}
-      <CollapsibleSection expanded={!!selected && !dragging}>
-        <ImagePromptPanel value={prompt} onChange={setPrompt} />
-      </CollapsibleSection>
+      {/* Prompt panel — expands below when selected, only when no image */}
+      {!hasImage && (
+        <CollapsibleSection expanded={!!selected && !dragging}>
+          <ImagePromptPanel value={prompt} onChange={setPrompt} />
+        </CollapsibleSection>
+      )}
 
       {/* Target handle (left) + menu */}
       <div style={{
