@@ -272,8 +272,8 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
         onChange={handleFileChange}
       />
 
-      {/* Upload button — floats above node when selected */}
-      {selected && (
+      {/* Upload button — floats above node when selected AND no image yet */}
+      {selected && !data.imageUrl && (
         <div style={{
           position: 'absolute', top: -38, left: '50%',
           transform: 'translateX(-50%)', zIndex: 10,
@@ -323,14 +323,37 @@ function ImageNode({ data, selected }: NodeProps<ImageNodeData>) {
       }}>
         {/* Image area */}
         <div style={{
+          position: 'relative',
           height: IMAGE_H, background: '#141414',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           {data.imageUrl ? (
-            <img
-              src={data.imageUrl} alt=""
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-            />
+            <>
+              <img
+                src={data.imageUrl} alt=""
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+              {/* Replace button — top-right corner, visible on hover */}
+              <button
+                className="nodrag nopan"
+                onClick={handleUploadClick}
+                style={{
+                  position: 'absolute', top: 10, right: 10,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 30, height: 30,
+                  background: 'rgba(0,0,0,0.55)', border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 8, cursor: 'pointer', color: '#ccc',
+                  opacity: isHovered ? 1 : 0,
+                  transition: 'opacity 150ms ease, background 150ms ease',
+                  backdropFilter: 'blur(4px)',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.8)'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(0,0,0,0.55)'; (e.currentTarget as HTMLButtonElement).style.color = '#ccc' }}
+                title="替换图片"
+              >
+                <Upload size={13} />
+              </button>
+            </>
           ) : (
             <svg width="62" height="52" viewBox="0 0 62 52" fill="none">
               <path d="M5 47L20 21L30 33.5L40 18L57 47H5Z"
