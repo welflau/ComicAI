@@ -27,6 +27,7 @@ import NodeContextMenu from '@/components/canvas/NodeContextMenu'
 import { useProjectStore } from '@/stores/projectStore'
 import { registerViewportCenter } from '@/stores/viewportCenter'
 import type { NodeData, EdgeData } from '@/types'
+import { addLog } from '@/stores/logStore'
 
 const nodeTypes = {
   script_input: ComicFlowNode,
@@ -135,6 +136,12 @@ function WorkflowCanvasInner() {
         style: { stroke: '#444', strokeWidth: 1.5 },
       } as Edge
       setEdges(eds => addEdge(newEdge, eds))
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: '连接已创建',
+        detail: `从 ${newEdge.source} 到 ${newEdge.target}`,
+      })
     },
     [setEdges]
   )
@@ -224,6 +231,12 @@ function WorkflowCanvasInner() {
     setNodes(newNodes)
     setEdges(newEdges)
     saveWorkflow(newNodes, newEdges)
+    addLog({
+      level: 'info',
+      category: 'operation',
+      message: '节点已删除',
+      detail: `节点ID: ${id}`,
+    })
   }, [nodeMenu, nodes, edges, setNodes, setEdges, saveWorkflow])
 
   const handleCopyToClipboard = useCallback(() => {

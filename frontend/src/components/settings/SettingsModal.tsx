@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, Key, Globe, Eye, EyeOff, CheckCircle2, AlertTriangle, Loader2, RotateCcw } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { addLog } from '@/stores/logStore'
 import type { AllSettings, ServiceSettings, ServiceTestStatus } from '@/stores/settingsStore'
 
 /* ── Types ───────────────────────────────────────────────────── */
@@ -148,12 +149,73 @@ function ApiCard({ service }: { service: ServiceConfig }) {
   }
 
   const handleTest = useCallback(async () => {
+    if (!effective.apiKey.trim()) {
+      setTestStatus('fail')
+      store.setTestStatus(service.id, 'fail')
+      return
+    }
     setTestStatus('testing')
-    await new Promise(r => setTimeout(r, 1200))
-    const result = effective.apiKey.trim() ? 'ok' : 'fail'
-    setTestStatus(result)
-    store.setTestStatus(service.id, result)
-  }, [effective.apiKey, store, service.id])
+    try {
+      let ok = false
+
+      if (service.id === 'lightai') {
+        // LightAI: POST /api/lightai/create_async_task with a minimal payload
+        const base = (effective.baseUrl || 'https://api.lightai.woa.com').replace(/\/$/, '')
+        // Use a simple GET to the base URL — a 401/403 still means the server is alive
+        const resp = await fetch(`${base}/`, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${effective.apiKey}` },
+          signal: AbortSignal.timeout(8000),
+        })
+        ok = resp.status !== 500 && resp.status !== 502 && resp.status !== 503
+      } else if (service.id === 'antsk') {
+        const base = (effective.endpoint || 'https://api.antsk.cn').replace(/\/$/, '')
+        const resp = await fetch(`${base}/api/v1/models`, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${effective.apiKey}` },
+          signal: AbortSignal.timeout(8000),
+        })
+        ok = resp.ok || resp.status === 404 || resp.status === 401
+      } else if (service.id === 'anthropic') {
+        const base = (effective.baseUrl || '/api/anthropic').replace(/\/$/, '')
+        // Absolute URL (http/https) → route through cors-proxy to avoid CORS block
+        const testUrl = base.startsWith('/')
+          ? `${base}/v1/messages`
+          : `/api/cors-proxy/${encodeURIComponent(base + '/v1/messages')}`
+        const resp = await fetch(testUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': effective.apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 10,
+            messages: [{ role: 'user', content: 'hi' }],
+          }),
+          signal: AbortSignal.timeout(10000),
+        })
+        ok = resp.ok
+      } else {
+        // openai-compatible
+        const base = (effective.baseUrl || 'https://api.openai.com').replace(/\/$/, '')
+        const resp = await fetch(`${base}/v1/models`, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${effective.apiKey}` },
+          signal: AbortSignal.timeout(8000),
+        })
+        ok = resp.ok || resp.status === 404
+      }
+
+      const result: TestStatus = ok ? 'ok' : 'fail'
+      setTestStatus(result)
+      store.setTestStatus(service.id, result)
+    } catch {
+      setTestStatus('fail')
+      store.setTestStatus(service.id, 'fail')
+    }
+  }, [effective.apiKey, effective.baseUrl, effective.endpoint, store, service.id])
 
   const maskKey = (k: string) => {
     if (!k) return ''

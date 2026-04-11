@@ -3,7 +3,7 @@ import { Handle, Position, NodeProps } from 'reactflow'
 import {
   Image as ImageIcon, Upload, Monitor, Video,
   Languages, SlidersHorizontal, ChevronDown, ArrowUp,
-  Box, Bookmark, Crosshair, Maximize2, Zap,
+  Box, Maximize2, Zap,
   RefreshCw, Wand2, Download, Fullscreen, Loader2,
 } from 'lucide-react'
 import CollapsibleSection from './shared/CollapsibleSection'
@@ -11,6 +11,7 @@ import NodeAddMenu from './shared/NodeAddMenu'
 import { useProjectStore } from '../../stores/projectStore'
 import { saveImage, resolveImageUrl } from '../../stores/imageStore'
 import { lightaiGenerateImage } from '../../api'
+import { addLog } from '../../stores/logStore'
 
 export interface ImageNodeData {
   id: string
@@ -214,12 +215,12 @@ function RefImageThumbnails({ urls }: { urls: string[] }) {
 
 /* ── Image prompt panel ────────────────────────────────────── */
 
-function ImagePromptPanel({ value, onChange, onSend, generating, hasImage, refImages = [] }: {
+function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [] }: {
   value: string
   onChange: (v: string) => void
   onSend: () => void
   generating: boolean
-  hasImage: boolean
+  hasImage: boolean   // kept in signature for API compat, unused in layout
   refImages?: string[]
 }) {
   return (
@@ -230,124 +231,70 @@ function ImagePromptPanel({ value, onChange, onSend, generating, hasImage, refIm
         background: '#161616',
         border: '1px solid #2a2a2a',
         borderRadius: 14,
-        padding: hasImage ? '12px 14px 12px' : '12px 14px 10px',
+        padding: '12px 14px 10px',
         boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
       }}
     >
-      {hasImage ? (
-        /* ── Has-image layout: style icon top-left + ref imgs + prompt text + expand ── */
-        <>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-            {/* Style icon button */}
-            <button
-              className="nodrag nopan"
-              style={{
-                flexShrink: 0,
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                gap: 4, width: 46, height: 46,
-                background: '#1e1e1e', border: '1px solid #2e2e2e',
-                borderRadius: 10, cursor: 'pointer', color: '#666',
-                transition: 'border-color 0.12s, color 0.12s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#444'; e.currentTarget.style.color = '#aaa' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = '#2e2e2e'; e.currentTarget.style.color = '#666' }}
-            >
-              <Box size={16} />
-              <span style={{ fontSize: 10, lineHeight: 1 }}>风格</span>
-            </button>
+      {/* ── Row 1: style btn + ref imgs + expand ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        {/* Style button */}
+        <button
+          className="nodrag nopan"
+          style={{
+            flexShrink: 0,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 4, width: 52, height: 52,
+            background: '#1e1e1e', border: '1px solid #2e2e2e',
+            borderRadius: 10, cursor: 'pointer', color: '#666',
+            transition: 'border-color 0.12s, color 0.12s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = '#444'; e.currentTarget.style.color = '#aaa' }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = '#2e2e2e'; e.currentTarget.style.color = '#666' }}
+        >
+          <Box size={17} />
+          <span style={{ fontSize: 10, lineHeight: 1 }}>风格</span>
+        </button>
 
-            {/* Reference image thumbnails */}
-            {refImages.length > 0 && <RefImageThumbnails urls={refImages} />}
+        {/* Reference image thumbnails */}
+        {refImages.length > 0 && <RefImageThumbnails urls={refImages} />}
 
-            {/* Prompt textarea */}
-            <textarea
-              className="nodrag nopan nowheel"
-              value={value}
-              onChange={e => onChange(e.target.value)}
-              onKeyDown={e => e.stopPropagation()}
-              placeholder="描述你想要生成的画面内容..."
-              rows={2}
-              style={{
-                flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                color: value ? '#ccc' : '#555', fontSize: 13, lineHeight: 1.6,
-                resize: 'none', boxSizing: 'border-box',
-                fontFamily: 'inherit', paddingTop: 2,
-              }}
-            />
+        <div style={{ flex: 1 }} />
 
-            {/* Expand */}
-            <button
-              className="nodrag nopan"
-              style={{ flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer', color: '#444', padding: 4, borderRadius: 4, marginTop: -2 }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#888' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#444' }}
-            >
-              <Maximize2 size={12} />
-            </button>
-          </div>
-        </>
-      ) : (
-        /* ── No-image layout: pill buttons + ref imgs + textarea ── */
-        <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-            {([
-              { Icon: Box,       label: '风格' },
-              { Icon: Bookmark,  label: '标记' },
-              { Icon: Crosshair, label: '聚焦' },
-            ] as const).map(({ Icon, label }) => (
-              <button
-                key={label}
-                className="nodrag nopan"
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  background: '#1e1e1e', border: '1px solid #2e2e2e',
-                  borderRadius: 8, padding: '4px 10px',
-                  color: '#666', fontSize: 12, cursor: 'pointer',
-                  transition: 'border-color 0.12s, color 0.12s',
-                  whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = '#444'; e.currentTarget.style.color = '#aaa' }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = '#2e2e2e'; e.currentTarget.style.color = '#666' }}
-              >
-                <Icon size={11} />
-                {label}
-              </button>
-            ))}
+        {/* Expand */}
+        <button
+          className="nodrag nopan"
+          style={{
+            flexShrink: 0, background: 'none', border: 'none', cursor: 'pointer',
+            color: '#3a3a3a', padding: 3, borderRadius: 4, alignSelf: 'flex-start',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#777' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#3a3a3a' }}
+        >
+          <Maximize2 size={12} />
+        </button>
+      </div>
 
-            {/* Reference image thumbnails (inline, after pill buttons) */}
-            {refImages.length > 0 && <RefImageThumbnails urls={refImages} />}
-
-            <div style={{ flex: 1 }} />
-            <button
-              className="nodrag nopan"
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#444', padding: 4, borderRadius: 4 }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#888' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#444' }}
-            >
-              <Maximize2 size={12} />
-            </button>
-          </div>
-          <textarea
-            className="nodrag nopan nowheel"
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            onKeyDown={e => e.stopPropagation()}
-            placeholder="描述你想要生成的画面内容，按/呼出指令，@引用素材"
-            rows={3}
-            style={{
-              background: 'transparent', border: 'none', outline: 'none',
-              color: '#ccc', fontSize: 13, lineHeight: 1.6,
-              resize: 'none', width: '100%', boxSizing: 'border-box',
-              fontFamily: 'inherit',
-            }}
-          />
-        </>
-      )}
+      {/* ── Row 2: prompt textarea ── */}
+      <textarea
+        className="nodrag nopan nowheel"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={e => e.stopPropagation()}
+        placeholder="描述你想要生成的画面内容..."
+        rows={3}
+        style={{
+          width: '100%', boxSizing: 'border-box',
+          background: '#111', border: '1px solid #2e2e2e', borderRadius: 8,
+          outline: 'none', padding: '8px 10px',
+          color: value ? '#ccc' : '#555', fontSize: 13, lineHeight: 1.65,
+          resize: 'none', fontFamily: 'inherit',
+        }}
+      />
 
       {/* Bottom bar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 4,
-        paddingTop: 8, marginTop: hasImage ? 10 : 4,
+        paddingTop: 8, marginTop: 8,
         borderTop: '1px solid #272727',
       }}>
         {/* Model */}
@@ -445,21 +392,19 @@ function ImagePromptPanel({ value, onChange, onSend, generating, hasImage, refIm
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 28, height: 28, borderRadius: 8, border: 'none',
             cursor: generating || !value.trim() ? 'not-allowed' : 'pointer',
-            background: generating ? '#2a4a9a' : '#252525',
-            color: generating ? '#fff' : '#666',
+            background: generating ? '#2a4a9a' : value.trim() ? '#fff' : '#252525',
+            color: generating ? '#fff' : value.trim() ? '#111' : '#666',
             opacity: !value.trim() && !generating ? 0.45 : 1,
             transition: 'background 0.15s, color 0.15s', flexShrink: 0,
           }}
           onMouseEnter={e => {
             if (!generating && value.trim()) {
-              (e.currentTarget as HTMLButtonElement).style.background = '#3a6ff7'
-              ;(e.currentTarget as HTMLButtonElement).style.color = '#fff'
+              (e.currentTarget as HTMLButtonElement).style.background = '#e0e0e0'
             }
           }}
           onMouseLeave={e => {
             if (!generating) {
-              (e.currentTarget as HTMLButtonElement).style.background = '#252525'
-              ;(e.currentTarget as HTMLButtonElement).style.color = '#666'
+              (e.currentTarget as HTMLButtonElement).style.background = value.trim() ? '#fff' : '#252525'
             }
           }}
         >
@@ -798,39 +743,41 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
               )}
             </div>
 
-            {/* Quick actions */}
-            <div style={{ padding: '12px 16px 14px' }}>
-              <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>尝试:</div>
-              {QUICK_ACTIONS.map(a => (
-                <div
-                  key={a.label}
-                  className="nodrag nopan"
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '7px 10px', borderRadius: 7, cursor: 'pointer',
-                    color: '#aaa', fontSize: 14,
-                    transition: 'background 0.12s, color 0.12s',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = '#2a2a2a'; e.currentTarget.style.color = '#ddd' }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' }}
-                >
-                  {'hdBadge' in a ? (
-                    <span style={{
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      width: 20, height: 14,
-                      fontSize: 8, fontWeight: 700, color: '#888',
-                      border: '1px solid #555', borderRadius: 3,
-                      lineHeight: 1, flexShrink: 0,
-                    }}>HD</span>
-                  ) : (
-                    <span style={{ flexShrink: 0, opacity: 0.7, display: 'flex', alignItems: 'center' }}>
-                      <a.icon size={14} />
-                    </span>
-                  )}
-                  {a.label}
-                </div>
-              ))}
-            </div>
+            {/* Quick actions — hidden when prompt already filled in */}
+            {!prompt.trim() && (
+              <div style={{ padding: '12px 16px 14px' }}>
+                <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>尝试:</div>
+                {QUICK_ACTIONS.map(a => (
+                  <div
+                    key={a.label}
+                    className="nodrag nopan"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      padding: '7px 10px', borderRadius: 7, cursor: 'pointer',
+                      color: '#aaa', fontSize: 14,
+                      transition: 'background 0.12s, color 0.12s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#2a2a2a'; e.currentTarget.style.color = '#ddd' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' }}
+                  >
+                    {'hdBadge' in a ? (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 20, height: 14,
+                        fontSize: 8, fontWeight: 700, color: '#888',
+                        border: '1px solid #555', borderRadius: 3,
+                        lineHeight: 1, flexShrink: 0,
+                      }}>HD</span>
+                    ) : (
+                      <span style={{ flexShrink: 0, opacity: 0.7, display: 'flex', alignItems: 'center' }}>
+                        <a.icon size={14} />
+                      </span>
+                    )}
+                    {a.label}
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
       </div>

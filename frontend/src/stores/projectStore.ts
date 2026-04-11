@@ -6,6 +6,7 @@ import type {
 } from '@/types'
 import { projectsApi } from '@/api'
 import { useLocalProjectsStore } from '@/stores/localProjectsStore'
+import { addLog } from "@/stores/logStore"
 
 interface ProjectState {
   // Current project
@@ -128,8 +129,20 @@ export const useProjectStore = create<ProjectState>()(
           edges: workflowConfig.edges || getDefaultEdges(),
           isLoading: false
         })
+        addLog({
+          level: 'info',
+          category: 'operation',
+          message: '项目已加载',
+          detail: `加载项目: ${project.name}`,
+        })
       } catch (e) {
         set({ isLoading: false })
+        addLog({
+          level: 'error',
+          category: 'operation',
+          message: '项目加载失败',
+          detail: `项目ID: ${projectId}`,
+        })
         throw e
       }
     },
@@ -145,6 +158,12 @@ export const useProjectStore = create<ProjectState>()(
       // Local project: save to IndexedDB
       if (import.meta.env.DEV && (currentProject.id === 'demo' || currentProject.id.startsWith('local_'))) {
         await useLocalProjectsStore.getState().saveWorkflow(currentProject.id, nodes, edges)
+        addLog({
+          level: 'info',
+          category: 'operation',
+          message: '工作流已保存',
+          detail: `节点数: ${nodes.length}, 连接数: ${edges.length}`,
+        })
         return
       }
 
@@ -157,28 +176,80 @@ export const useProjectStore = create<ProjectState>()(
             edges
           }
         })
+        addLog({
+          level: 'info',
+          category: 'operation',
+          message: '工作流已保存',
+          detail: `节点数: ${nodes.length}, 连接数: ${edges.length}`,
+        })
       } catch (e) {
         console.error('Failed to save workflow:', e)
+        addLog({
+          level: 'error',
+          category: 'operation',
+          message: '工作流保存失败',
+          detail: String(e),
+        })
       }
     },
 
     setActiveView: (view) => set({ activeView: view }),
     selectNodes: (ids) => set({ selectedNodeIds: ids }),
 
-    addNode: (node) => set((state) => ({ nodes: [...state.nodes, node] })),
+    addNode: (node) => {
+      set((state) => ({ nodes: [...state.nodes, node] }))
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: '节点已添加',
+        detail: `类型: ${node.type}, 标签: ${node.label}`,
+      })
+    },
 
-    addEdge: (edge) => set((state) => ({ edges: [...state.edges, edge] })),
+    addEdge: (edge) => {
+      set((state) => ({ edges: [...state.edges, edge] }))
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: '连接已创建',
+        detail: `从 ${edge.source} 到 ${edge.target}`,
+      })
+    },
 
-    updateNode: (id, updates) => set((state) => ({
-      nodes: state.nodes.map(n => n.id === id ? { ...n, ...updates } : n)
-    })),
+    updateNode: (id, updates) => {
+      set((state) => ({
+        nodes: state.nodes.map(n => n.id === id ? { ...n, ...updates } : n)
+      }))
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: '节点已更新',
+        detail: `节点ID: ${id}`,
+      })
+    },
 
-    deleteNode: (id) => set((state) => ({
-      nodes: state.nodes.filter(n => n.id !== id),
-      edges: state.edges.filter(e => e.source !== id && e.target !== id)
-    })),
+    deleteNode: (id) => {
+      set((state) => ({
+        nodes: state.nodes.filter(n => n.id !== id),
+        edges: state.edges.filter(e => e.source !== id && e.target !== id)
+      }))
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: '节点已删除',
+        detail: `节点ID: ${id}`,
+      })
+    },
 
-    addTask: (task) => set((state) => ({ tasks: [task, ...state.tasks] })),
+    addTask: (task) => {
+      set((state) => ({ tasks: [task, ...state.tasks] }))
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: '任务已创建',
+        detail: `任务类型: ${task.type}`,
+      })
+    },
 
     startTaskPolling: (projectId, taskId) => {
       const interval = setInterval(async () => {

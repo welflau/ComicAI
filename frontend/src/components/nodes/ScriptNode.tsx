@@ -2,8 +2,8 @@ import { memo, useState, useRef, useCallback, useEffect } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import {
   FileText, Video, Image as ImageIcon, Volume2,
-  ChevronDown, Languages, Zap, ArrowUp, Square, CheckCircle2,
-  Download, PenLine,
+  ChevronDown, Languages, Zap, ArrowUp,
+  CheckCircle2, Download, PenLine,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useProjectStore } from '@/stores/projectStore'
@@ -35,6 +35,7 @@ const TITLE_H          = 28
 const IDLE_CARD_H      = 292
 const WRITE_CARD_MIN_H = 240
 const CONTENT_CARD_MIN_H = 180
+const GEN_CARD_H       = 360
 
 /* ── Mock generation (fallback) ──────────────────────────────── */
 
@@ -68,7 +69,7 @@ function ShimmerLines() {
     <>
       <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '20px 20px 0' }}>
-        {[100, 80, 90, 55, 75, 85].map((w, i) => (
+        {[100, 80, 90, 55, 75, 85, 95, 70, 88, 60, 78, 92, 65, 82].map((w, i) => (
           <div key={i} style={{ ...shimmerStyle, height: 13, width: `${w}%` }} />
         ))}
       </div>
@@ -220,7 +221,7 @@ function ModelDropdown({
 /* ── Prompt panel ────────────────────────────────────────────── */
 
 function PromptPanel({
-  value, onChange, onSend, disabled = false, sourceThumbnailUrl,
+  value, onChange, onSend, disabled = false, sourceThumbnailUrl, loading = false,
 }: {
   value: string
   onChange: (v: string) => void
@@ -228,6 +229,8 @@ function PromptPanel({
   disabled?: boolean
   /** Resolved blob/http URL for the source image thumbnail */
   sourceThumbnailUrl?: string | null
+  /** Show loading spinner on send button instead of arrow */
+  loading?: boolean
 }) {
   const active = value.trim().length > 0
   const models = useOrderedModels()
@@ -334,17 +337,25 @@ function PromptPanel({
           <button
             className="nodrag nopan"
             onClick={onSend}
-            disabled={!active || disabled}
+            disabled={!active || disabled || loading}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: 30, height: 30, borderRadius: 8, border: 'none',
-              cursor: active && !disabled ? 'pointer' : 'not-allowed',
-              background: active && !disabled ? '#3a6ff7' : '#252525',
-              color: active && !disabled ? '#fff' : '#444',
+              cursor: (active && !disabled && !loading) ? 'pointer' : 'not-allowed',
+              background: loading ? '#252525' : (active && !disabled ? '#3a6ff7' : '#252525'),
+              color: loading ? '#3a6ff7' : (active && !disabled ? '#fff' : '#444'),
               transition: 'background 0.15s, color 0.15s',
             }}
           >
-            <ArrowUp size={14} />
+            {loading ? (
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ animation: 'spin 0.8s linear infinite' }}>
+                <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+                <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"
+                  strokeDasharray="22" strokeDashoffset="8" />
+              </svg>
+            ) : (
+              <ArrowUp size={14} />
+            )}
           </button>
         </div>
       </div>
@@ -439,6 +450,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const [text, setText]           = useState(data.content ?? '')
   const [streamText, setStream]   = useState('')
   const [showShimmer, setShimmer] = useState(false)
+  const [genProgress, setGenProgress] = useState(0)
   const [prompt, setPrompt]       = useState(data.initialPrompt ?? '')
   const [focused, setFocused]     = useState(false)
   const [isHovered, setIsHovered] = useState(false)
@@ -483,7 +495,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const idleCardH      = IDLE_CARD_H
   const idleHandleY    = TITLE_H + idleCardH / 2
   const writeHandleY   = TITLE_H + WRITE_CARD_MIN_H / 2
-  const genHandleY     = TITLE_H + WRITE_CARD_MIN_H / 2
+  const genHandleY     = TITLE_H + GEN_CARD_H / 2
   const contentHandleY = TITLE_H + CONTENT_CARD_MIN_H / 2
 
   // Deselecting while in write mode exits editing (blur the textarea)
@@ -503,10 +515,19 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
     setMode('generating')
     setStream('')
     setShimmer(true)
+    setGenProgress(0)
 
     const userPrompt = (promptOverride ?? prompt).trim() || '根据当前内容生成脚本'
 
     addLog({ level: 'info', category: 'ai', message: `开始生成脚本`, detail: userPrompt })
+
+    // Simulate progress ticking up to ~85% during shimmer/stream, then jump to 100 on done
+    let progressVal = 0
+    const progressInterval = setInterval(() => {
+      if (ctrl.signal.aborted) { clearInterval(progressInterval); return }
+      progressVal = Math.min(progressVal + Math.random() * 4 + 1, 88)
+      setGenProgress(Math.round(progressVal))
+    }, 300)
 
     // Give shimmer a moment to appear, then start streaming
     setTimeout(() => {
@@ -519,7 +540,12 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         usedMock = true
         mockGenerate(
           c => setStream(prev => prev + c),
-          () => { setStream(prev => { setText(prev); return prev }); setMode('content') },
+          () => {
+            clearInterval(progressInterval)
+            setGenProgress(100)
+            setStream(prev => { setText(prev); return prev })
+            setMode('content')
+          },
           ctrl.signal,
         )
       }
@@ -530,6 +556,8 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         signal: ctrl.signal,
         onChunk: c => setStream(prev => prev + c),
         onDone: (stats) => {
+          clearInterval(progressInterval)
+          setGenProgress(100)
           setStream(prev => { setText(prev); return prev })
           setMode('content')
           const detail = stats
@@ -775,56 +803,63 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         <>
           <div style={{
             background: '#161616',
-            border: '1.5px solid #3a6ff7',
+            border: '1.5px solid #2e2e2e',
             borderRadius: 14,
-            minHeight: WRITE_CARD_MIN_H,
-            boxShadow: '0 0 0 3px rgba(58,111,247,0.1)',
+            height: GEN_CARD_H,
             overflow: 'hidden',
+            position: 'relative',
           }}>
-            {/* Header */}
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '12px 16px 8px', borderBottom: '1px solid #222',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{
-                  width: 6, height: 6, borderRadius: '50%',
-                  background: '#3a6ff7', boxShadow: '0 0 6px #3a6ff7',
-                  animation: 'blink 1s step-end infinite',
-                }} />
-                <span style={{ fontSize: 12, color: '#555' }}>AI 生成中…</span>
-              </div>
-              <button
-                className="nodrag nopan"
-                onClick={stopGenerate}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4,
-                  background: 'none', border: '1px solid #3a3a3a',
-                  borderRadius: 6, cursor: 'pointer',
-                  padding: '3px 8px', color: '#666', fontSize: 11,
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = '#555'; e.currentTarget.style.color = '#999' }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = '#3a3a3a'; e.currentTarget.style.color = '#666' }}
-              >
-                <Square size={9} />
-                停止
-              </button>
-            </div>
-
-            <div style={{ padding: '16px 20px 20px', minHeight: WRITE_CARD_MIN_H - 48 }}>
-              {showShimmer ? (
-                <ShimmerLines />
-              ) : (
+            {showShimmer ? (
+              <ShimmerLines />
+            ) : (
+              <div style={{ padding: '20px 20px 0', height: GEN_CARD_H - 20, overflow: 'hidden' }}>
                 <p style={{
                   margin: 0, color: '#d0d0d0', fontSize: 15,
                   lineHeight: 1.75, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
                 }}>
                   {streamText}<Cursor />
                 </p>
-              )}
+              </div>
+            )}
+
+            {/* Progress pill — centered at bottom of card */}
+            <div style={{
+              position: 'absolute', bottom: 14, left: '50%',
+              transform: 'translateX(-50%)',
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: 'rgba(20,20,20,0.88)',
+              border: '1px solid #2a2a2a',
+              borderRadius: 20,
+              padding: '5px 12px',
+              backdropFilter: 'blur(4px)',
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+            }}>
+              {/* Spinning dot */}
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+                style={{ animation: 'spin 0.8s linear infinite', flexShrink: 0 }}>
+                <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+                <circle cx="5" cy="5" r="3.5" stroke="#3a6ff7" strokeWidth="1.5"
+                  strokeLinecap="round" strokeDasharray="14" strokeDashoffset="5" />
+              </svg>
+              <span style={{ fontSize: 12, color: '#888', fontWeight: 500 }}>
+                生成中 {genProgress}%...
+              </span>
             </div>
           </div>
 
+          {/* PromptPanel always visible during generation, send button shows spinner */}
+          <PromptPanel
+            value={prompt}
+            onChange={setPrompt}
+            onSend={handleSend}
+            loading={true}
+            sourceThumbnailUrl={thumbnailUrl}
+          />
+
+          <CircleHandle type="target" position={Position.Left}  top={genHandleY} visible={handlesVisible}
+            onSourceClick={() => setTargetMenuOpen(v => !v)} menuOpen={targetMenuOpen} onMenuClose={() => setTargetMenuOpen(false)}
+            nodeType="libtv_script" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />
           <CircleHandle type="source" position={Position.Right} top={genHandleY} visible={handlesVisible}
             onSourceClick={() => setMenuOpen(v => !v)} menuOpen={menuOpen} onMenuClose={() => setMenuOpen(false)}
             nodeType="libtv_script" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />
@@ -834,36 +869,91 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
       {/* ══════════ CONTENT ══════════ */}
       {mode === 'content' && (
         <>
+          {/* Download button — floats above when selected AND has text */}
+          {selected && !dragging && text.trim().length > 0 && (
+            <div style={{
+              position: 'absolute', top: -52, left: '50%',
+              transform: 'translateX(-50%)', zIndex: 10,
+            }}>
+              <button
+                className="nodrag nopan"
+                onClick={() => {
+                  const blob = new Blob([text], { type: 'text/plain' })
+                  const a = document.createElement('a')
+                  a.href = URL.createObjectURL(blob)
+                  a.download = `${nodeLabel}.txt`
+                  a.click()
+                  URL.revokeObjectURL(a.href)
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: 44, height: 44,
+                  background: '#2a2a2a', border: 'none',
+                  borderRadius: 12, cursor: 'pointer', color: '#ccc',
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                  transition: 'background 0.15s, color 0.15s',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#3a3a3a'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#2a2a2a'; (e.currentTarget as HTMLButtonElement).style.color = '#ccc' }}
+              >
+                <Download size={18} />
+              </button>
+            </div>
+          )}
+
           <div style={{
             background: '#1a1a1a',
             border: (selected && !dragging) ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #333',
             borderRadius: 14,
             minHeight: CONTENT_CARD_MIN_H,
+            maxHeight: 400,
             position: 'relative',
-            cursor: 'text',
             overflow: 'hidden',
             transition: 'border-color 150ms ease',
-          }}
-            onClick={() => taRef.current?.focus()}
-          >
-            <textarea
-              ref={taRef}
+          }}>
+            {/* Scrollable text area */}
+            <div
               className="nodrag nopan nowheel"
-              value={text}
-              onChange={e => setText(e.target.value)}
-              onKeyDown={e => e.stopPropagation()}
-              onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
               style={{
-                display: 'block',
-                width: '100%', minHeight: CONTENT_CARD_MIN_H,
+                padding: '20px 22px',
+                maxHeight: 400,
+                overflowY: 'auto',
                 boxSizing: 'border-box',
-                background: 'transparent', border: 'none', outline: 'none',
-                color: '#e0e0e0', fontSize: 15, lineHeight: 1.75,
-                padding: '18px 20px',
-                resize: 'vertical', fontFamily: 'inherit',
+                // Custom scrollbar
+                scrollbarWidth: 'thin',
+                scrollbarColor: '#333 transparent',
               }}
-            />
+            >
+              {/* Render first line as bold title, rest as paragraph */}
+              {(() => {
+                const lines = text.split('\n')
+                const firstLine = lines[0]?.trim()
+                const rest = lines.slice(1).join('\n').trim()
+                return (
+                  <>
+                    {firstLine && (
+                      <p style={{
+                        margin: '0 0 14px 0',
+                        color: '#e8e8e8', fontSize: 15,
+                        fontWeight: 700, lineHeight: 1.6,
+                      }}>
+                        {firstLine}
+                      </p>
+                    )}
+                    {rest && (
+                      <p style={{
+                        margin: 0,
+                        color: '#c0c0c0', fontSize: 14,
+                        lineHeight: 1.8, whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                      }}>
+                        {rest}
+                      </p>
+                    )}
+                  </>
+                )
+              })()}
+            </div>
           </div>
 
           <CollapsibleSection expanded={isExpanded}>

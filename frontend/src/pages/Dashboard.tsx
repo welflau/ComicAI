@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { projectsApi } from '@/api'
+import { addLog } from '@/stores/logStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useLocalProjectsStore } from '@/stores/localProjectsStore'
 import SettingsModal from '@/components/settings/SettingsModal'
@@ -33,6 +34,12 @@ function CreateProjectModal({ onClose, onCreate }: { onClose: () => void; onCrea
     try {
       const project = await projectsApi.create({ name: name.trim(), description: desc.trim() })
       onCreate(project)
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: '项目已创建',
+        detail: `项目: ${project.name}`,
+      })
       toast.success('项目创建成功')
       onClose()
     } catch {
@@ -40,6 +47,12 @@ function CreateProjectModal({ onClose, onCreate }: { onClose: () => void; onCrea
       if (import.meta.env.DEV) {
         const project = await localCreate(name.trim(), desc.trim())
         onCreate(project)
+        addLog({
+          level: 'info',
+          category: 'operation',
+          message: '项目已创建',
+          detail: `项目: ${project.name} (本地)`,
+        })
         toast.success('项目已创建（本地模式）')
         onClose()
         return
@@ -240,11 +253,23 @@ export default function Dashboard() {
     try {
       await projectsApi.delete(id)
       setProjects(prev => prev.filter(p => p.id !== id))
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: '项目已删除',
+        detail: `项目ID: ${id}`,
+      })
       toast.success('项目已删除')
     } catch {
       if (import.meta.env.DEV) {
         await localDelete(id)
         setProjects(prev => prev.filter(p => p.id !== id))
+        addLog({
+          level: 'info',
+          category: 'operation',
+          message: '项目已删除',
+          detail: `项目ID: ${id} (本地)`,
+        })
         toast.success('项目已删除')
         return
       }
