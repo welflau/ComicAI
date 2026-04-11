@@ -85,6 +85,7 @@ function WorkflowCanvasInner() {
 
   const prevStoreNodes = useRef(storeNodes)
   const prevStoreEdges = useRef(storeEdges)
+  const dragStartPos = useRef<{ x: number; y: number } | null>(null)
 
   const { project, getViewport, zoomIn, zoomOut, fitView, setViewport } = useReactFlow()
   const [zoom, setZoom] = useState(100)
@@ -157,11 +158,37 @@ function WorkflowCanvasInner() {
     )
   }, [updateWorkflow])
 
-  const onNodeDragStop = useCallback(() => {
+  const onNodeDragStart = useCallback((_: unknown, node: Node) => {
+    dragStartPos.current = { x: node.position.x, y: node.position.y }
+  }, [])
+
+  const onNodeDragStop = useCallback((_: unknown, node: Node) => {
+    const start = dragStartPos.current
+    dragStartPos.current = null
+    const dx = start ? Math.abs(node.position.x - start.x) : 0
+    const dy = start ? Math.abs(node.position.y - start.y) : 0
+    if (dx < 1 && dy < 1) {
+      // No real movement — just a click/selection, skip log & save
+      return
+    }
+    addLog({
+      level: 'info',
+      category: 'operation',
+      message: `移动节点: ${node.data?.label || node.id}`,
+      detail: `位置 → (${Math.round(node.position.x)}, ${Math.round(node.position.y)})`,
+    })
     saveWorkflow(nodes, edges)
   }, [nodes, edges, saveWorkflow])
 
   const onNodesDelete = useCallback((deleted: Node[]) => {
+    deleted.forEach(n => {
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: `删除节点: ${n.data?.label || n.id}`,
+        detail: `类型: ${n.type} | ID: ${n.id}`,
+      })
+    })
     const ids = new Set(deleted.map(n => n.id))
     saveWorkflow(
       nodes.filter(n => !ids.has(n.id)),
@@ -170,6 +197,14 @@ function WorkflowCanvasInner() {
   }, [nodes, edges, saveWorkflow])
 
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
+    deleted.forEach(e => {
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: `删除连接`,
+        detail: `从 ${e.source} 到 ${e.target}`,
+      })
+    })
     const ids = new Set(deleted.map(e => e.id))
     saveWorkflow(nodes, edges.filter(e => !ids.has(e.id)))
   }, [nodes, edges, saveWorkflow])
@@ -221,11 +256,18 @@ function WorkflowCanvasInner() {
       id: `${n.data.id}_copy_${Date.now()}`,
       position: { x: n.position.x + 40, y: n.position.y + 40 },
     } as NodeData)
+    addLog({
+      level: 'info',
+      category: 'operation',
+      message: `节点已复制: ${n.data.label || n.id}`,
+      detail: `原节点ID: ${n.id} | 类型: ${n.type}`,
+    })
   }, [nodeMenu, nodes, addNode])
 
   const handleDelete = useCallback(() => {
     if (!nodeMenu) return
     const id = nodeMenu.nodeId
+    const n = nodes.find(n => n.id === id)
     const newNodes = nodes.filter(n => n.id !== id)
     const newEdges = edges.filter(e => e.source !== id && e.target !== id)
     setNodes(newNodes)
@@ -234,8 +276,8 @@ function WorkflowCanvasInner() {
     addLog({
       level: 'info',
       category: 'operation',
-      message: '节点已删除',
-      detail: `节点ID: ${id}`,
+      message: `删除节点: ${n?.data?.label || id}`,
+      detail: `类型: ${n?.type} | ID: ${id}`,
     })
   }, [nodeMenu, nodes, edges, setNodes, setEdges, saveWorkflow])
 
@@ -254,6 +296,7 @@ function WorkflowCanvasInner() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}

@@ -520,6 +520,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
     const userPrompt = (promptOverride ?? prompt).trim() || '根据当前内容生成脚本'
 
     addLog({ level: 'info', category: 'ai', message: `开始生成脚本`, detail: userPrompt })
+    addLog({ level: 'info', category: 'operation', message: `脚本生成: 开始`, detail: `节点ID: ${data.id}` })
 
     // Simulate progress ticking up to ~85% during shimmer/stream, then jump to 100 on done
     let progressVal = 0
@@ -575,7 +576,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         runMock()
       })
     }, 400)
-  }, [prompt])
+  }, [prompt, data.id])
 
   const stopGenerate = useCallback(() => {
     abortRef.current?.abort()
@@ -594,7 +595,11 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   }, [prompt, text, mode, startGenerate])
 
   const handleQuickAction = useCallback((id: string) => {
-    if (id === 'write') { setMode('write'); return }
+    if (id === 'write') {
+      setMode('write')
+      addLog({ level: 'info', category: 'operation', message: `剧本节点: 进入编写模式`, detail: `节点ID: ${data.id}` })
+      return
+    }
     if (id === 'storyboard') {
       const newId = `libtv_script_gen_${Date.now()}`
       addNode({
@@ -606,6 +611,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         config: {},
       })
       addEdge({ id: `e-${data.id}-${newId}`, source: data.id, target: newId })
+      addLog({ level: 'info', category: 'operation', message: `添加分镜脚本节点`, detail: `源节点ID: ${data.id}` })
       return
     }
     startGenerate()

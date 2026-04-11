@@ -521,6 +521,15 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
     const ctrl = new AbortController()
     abortRef.current = ctrl
 
+    const promptPreview = prompt.trim().length > 100 ? prompt.trim().slice(0, 100) + '…' : prompt.trim()
+    addLog({
+      level: 'info',
+      category: 'operation',
+      message: `开始生成图片: ${nodeLabel}`,
+      detail: `节点ID: ${data.id}\nPrompt: ${promptPreview}`,
+    })
+    const t0 = Date.now()
+
     try {
       // Call LightAI and get image URL
       const imageUrl = await lightaiGenerateImage(prompt.trim(), ctrl.signal)
@@ -544,17 +553,30 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
       const ref = await saveImage(projectId, file)
       const usedPrompt = prompt.trim()
       updateNode(data.id, { imageUrl: ref, imageSource: 'generated', imagePrompt: usedPrompt } as Partial<ImageNodeData>)
+      const elapsed = ((Date.now() - t0) / 1000).toFixed(1)
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: `图片生成完成: ${nodeLabel} (${elapsed}s)`,
+        detail: `节点ID: ${data.id}\nPrompt: ${promptPreview}`,
+      })
       // keep prompt visible so user can see what was used
     } catch (err: unknown) {
       if ((err as Error)?.name === 'AbortError' || (err as Error)?.message === '已取消') return
       const msg = (err as Error)?.message || String(err)
       setGenError(msg)
       console.error('[ImageNode] LightAI 生成失败:', msg)
+      addLog({
+        level: 'error',
+        category: 'operation',
+        message: `图片生成失败: ${nodeLabel}`,
+        detail: `节点ID: ${data.id}\n错误: ${msg}`,
+      })
     } finally {
       setGenerating(false)
       abortRef.current = null
     }
-  }, [prompt, generating, currentProject, data.id, updateNode])
+  }, [prompt, generating, currentProject, data.id, nodeLabel, updateNode])
 
   // Clean up pending request on unmount
   useEffect(() => () => { abortRef.current?.abort() }, [])
@@ -566,6 +588,12 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
     setImgBroken(false)
     e.target.value = ''
 
+    addLog({
+      level: 'info',
+      category: 'operation',
+      message: `上传图片: ${nodeLabel}`,
+      detail: `节点ID: ${data.id} | 文件: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`,
+    })
     const projectId = currentProject?.id ?? 'local'
     const ref = await saveImage(projectId, file)
     updateNode(data.id, { imageUrl: ref, imageSource: 'uploaded' } as Partial<ImageNodeData>)

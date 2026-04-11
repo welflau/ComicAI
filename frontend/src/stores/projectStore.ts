@@ -158,12 +158,6 @@ export const useProjectStore = create<ProjectState>()(
       // Local project: save to IndexedDB
       if (import.meta.env.DEV && (currentProject.id === 'demo' || currentProject.id.startsWith('local_'))) {
         await useLocalProjectsStore.getState().saveWorkflow(currentProject.id, nodes, edges)
-        addLog({
-          level: 'info',
-          category: 'operation',
-          message: '工作流已保存',
-          detail: `节点数: ${nodes.length}, 连接数: ${edges.length}`,
-        })
         return
       }
 
@@ -175,12 +169,6 @@ export const useProjectStore = create<ProjectState>()(
             nodes,
             edges
           }
-        })
-        addLog({
-          level: 'info',
-          category: 'operation',
-          message: '工作流已保存',
-          detail: `节点数: ${nodes.length}, 连接数: ${edges.length}`,
         })
       } catch (e) {
         console.error('Failed to save workflow:', e)
@@ -220,12 +208,7 @@ export const useProjectStore = create<ProjectState>()(
       set((state) => ({
         nodes: state.nodes.map(n => n.id === id ? { ...n, ...updates } : n)
       }))
-      addLog({
-        level: 'info',
-        category: 'operation',
-        message: '节点已更新',
-        detail: `节点ID: ${id}`,
-      })
+      // No log here — called on every keystroke/image-url change, would be very noisy
     },
 
     deleteNode: (id) => {

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { clsx } from 'clsx'
 import { Search, ChevronDown, ChevronRight, Image, Film, Music, FileText, Layers } from 'lucide-react'
 import { useProjectStore } from '@/stores/projectStore'
+import { addLog } from '@/stores/logStore'
 import type { NodeType, NodeCategory } from '@/types'
 
 interface NodeTemplate {
@@ -66,6 +67,12 @@ function NodeItem({ node }: { node: NodeTemplate }) {
       category: node.category,
     }))
     e.dataTransfer.effectAllowed = 'copy'
+    addLog({
+      level: 'info',
+      category: 'operation',
+      message: `拖拽节点: ${node.label}`,
+      detail: `类型: ${node.type} | 分类: ${node.category}`,
+    })
   }
 
   return (

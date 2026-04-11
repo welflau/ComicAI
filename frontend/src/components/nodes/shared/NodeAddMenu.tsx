@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { AlignJustify, Image as ImageIcon, Video, Combine, Music, TableProperties } from 'lucide-react'
 import { useProjectStore } from '@/stores/projectStore'
+import { addLog } from '@/stores/logStore'
 import type { NodeData } from '@/types'
 
 /* ── Menu item definitions ─────────────────────────────────────── */
@@ -179,6 +180,12 @@ export default function NodeAddMenu({
     } else {
       addEdge({ id: `e-${newId}-${sourceNodeId}`, source: newId, target: sourceNodeId })
     }
+    addLog({
+      level: 'info',
+      category: 'operation',
+      message: `添加节点: ${item.targetLabel}`,
+      detail: `类型: ${item.targetType} | 从节点 ${sourceNodeId} 出发 (方向: ${direction === 'right' ? '右' : '左'})`,
+    })
     onClose()
   }
 

@@ -1,5 +1,6 @@
 import { useProjectStore } from '@/stores/projectStore'
 import { WORKFLOW_TEMPLATES } from '@/stores/projectStore'
+import { addLog } from '@/stores/logStore'
 
 // Template card background images (abstract/cinematic placeholders via CSS)
 const CARD_ACCENTS: Record<string, string> = {
@@ -14,7 +15,15 @@ export default function TemplatePicker() {
 
   const pick = (templateId: string) => {
     const tpl = WORKFLOW_TEMPLATES.find(t => t.id === templateId)
-    if (tpl) updateWorkflow(tpl.nodes, tpl.edges)
+    if (tpl) {
+      updateWorkflow(tpl.nodes, tpl.edges)
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: `应用模板: ${tpl.name}`,
+        detail: `模板ID: ${tpl.id} | 节点数: ${tpl.nodes.length} | 连接数: ${tpl.edges.length}`,
+      })
+    }
   }
 
   return (
