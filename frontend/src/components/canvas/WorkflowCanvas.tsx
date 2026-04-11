@@ -21,6 +21,7 @@ import ScriptNode from '@/components/nodes/ScriptNode'
 import ScriptGenNode from '@/components/nodes/ScriptGenNode'
 import StoryboardTableNode from '@/components/nodes/StoryboardTableNode'
 import ImageNode from '@/components/nodes/ImageNode'
+import AnimatedFlowEdge from '@/components/canvas/AnimatedFlowEdge'
 import TemplatePicker from '@/components/canvas/TemplatePicker'
 import CanvasContextMenu from '@/components/canvas/CanvasContextMenu'
 import NodeContextMenu from '@/components/canvas/NodeContextMenu'
@@ -48,6 +49,10 @@ const nodeTypes = {
   libtv_image: ImageNode,
 }
 
+const edgeTypes = {
+  animated: AnimatedFlowEdge,
+}
+
 function toRFNode(node: NodeData): Node {
   return { id: node.id, type: node.type, position: node.position, data: node }
 }
@@ -59,8 +64,7 @@ function toRFEdge(edge: EdgeData): Edge {
     target: edge.target,
     sourceHandle: edge.sourceHandle,
     targetHandle: edge.targetHandle,
-    type: 'default',
-    style: { stroke: '#444', strokeWidth: 1.5 },
+    type: 'animated',
   }
 }
 
@@ -133,8 +137,7 @@ function WorkflowCanvasInner() {
       const newEdge: Edge = {
         ...params,
         id: `e-${params.source}-${params.target}`,
-        type: 'default',
-        style: { stroke: '#444', strokeWidth: 1.5 },
+        type: 'animated',
       } as Edge
       setEdges(eds => addEdge(newEdge, eds))
       addLog({
@@ -303,9 +306,10 @@ function WorkflowCanvasInner() {
         onPaneContextMenu={onPaneContextMenu}
         onNodeContextMenu={onNodeContextMenu}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         fitView
         fitViewOptions={{ padding: 0.15 }}
-        defaultEdgeOptions={{ type: 'default', style: { stroke: '#444', strokeWidth: 1.5 } }}
+        defaultEdgeOptions={{ type: 'animated' }}
         proOptions={{ hideAttribution: true }}
         minZoom={0.1}
         maxZoom={3}

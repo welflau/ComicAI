@@ -7,6 +7,7 @@ import {
   RefreshCw, Wand2, Download, Fullscreen, Loader2,
 } from 'lucide-react'
 import CollapsibleSection from './shared/CollapsibleSection'
+import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
 import NodeAddMenu from './shared/NodeAddMenu'
 import { useProjectStore } from '../../stores/projectStore'
 import { saveImage, resolveImageUrl } from '../../stores/imageStore'
@@ -813,14 +814,16 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
       {/* Prompt panel — expands below when selected (both with and without image), hidden for upload-only nodes */}
       {!isUploadedOnly && (
         <CollapsibleSection expanded={!!selected && !dragging}>
-          <ImagePromptPanel
-            value={prompt}
-            onChange={setPrompt}
-            onSend={handleGenerate}
-            generating={generating}
-            hasImage={hasImage}
-            refImages={refImages}
-          />
+          <ZoomInvariantPanel naturalWidth={NODE_W}>
+            <ImagePromptPanel
+              value={prompt}
+              onChange={setPrompt}
+              onSend={handleGenerate}
+              generating={generating}
+              hasImage={hasImage}
+              refImages={refImages}
+            />
+          </ZoomInvariantPanel>
           {genError && (
             <div style={{
               marginTop: 6, padding: '6px 10px',
