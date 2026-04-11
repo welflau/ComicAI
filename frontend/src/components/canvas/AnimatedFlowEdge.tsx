@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState, useRef, useCallback } from 'react'
 import {
   BaseEdge,
   EdgeProps,
@@ -9,15 +9,10 @@ import {
 /**
  * AnimatedFlowEdge
  *
- * Renders a bezier edge with a flowing "light pulse" effect — a bright,
- * blurred dot that travels continuously along the path from source to target.
- *
- * Implementation:
- *   - A second <path> on top of the base edge uses a very short stroke-dasharray
- *     (a small bright segment + a long gap), animated by stroke-dashoffset.
- *   - The total dasharray length equals the path's getTotalLength() so one cycle
- *     = one full traversal. We use a CSS animation rather than JS for performance.
- *   - A SVG <filter> adds a glow/blur around the moving dot.
+ * Features:
+ *  1. Flowing light-pulse animation (stroke-dashoffset CSS keyframes)
+ *  2. Hover 0.5 s → scissor icon appears at path midpoint; mousedown deletes edge
+ *  3. Alt + click anywhere on the edge → delete edge
  */
 const AnimatedFlowEdge = memo(function AnimatedFlowEdge({
   id,
@@ -31,24 +26,60 @@ const AnimatedFlowEdge = memo(function AnimatedFlowEdge({
   markerEnd,
   style,
 }: EdgeProps) {
-  const [edgePath] = getBezierPath({
+  const { deleteElements } = useReactFlow()
+
+  const [edgePath, labelX, labelY] = getBezierPath({
     sourceX, sourceY, sourcePosition,
     targetX, targetY, targetPosition,
   })
 
-  // We can't call getTotalLength() here (no DOM ref available at render time),
-  // so we use a fixed large number for the dash gap — it just needs to be longer
-  // than any realistic edge. The animation duration controls the speed.
-  const DOT_LEN  = 40   // length (px in SVG space) of the bright moving dot
-  const GAP_LEN  = 600  // gap between dots — effectively "one dot at a time"
+  const DOT_LEN  = 40
+  const GAP_LEN  = 600
   const filterId = `glow-${id}`
 
-  const baseColor   = selected ? '#818cf8' : '#555'
-  const glowColor   = selected ? '#a5b4fc' : '#93c5fd'
+  const baseColor  = selected ? '#818cf8' : '#555'
+  const glowColor  = selected ? '#a5b4fc' : '#93c5fd'
+
+  // ── Scissor visibility state ──────────────────────────────────
+  const [showScissor, setShowScissor] = useState(false)
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const deleteEdge = useCallback(() => {
+    deleteElements({ edges: [{ id }] })
+  }, [id, deleteElements])
+
+  const handleMouseEnter = useCallback(() => {
+    hoverTimer.current = setTimeout(() => setShowScissor(true), 500)
+  }, [])
+
+  const handleMouseLeave = useCallback(() => {
+    if (hoverTimer.current) {
+      clearTimeout(hoverTimer.current)
+      hoverTimer.current = null
+    }
+    setShowScissor(false)
+  }, [])
+
+  // Alt+click on the invisible hit-area path → delete
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if (e.altKey) {
+      e.stopPropagation()
+      deleteEdge()
+    }
+  }, [deleteEdge])
+
+  // Scissor button mousedown → delete (mousedown so it fires before blur etc.)
+  const handleScissorMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    deleteEdge()
+  }, [deleteEdge])
+
+  // Scissor size / position
+  const SC = 26 // icon circle diameter
 
   return (
     <>
-      {/* ── Glow filter (unique per edge to avoid id collision) ── */}
+      {/* ── Glow filter ── */}
       <defs>
         <filter id={filterId} x="-50%" y="-50%" width="200%" height="200%">
           <feGaussianBlur stdDeviation="3" result="blur" />
@@ -63,11 +94,7 @@ const AnimatedFlowEdge = memo(function AnimatedFlowEdge({
       <BaseEdge
         path={edgePath}
         markerEnd={markerEnd}
-        style={{
-          stroke: baseColor,
-          strokeWidth: 1.5,
-          ...style,
-        }}
+        style={{ stroke: baseColor, strokeWidth: 1.5, ...style }}
       />
 
       {/* ── Flowing dot ── */}
@@ -79,14 +106,64 @@ const AnimatedFlowEdge = memo(function AnimatedFlowEdge({
         strokeLinecap="round"
         strokeDasharray={`${DOT_LEN} ${GAP_LEN}`}
         filter={`url(#${filterId})`}
-        style={{
-          animation: `flow-edge 2.4s linear infinite`,
-          // stroke-dashoffset starts at 0 and counts down to -(DOT_LEN + GAP_LEN)
-          // so the dot travels source → target once per cycle
-        }}
+        style={{ animation: 'flow-edge 2.4s linear infinite', pointerEvents: 'none' }}
       />
 
-      {/* ── Keyframes injected once via a shared <style> tag ── */}
+      {/* ── Invisible wide hit-area for hover & alt+click ── */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={20}
+        style={{ cursor: showScissor ? 'pointer' : 'default' }}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        onClick={handleClick}
+      />
+
+      {/* ── Scissor icon (appears after 0.5 s hover) ── */}
+      {showScissor && (
+        <foreignObject
+          x={labelX - SC / 2}
+          y={labelY - SC / 2}
+          width={SC}
+          height={SC}
+          style={{ overflow: 'visible', pointerEvents: 'none' }}
+        >
+          <div
+            // @ts-ignore — xmlns required for foreignObject children
+            xmlns="http://www.w3.org/1999/xhtml"
+            onMouseDown={handleScissorMouseDown}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+            style={{
+              width: SC, height: SC,
+              borderRadius: '50%',
+              background: '#1a1a1a',
+              border: '1px solid #444',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer',
+              pointerEvents: 'all',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.6)',
+              transition: 'background 0.15s',
+            }}
+            onMouseOver={(e) => { (e.currentTarget as HTMLDivElement).style.background = '#2a2a2a' }}
+            onMouseOut={(e)  => { (e.currentTarget as HTMLDivElement).style.background = '#1a1a1a' }}
+          >
+            {/* Scissors SVG */}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="#ccc" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="6" cy="6" r="3"/>
+              <circle cx="6" cy="18" r="3"/>
+              <line x1="20" y1="4" x2="8.12" y2="15.88"/>
+              <line x1="14.47" y1="14.48" x2="20" y2="20"/>
+              <line x1="8.12" y1="8.12" x2="12" y2="12"/>
+            </svg>
+          </div>
+        </foreignObject>
+      )}
+
+      {/* ── Keyframes (injected once; duplicate <style> tags are harmless) ── */}
       <style>{`
         @keyframes flow-edge {
           from { stroke-dashoffset: 0; }
