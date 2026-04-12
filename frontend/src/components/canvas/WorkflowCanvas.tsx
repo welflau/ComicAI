@@ -26,6 +26,7 @@ import TemplatePicker from '@/components/canvas/TemplatePicker'
 import CanvasContextMenu from '@/components/canvas/CanvasContextMenu'
 import NodeContextMenu from '@/components/canvas/NodeContextMenu'
 import { useProjectStore } from '@/stores/projectStore'
+import { MultiSelectionToolbar } from '@/components/canvas/MultiSelectionToolbar'
 import { registerViewportCenter } from '@/stores/viewportCenter'
 import type { NodeData, EdgeData } from '@/types'
 import { addLog } from '@/stores/logStore'
@@ -132,24 +133,6 @@ function WorkflowCanvasInner() {
     }
   }, [storeEdges, rfEdges])
 
-  const onConnect = useCallback(
-    (params: Connection) => {
-      const newEdge: Edge = {
-        ...params,
-        id: `e-${params.source}-${params.target}`,
-        type: 'animated',
-      } as Edge
-      setEdges(eds => addEdge(newEdge, eds))
-      addLog({
-        level: 'info',
-        category: 'operation',
-        message: '连接已创建',
-        detail: `从 ${newEdge.source} 到 ${newEdge.target}`,
-      })
-    },
-    [setEdges]
-  )
-
   const saveWorkflow = useCallback((ns: Node[], es: Edge[]) => {
     updateWorkflow(
       ns.map(n => ({ ...n.data, position: n.position })),
@@ -160,6 +143,28 @@ function WorkflowCanvasInner() {
       }))
     )
   }, [updateWorkflow])
+
+  const onConnect = useCallback(
+    (params: Connection) => {
+      const newEdge: Edge = {
+        ...params,
+        id: `e-${params.source}-${params.target}`,
+        type: 'animated',
+      } as Edge
+      setEdges(eds => {
+        const next = addEdge(newEdge, eds)
+        saveWorkflow(nodes, next)
+        return next
+      })
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: '连接已创建',
+        detail: `从 ${newEdge.source} 到 ${newEdge.target}`,
+      })
+    },
+    [setEdges, nodes, saveWorkflow]
+  )
 
   const onNodeDragStart = useCallback((_: unknown, node: Node) => {
     dragStartPos.current = { x: node.position.x, y: node.position.y }
@@ -289,6 +294,56 @@ function WorkflowCanvasInner() {
     const n = nodes.find(n => n.id === nodeMenu.nodeId)
     if (n) navigator.clipboard.writeText(JSON.stringify(n.data, null, 2)).catch(() => {})
   }, [nodeMenu, nodes])
+
+  // Multi-selection actions
+  const handleMultiDelete = useCallback(() => {
+    const selectedIds = new Set(nodes.filter(n => n.selected).map(n => n.id))
+    if (selectedIds.size === 0) return
+    const newNodes = nodes.filter(n => !selectedIds.has(n.id))
+    const newEdges = edges.filter(e => !selectedIds.has(e.source) && !selectedIds.has(e.target))
+    setNodes(newNodes)
+    setEdges(newEdges)
+    saveWorkflow(newNodes, newEdges)
+    addLog({
+      level: 'info',
+      category: 'operation',
+      message: `批量删除: ${selectedIds.size} 个节点`,
+      detail: `节点IDs: ${Array.from(selectedIds).join(', ')}`,
+    })
+  }, [nodes, edges, setNodes, setEdges, saveWorkflow])
+
+  const handleMultiDuplicate = useCallback(() => {
+    const selectedNodes = nodes.filter(n => n.selected)
+    if (selectedNodes.length === 0) return
+    const timestamp = Date.now()
+    const newNodes = selectedNodes.map((n, idx) => ({
+      ...n,
+      id: `${n.id}_copy_${timestamp}_${idx}`,
+      position: { x: n.position.x + 40, y: n.position.y + 40 },
+    }))
+    setNodes([...nodes, ...newNodes])
+    saveWorkflow([...nodes, ...newNodes], edges)
+    addLog({
+      level: 'info',
+      category: 'operation',
+      message: `批量复制: ${selectedNodes.length} 个节点`,
+      detail: `原节点IDs: ${selectedNodes.map(n => n.id).join(', ')}`,
+    })
+  }, [nodes, edges, setNodes, saveWorkflow])
+
+  const handleMultiCopy = useCallback(() => {
+    const selectedNodes = nodes.filter(n => n.selected)
+    if (selectedNodes.length > 0) {
+      navigator.clipboard.writeText(JSON.stringify(selectedNodes.map(n => n.data), null, 2)).catch(() => {})
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: `已复制到剪贴板: ${selectedNodes.length} 个节点`,
+      })
+    }
+  }, [nodes])
+
+  const selectedNodes = useMemo(() => nodes.filter(n => n.selected), [nodes])
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
@@ -431,6 +486,15 @@ function WorkflowCanvasInner() {
           </div>
         </Panel>
       </ReactFlow>
+
+      {selectedNodes.length > 0 && (
+        <MultiSelectionToolbar
+          selectedNodes={selectedNodes}
+          onDelete={handleMultiDelete}
+          onDuplicate={handleMultiDuplicate}
+          onCopy={handleMultiCopy}
+        />
+      )}
 
       {paneMenu && (
         <CanvasContextMenu
