@@ -791,7 +791,6 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
               <>
                 {/* Mountain placeholder icon — click to upload */}
                 <div
-                  className="nodrag nopan"
                   onClick={handleUploadClick}
                   style={{
                     height: PLACEHOLDER_H, background: '#1a1a1a',
