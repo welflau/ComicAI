@@ -421,7 +421,6 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const [prompt,      setPrompt]      = useState(() => data.imagePrompt ?? '')
   const [generating,  setGenerating]  = useState(false)
   const [genError,    setGenError]    = useState<string | null>(null)
-  const [placeholderHovered, setPlaceholderHovered] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   // Rendered image size (updated on img load)
   const [imgRenderedH,  setImgRenderedH]  = useState<number | null>(data.renderedH ?? null)
@@ -794,42 +793,18 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
                 <div
                   className="nodrag nopan"
                   onClick={handleUploadClick}
-                  onMouseEnter={() => setPlaceholderHovered(true)}
-                  onMouseLeave={() => setPlaceholderHovered(false)}
                   style={{
                     height: PLACEHOLDER_H, background: '#1a1a1a',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer', position: 'relative',
+                    cursor: 'pointer',
                   }}
                 >
                   <svg
                     width="64" height="52" viewBox="0 0 64 52" fill="none"
-                    style={{ opacity: placeholderHovered ? 0.6 : 0.3, transition: 'opacity 150ms ease' }}
                   >
-                    {/* Sun/circle */}
-                    <circle cx="46" cy="14" r="7" fill="#555" />
-                    {/* Mountains */}
-                    <path d="M0 52 L22 20 L38 38 L46 28 L64 52 Z" fill="#444" />
+                    <circle cx="46" cy="14" r="7" fill="#404040" />
+                    <path d="M0 52 L22 20 L38 38 L46 28 L64 52 Z" fill="#383838" />
                   </svg>
-                  {/* Hover: upload hint */}
-                  <div style={{
-                    position: 'absolute', inset: 0,
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                    gap: 8,
-                    opacity: placeholderHovered ? 1 : 0,
-                    transition: 'opacity 150ms ease',
-                    pointerEvents: 'none',
-                  }}>
-                    <div style={{
-                      width: 36, height: 36, borderRadius: '50%',
-                      background: 'rgba(255,255,255,0.08)',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Upload size={15} color="#ccc" />
-                    </div>
-                    <span style={{ fontSize: 12, color: '#aaa' }}>点击上传</span>
-                  </div>
                 </div>
 
                 {/* Quick actions */}
