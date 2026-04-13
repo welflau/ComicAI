@@ -9,6 +9,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useProjectStore } from '@/stores/projectStore'
 import type { NodeData, EdgeData } from '@/types'
 import CollapsibleSection from './shared/CollapsibleSection'
+import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
 import NodeAddMenu from './shared/NodeAddMenu'
 import { streamAI } from '@/api'
 import { addLog } from '@/stores/logStore'
@@ -739,7 +740,9 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
           </div>
 
           <CollapsibleSection expanded={isExpanded}>
-            <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} sourceThumbnailUrl={thumbnailUrl} />
+            <ZoomInvariantPanel naturalWidth={NODE_W}>
+              <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} sourceThumbnailUrl={thumbnailUrl} />
+            </ZoomInvariantPanel>
           </CollapsibleSection>
 
           <CircleHandle type="target" position={Position.Left}  top={idleHandleY} visible={handlesVisible}
@@ -908,13 +911,15 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
           </div>
 
           {/* PromptPanel always visible during generation, send button shows spinner */}
-          <PromptPanel
-            value={prompt}
-            onChange={setPrompt}
-            onSend={handleSend}
-            loading={true}
-            sourceThumbnailUrl={thumbnailUrl}
-          />
+          <ZoomInvariantPanel naturalWidth={NODE_W}>
+            <PromptPanel
+              value={prompt}
+              onChange={setPrompt}
+              onSend={handleSend}
+              loading={true}
+              sourceThumbnailUrl={thumbnailUrl}
+            />
+          </ZoomInvariantPanel>
 
           <CircleHandle type="target" position={Position.Left}  top={genHandleY} visible={handlesVisible}
             onSourceClick={() => setTargetMenuOpen(v => !v)} menuOpen={targetMenuOpen} onMenuClose={() => setTargetMenuOpen(false)}
@@ -1016,7 +1021,9 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
           </div>
 
           <CollapsibleSection expanded={isExpanded}>
-            <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} sourceThumbnailUrl={thumbnailUrl} />
+            <ZoomInvariantPanel naturalWidth={NODE_W}>
+              <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} sourceThumbnailUrl={thumbnailUrl} />
+            </ZoomInvariantPanel>
           </CollapsibleSection>
 
           <CircleHandle type="target" position={Position.Left}  top={contentHandleY} visible={handlesVisible}

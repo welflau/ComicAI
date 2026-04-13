@@ -9,6 +9,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useProjectStore } from '@/stores/projectStore'
 import type { NodeData, EdgeData } from '@/types'
 import CollapsibleSection from './shared/CollapsibleSection'
+import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
 import NodeAddMenu from './shared/NodeAddMenu'
 import { useIsMultiSelected } from './shared/useIsMultiSelected'
 import { streamAI } from '@/api'
@@ -847,11 +848,13 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
 
           {/* Prompt panel */}
           <CollapsibleSection expanded={isExpanded}>
-            <PromptPanel
-              value={prompt}
-              onChange={setPrompt}
-              onSend={handleSend}
-            />
+            <ZoomInvariantPanel naturalWidth={NODE_W}>
+              <PromptPanel
+                value={prompt}
+                onChange={setPrompt}
+                onSend={handleSend}
+              />
+            </ZoomInvariantPanel>
           </CollapsibleSection>
 
           <CircleHandle type="target" position={Position.Left}  top={idleHandleY} visible={handlesVisible}
@@ -1057,11 +1060,13 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
 
           {/* Prompt panel */}
           <CollapsibleSection expanded={isExpanded}>
-            <PromptPanel
-              value={prompt}
-              onChange={setPrompt}
-              onSend={handleSend}
-            />
+            <ZoomInvariantPanel naturalWidth={NODE_W}>
+              <PromptPanel
+                value={prompt}
+                onChange={setPrompt}
+                onSend={handleSend}
+              />
+            </ZoomInvariantPanel>
           </CollapsibleSection>
 
           <CircleHandle type="target" position={Position.Left}  top={contentHandleY} visible={handlesVisible}

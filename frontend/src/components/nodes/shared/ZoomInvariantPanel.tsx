@@ -17,9 +17,17 @@ import { useStore } from 'reactflow'
 export default function ZoomInvariantPanel({
   children,
   naturalWidth,
+  nodeWidth,
 }: {
   children: React.ReactNode
+  /** Desired screen width of the panel content (px at zoom=1). */
   naturalWidth: number
+  /**
+   * Actual flow-space width of the host node (px at zoom=1).
+   * Used to compute the horizontal centering offset.
+   * Defaults to naturalWidth if omitted.
+   */
+  nodeWidth?: number
 }) {
   const zoom = useStore(s => s.transform[2])
   const innerRef = useRef<HTMLDivElement>(null)
@@ -35,11 +43,16 @@ export default function ZoomInvariantPanel({
   })
 
   const scale = 1 / zoom
+  const hostW = nodeWidth ?? naturalWidth
+
   // Horizontal offset so the counter-scaled panel stays centred within the node.
-  // With transformOrigin='top left': visual centre = left + (naturalWidth * scale) / 2
-  // Setting that equal to naturalWidth / 2 gives:
-  //   left = (naturalWidth / 2) * (1 - scale)
-  const centreLeft = (naturalWidth / 2) * (1 - scale)
+  //
+  // After counter-scaling (transformOrigin='top left'), the panel's visual span is:
+  //   [left,  left + naturalWidth * scale]
+  // We want the visual centre to equal the node's centre (hostW / 2):
+  //   left + (naturalWidth * scale) / 2  =  hostW / 2
+  //   left = (hostW - naturalWidth * scale) / 2
+  const centreLeft = (hostW - naturalWidth * scale) / 2
 
   return (
     // Outer div: reserves the right amount of flow-space so the parent's layout

@@ -208,6 +208,13 @@ export const useProjectStore = create<ProjectState>()(
       set((state) => ({
         nodes: state.nodes.map(n => n.id === id ? { ...n, ...updates } : n)
       }))
+      // Persist the updated nodes so properties like renderedW/H survive page reload
+      const { currentProject, nodes: updatedNodes, edges } = get()
+      if (currentProject) {
+        if (import.meta.env.DEV && (currentProject.id === 'demo' || currentProject.id.startsWith('local_'))) {
+          useLocalProjectsStore.getState().saveWorkflow(currentProject.id, updatedNodes, edges).catch(() => {})
+        }
+      }
       // No log here — called on every keystroke/image-url change, would be very noisy
     },
 

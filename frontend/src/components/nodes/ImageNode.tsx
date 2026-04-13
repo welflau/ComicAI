@@ -26,6 +26,9 @@ export interface ImageNodeData {
   nodeIndex?: number
   imageSource?: 'uploaded' | 'generated'
   imagePrompt?: string
+  /** Persisted rendered size so the node restores at the correct dimensions on reload */
+  renderedW?: number
+  renderedH?: number
 }
 
 const NODE_W        = 400
@@ -422,11 +425,15 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const [placeholderHovered, setPlaceholderHovered] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   // Rendered image size (updated on img load)
-  const [imgRenderedH,  setImgRenderedH]  = useState<number | null>(null)
-  const [imgRenderedW,  setImgRenderedW]  = useState<number | null>(null)
+  const [imgRenderedH,  setImgRenderedH]  = useState<number | null>(data.renderedH ?? null)
+  const [imgRenderedW,  setImgRenderedW]  = useState<number | null>(data.renderedW ?? null)
   const [imgBroken,     setImgBroken]     = useState(false)
+  // widthReady: suppresses the width transition until the node has settled at its
+  // correct size at least once. True immediately if we have persisted dimensions.
+  const [widthReady,    setWidthReady]    = useState(!!(data.imageUrl && data.renderedW))
   // Resolved display URL (blob URL from IndexedDB or plain URL)
   const [displayUrl,    setDisplayUrl]    = useState<string | null>(null)
+  const prevImageUrlRef = useRef<string | undefined>(data.imageUrl)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const updateNode     = useProjectStore(s => s.updateNode)
   const currentProject = useProjectStore(s => s.currentProject)
@@ -437,6 +444,9 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const [refImages, setRefImages] = useState<string[]>([])
 
   const hasImage       = !!displayUrl && !imgBroken
+  // True as soon as we know an image exists (even before url resolves) — used to
+  // switch layout so the node doesn't jump from placeholder to image mode.
+  const hasImageData   = !!data.imageUrl && !imgBroken
   const isUploadedOnly = data.imageSource === 'uploaded'
   const handlesVisible = isHovered || (!!selected && !dragging)
   const nodeLabel      = data.label || '图片'
@@ -456,10 +466,14 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
 
     resolveImageUrl(data.imageUrl).then(url => {
       if (cancelled) return
+      // If imageUrl changed (user replaced image), reset size so onLoad recalculates
+      if (data.imageUrl !== prevImageUrlRef.current) {
+        setImgRenderedW(null)
+        setImgRenderedH(null)
+        prevImageUrlRef.current = data.imageUrl
+      }
       setDisplayUrl(url)
       setImgBroken(false)
-      setImgRenderedH(null)
-      // Track blob URLs so we can revoke them when imageUrl changes
       if (url && url.startsWith('blob:')) revoke = url
     })
 
@@ -499,8 +513,10 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   }, [allEdges, allNodes, data.id])
 
   // Handle Y: center of the image area
-  const nodeW      = hasImage ? (imgRenderedW ?? NODE_W) : NODE_W
-  const imageAreaH = hasImage ? (imgRenderedH ?? PLACEHOLDER_H) : PLACEHOLDER_H
+  // Use persisted renderedW whenever an imageUrl is set, so the node starts at
+  // the correct width before the async displayUrl resolves (prevents size jump).
+  const nodeW      = (hasImageData && imgRenderedW) ? imgRenderedW : NODE_W
+  const imageAreaH = (hasImageData && imgRenderedH) ? imgRenderedH : PLACEHOLDER_H
   const handleY    = TITLE_H + imageAreaH / 2
 
   function handleUploadClick() {
@@ -546,7 +562,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
       const projectId = currentProject?.id ?? 'local'
       const ref = await saveImage(projectId, file)
       const usedPrompt = prompt.trim()
-      updateNode(data.id, { imageUrl: ref, imageSource: 'generated', imagePrompt: usedPrompt } as Partial<ImageNodeData>)
+      updateNode(data.id, { imageUrl: ref, imageSource: 'generated', imagePrompt: usedPrompt })
       const elapsed = ((Date.now() - t0) / 1000).toFixed(1)
       addLog({
         level: 'info',
@@ -579,6 +595,8 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
     const file = e.target.files?.[0]
     if (!file) return
     setImgRenderedH(null)
+    setImgRenderedW(null)
+    setWidthReady(false)
     setImgBroken(false)
     e.target.value = ''
 
@@ -590,7 +608,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
     })
     const projectId = currentProject?.id ?? 'local'
     const ref = await saveImage(projectId, file)
-    updateNode(data.id, { imageUrl: ref, imageSource: 'uploaded' } as Partial<ImageNodeData>)
+    updateNode(data.id, { imageUrl: ref, imageSource: 'uploaded' })
   }
 
   function handleImgLoad(e: React.SyntheticEvent<HTMLImageElement>) {
@@ -612,9 +630,14 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
     setImgRenderedW(Math.round(w))
     setImgRenderedH(Math.round(h))
     setImgBroken(false)
+    setWidthReady(true)
+    // Persist so the node restores at the correct size on page reload
+    updateNode(data.id, { renderedW: Math.round(w), renderedH: Math.round(h) })
   }
 
   function handleImgError() {
+    // If displayUrl hasn't resolved yet, src is undefined/empty — ignore the spurious error.
+    if (!displayUrl) return
     // Blob URL expired or broken — treat as no image
     setImgBroken(true)
     setImgRenderedH(null)
@@ -627,7 +650,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
         position: 'relative',
         width: nodeW,
         fontFamily: 'Inter, system-ui, sans-serif',
-        transition: 'width 150ms ease',
+        transition: widthReady ? 'width 150ms ease' : 'none',
       }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -642,7 +665,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
       />
 
       {/* Upload button — floats above node when selected AND no image */}
-      {selected && !dragging && !hasImage && (
+      {selected && !dragging && !hasImageData && (
         <div style={{
           position: 'absolute', top: -38, left: '50%',
           transform: 'translateX(-50%)', zIndex: 10,
@@ -695,18 +718,24 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
           ? '0 0 0 2px rgba(255,255,255,0.04), 0 4px 20px rgba(0,0,0,0.5)'
           : '0 2px 12px rgba(0,0,0,0.4)',
       }}>
-        {hasImage ? (
-          /* ── Image mode: natural aspect ratio + replace button + collapsible actions ── */
+        {(data.imageUrl && !imgBroken) ? (
+          /* ── Image mode: render img immediately (opacity 0 until url resolves) ── */
           <>
             <div style={{ position: 'relative', lineHeight: 0 }}>
               <img
-                src={displayUrl!} alt=""
+                src={displayUrl ?? undefined}
+                alt=""
                 onLoad={handleImgLoad}
                 onError={handleImgError}
                 style={{
                   display: 'block',
                   width: '100%',
-                  height: 'auto',
+                  height: imgRenderedH ? imgRenderedH : 'auto',
+                  opacity: displayUrl ? 1 : 0,
+                  transition: 'opacity 150ms ease',
+                  // Reserve space while url is resolving using persisted height
+                  minHeight: imgRenderedH ?? undefined,
+                  background: imgRenderedH ? '#141414' : undefined,
                 }}
               />
               {/* Replace button — always visible top-right */}
@@ -803,7 +832,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
       {/* Prompt panel — expands below when selected (both with and without image), hidden for upload-only nodes */}
       {!isUploadedOnly && (
         <CollapsibleSection expanded={!!selected && !dragging}>
-          <ZoomInvariantPanel naturalWidth={NODE_W}>
+          <ZoomInvariantPanel naturalWidth={NODE_W} nodeWidth={nodeW}>
             <ImagePromptPanel
               value={prompt}
               onChange={setPrompt}

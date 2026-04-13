@@ -293,6 +293,8 @@ export interface NodeData {
   nodeIndex?: number
   imageSource?: 'uploaded' | 'generated'   // how the image was set
   imagePrompt?: string                      // prompt used to generate the image
+  renderedW?: number                        // persisted rendered image width (px)
+  renderedH?: number                        // persisted rendered image height (px)
 }
 
 export interface EdgeData {
