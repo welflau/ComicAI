@@ -1,6 +1,5 @@
 import { memo, useRef, useState, useEffect, useCallback } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
-import placeholderImage from '@/assets/placeholder-image.webp'
 import {
   Image as ImageIcon, Upload, Monitor, Video,
   Languages, SlidersHorizontal, ChevronDown, ArrowUp,
@@ -767,49 +766,52 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
             {/* Quick actions removed when image is present */}
           </>
         ) : (
-          /* ── Empty mode: placeholder + quick actions ── */
+          /* ── Empty mode: mountain icon + quick actions ── */
           <>
-            {/* Placeholder image area — click to upload */}
-            <div
-              className="nodrag nopan"
-              onClick={!generating ? handleUploadClick : undefined}
-              onMouseEnter={() => setPlaceholderHovered(true)}
-              onMouseLeave={() => setPlaceholderHovered(false)}
-              style={{
+            <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} } @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }`}</style>
+
+            {generating ? (
+              /* Generating state: shimmer + spinner */
+              <div style={{
                 height: PLACEHOLDER_H, background: '#141414',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 position: 'relative', overflow: 'hidden',
-                cursor: generating ? 'default' : 'pointer',
-              }}
-            >
-              {generating ? (
-                <>
-                  {/* Shimmer overlay */}
-                  <div style={{
-                    position: 'absolute', inset: 0,
-                    background: 'linear-gradient(90deg, #141414 0%, #1e1e1e 50%, #141414 100%)',
-                    backgroundSize: '200% 100%',
-                    animation: 'shimmer 1.5s infinite',
-                  }} />
-                  <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} } @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }`}</style>
-                  <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                    <Loader2 size={28} color="#555" style={{ animation: 'spin 1s linear infinite' }} />
-                    <span style={{ color: '#555', fontSize: 12 }}>正在生成图片...</span>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <img
-                    src={placeholderImage}
-                    alt=""
-                    style={{
-                      width: '100%', height: '100%',
-                      objectFit: 'cover', display: 'block',
-                      opacity: placeholderHovered ? 0.3 : 0.55,
-                      transition: 'opacity 150ms ease',
-                    }}
-                  />
-                  {/* Upload hint overlay */}
+              }}>
+                <div style={{
+                  position: 'absolute', inset: 0,
+                  background: 'linear-gradient(90deg, #141414 0%, #1e1e1e 50%, #141414 100%)',
+                  backgroundSize: '200% 100%',
+                  animation: 'shimmer 1.5s infinite',
+                }} />
+                <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+                  <Loader2 size={28} color="#555" style={{ animation: 'spin 1s linear infinite' }} />
+                  <span style={{ color: '#555', fontSize: 12 }}>正在生成图片...</span>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Mountain placeholder icon — click to upload */}
+                <div
+                  className="nodrag nopan"
+                  onClick={handleUploadClick}
+                  onMouseEnter={() => setPlaceholderHovered(true)}
+                  onMouseLeave={() => setPlaceholderHovered(false)}
+                  style={{
+                    height: PLACEHOLDER_H, background: '#1a1a1a',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', position: 'relative',
+                  }}
+                >
+                  <svg
+                    width="64" height="52" viewBox="0 0 64 52" fill="none"
+                    style={{ opacity: placeholderHovered ? 0.6 : 0.3, transition: 'opacity 150ms ease' }}
+                  >
+                    {/* Sun/circle */}
+                    <circle cx="46" cy="14" r="7" fill="#555" />
+                    {/* Mountains */}
+                    <path d="M0 52 L22 20 L38 38 L46 28 L64 52 Z" fill="#444" />
+                  </svg>
+                  {/* Hover: upload hint */}
                   <div style={{
                     position: 'absolute', inset: 0,
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -819,18 +821,61 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
                     pointerEvents: 'none',
                   }}>
                     <div style={{
-                      width: 40, height: 40, borderRadius: '50%',
-                      background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
-                      border: '1px solid rgba(255,255,255,0.2)',
+                      width: 36, height: 36, borderRadius: '50%',
+                      background: 'rgba(255,255,255,0.08)',
+                      border: '1px solid rgba(255,255,255,0.15)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
-                      <Upload size={16} color="#ddd" />
+                      <Upload size={15} color="#ccc" />
                     </div>
-                    <span style={{ fontSize: 12, color: '#ccc', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>点击上传</span>
+                    <span style={{ fontSize: 12, color: '#aaa' }}>点击上传</span>
                   </div>
-                </>
-              )}
-            </div>
+                </div>
+
+                {/* Quick actions */}
+                <div style={{ padding: '14px 16px 16px' }}>
+                  <span style={{ fontSize: 12, color: '#555', marginBottom: 10, display: 'block' }}>尝试：</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {[
+                      { Icon: Upload, label: '图生图', onClick: handleUploadClick },
+                      { Icon: null,   label: '图片高清', hd: true, onClick: () => {} },
+                    ].map(({ Icon, label, hd, onClick }) => (
+                      <button
+                        key={label}
+                        className="nodrag nopan"
+                        onClick={onClick}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          background: 'none', border: 'none', cursor: 'pointer',
+                          color: '#888', fontSize: 13, padding: '7px 8px',
+                          borderRadius: 8, textAlign: 'left', width: '100%',
+                          transition: 'background 150ms, color 150ms',
+                          fontFamily: 'inherit',
+                        }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#252525'; e.currentTarget.style.color = '#ccc' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#888' }}
+                      >
+                        {hd ? (
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 22, height: 22, border: '1.5px solid #555', borderRadius: 5,
+                            fontSize: 10, fontWeight: 700, color: '#888', flexShrink: 0,
+                          }}>HD</span>
+                        ) : Icon ? (
+                          <span style={{
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 22, height: 22, flexShrink: 0,
+                          }}>
+                            <Icon size={14} />
+                          </span>
+                        ) : null}
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
           </>
         )}
       </div>
