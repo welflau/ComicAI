@@ -108,8 +108,28 @@ function LogRow({ entry }: { entry: LogEntry }) {
           color: entry.level === 'error' ? '#f87171' : entry.level === 'warn' ? '#fbbf24' : '#d0d0d0',
           lineHeight: 1.5,
           wordBreak: 'break-word',
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 6,
+          flexWrap: 'wrap',
         }}>
           {entry.message}
+          {entry.category === 'ai' && entry.detail && (
+            <span style={{
+              fontSize: 9,
+              fontWeight: 700,
+              fontFamily: 'monospace',
+              color: entry.kind === 'response' ? '#34d399' : '#a78bfa',
+              background: entry.kind === 'response' ? 'rgba(52,211,153,0.1)' : 'rgba(167,139,250,0.1)',
+              border: entry.kind === 'response' ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(167,139,250,0.3)',
+              borderRadius: 3,
+              padding: '1px 5px',
+              letterSpacing: 0.5,
+              flexShrink: 0,
+            }}>
+              {entry.kind === 'response' ? 'RESPONSE' : 'PROMPT'}
+            </span>
+          )}
         </span>
 
         {/* Timestamp */}
@@ -129,18 +149,36 @@ function LogRow({ entry }: { entry: LogEntry }) {
         <div style={{
           marginTop: 6,
           marginLeft: 22,
-          padding: '6px 10px',
-          background: '#111',
-          border: '1px solid #1e1e1e',
+          background: '#0e0e0e',
+          border: entry.category === 'ai' ? '1px solid rgba(167,139,250,0.2)' : '1px solid #1e1e1e',
           borderRadius: 6,
-          fontSize: 11,
-          color: '#888',
-          fontFamily: 'monospace',
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-all',
-          lineHeight: 1.6,
+          overflow: 'hidden',
         }}>
-          {entry.detail}
+          {entry.category === 'ai' && (
+            <div style={{
+              padding: '3px 10px',
+              borderBottom: entry.kind === 'response' ? '1px solid rgba(52,211,153,0.15)' : '1px solid rgba(167,139,250,0.15)',
+              fontSize: 9,
+              fontWeight: 700,
+              fontFamily: 'monospace',
+              color: entry.kind === 'response' ? '#34d399' : '#a78bfa',
+              letterSpacing: 0.8,
+              background: entry.kind === 'response' ? 'rgba(52,211,153,0.06)' : 'rgba(167,139,250,0.06)',
+            }}>
+              {entry.kind === 'response' ? 'RESPONSE' : 'PROMPT'}
+            </div>
+          )}
+          <div style={{
+            padding: '6px 10px',
+            fontSize: 11,
+            color: '#888',
+            fontFamily: 'monospace',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            lineHeight: 1.6,
+          }}>
+            {entry.detail}
+          </div>
         </div>
       )}
     </div>

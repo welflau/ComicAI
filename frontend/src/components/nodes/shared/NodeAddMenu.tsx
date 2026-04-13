@@ -161,9 +161,11 @@ export default function NodeAddMenu({
     // When creating a text node from an image source, pre-fill image context
     const extraConfig: Record<string, unknown> = {}
     let initialPrompt: string | undefined
+    let hideQuickActions: boolean | undefined
     if (item.targetType === 'libtv_script' && sourceImageUrl) {
       extraConfig.sourceImageUrl = sourceImageUrl
       initialPrompt = '根据图片生成提示词'
+      hideQuickActions = true
     }
 
     addNode({
@@ -174,6 +176,7 @@ export default function NodeAddMenu({
       position: { x: newX, y: sourcePosition.y },
       config: extraConfig,
       ...(initialPrompt ? { initialPrompt } : {}),
+      ...(hideQuickActions ? { hideQuickActions } : {}),
     })
     if (direction === 'right') {
       addEdge({ id: `e-${sourceNodeId}-${newId}`, source: sourceNodeId, target: newId })

@@ -101,6 +101,8 @@
 .react-flow__selection { background: rgba(255,255,255,0.03); border: 1px solid #444; }
 /* Node selected ring */
 .react-flow__node.selected > div { outline: 1.5px solid #555 !important; }
+/* Suppress selected ring when box-selecting multiple nodes */
+.rf-multi-selecting .react-flow__node.selected > div { outline: none !important; }
 
 /* Timeline */
 .timeline-track { height: 56px; border-bottom: 1px solid #2e2e2e; }

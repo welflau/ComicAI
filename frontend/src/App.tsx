@@ -8,26 +8,31 @@ import Dashboard from '@/pages/Dashboard'
 import ProjectEditor from '@/pages/ProjectEditor'
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, isInitialized } = useAuthStore()
+  // Wait for the initial auth check before deciding to redirect
+  if (!isInitialized) return null
   if (!isAuthenticated) return <Navigate to="/login" replace />
   return <>{children}</>
 }
 
 function GuestGuard({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, isInitialized } = useAuthStore()
+  if (!isInitialized) return null
   if (isAuthenticated) return <Navigate to="/dashboard" replace />
   return <>{children}</>
 }
 
 function AppInitializer({ children }: { children: React.ReactNode }) {
-  const { loadUser, token } = useAuthStore()
+  const { loadUser } = useAuthStore()
 
   useEffect(() => {
-    if (token) {
-      loadUser().catch(() => {
-        // Token expired or invalid — authStore handles clearing
-      })
-    }
+    // zustand-persist rehydrates synchronously on first render for localStorage,
+    // so by the time this effect runs the store already has the persisted token.
+    // loadUser() handles both "has token" and "no token" cases and always sets
+    // isInitialized = true, so we can call it unconditionally.
+    loadUser().catch(() => {
+      // Token expired or invalid — authStore handles clearing + sets isInitialized
+    })
   }, [])
 
   return <>{children}</>

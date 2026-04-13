@@ -12,6 +12,8 @@ export interface LogEntry {
   category: LogCategory
   message: string
   detail?: string
+  /** For 'ai' category: 'prompt' = outgoing request, 'response' = incoming result */
+  kind?: 'prompt' | 'response'
 }
 
 interface LogState {

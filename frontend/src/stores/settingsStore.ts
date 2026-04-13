@@ -22,7 +22,7 @@ function fromEnv(): AllSettings {
   const e = import.meta.env
   return {
     anthropic: {
-      baseUrl:  e.VITE_ANTHROPIC_BASE_URL   ?? '',
+      baseUrl:  '/api/anthropic',
       apiKey:   e.VITE_ANTHROPIC_AUTH_TOKEN ?? '',
       endpoint: '',
     },

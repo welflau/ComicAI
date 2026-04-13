@@ -129,36 +129,53 @@ const DIRECT_SYSTEM_PROMPTS: Record<string, string> = {
  * Requires `anthropic-dangerous-direct-browser-access: true` header.
  */
 async function streamDirectAnthropic({
-  system, prompt, model, apiKey, baseUrl, onChunk, signal,
+  system, prompt, imageDataUrl, model, apiKey, baseUrl, onChunk, signal,
 }: {
-  system: string; prompt: string; model?: string
+  system: string; prompt: string; imageDataUrl?: string | null; model?: string
   apiKey: string; baseUrl?: string
   onChunk: (text: string) => void
   signal?: AbortSignal
 }): Promise<void> {
-  const base = (baseUrl || 'https://api.anthropic.com').replace(/\/$/, '')
-  const isOfficialApi = base.includes('api.anthropic.com')
-  const endpoint = `${base}/v1/messages`
+  const base = (baseUrl || '/api/anthropic').replace(/\/$/, '')
+  // Absolute URL (http/https) → route through cors-proxy to avoid CORS block
+  const endpoint = base.startsWith('/')
+    ? `${base}/v1/messages`
+    : `/api/cors-proxy/${encodeURIComponent(base + '/v1/messages')}`
+
+  // Build message content: vision block + text, or plain text
+  let userContent: unknown
+  if (imageDataUrl) {
+    const imageBlock = imageDataUrl.startsWith('data:')
+      ? {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: imageDataUrl.split(';')[0].split(':')[1] as string,
+            data: imageDataUrl.split(',')[1],
+          },
+        }
+      : {
+          type: 'image',
+          source: { type: 'url', url: imageDataUrl },
+        }
+    userContent = [imageBlock, { type: 'text', text: prompt }]
+  } else {
+    userContent = prompt
+  }
+
   const resp = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
-      ...(isOfficialApi
-        ? {
-            'x-api-key': apiKey,
-            'anthropic-dangerous-direct-browser-access': 'true',
-          }
-        : {
-            'Authorization': `Bearer ${apiKey}`,
-          }),
     },
     body: JSON.stringify({
       model: model || 'claude-sonnet-4-6',
       system,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: userContent }],
       max_tokens: 2048,
-      stream: true,
+      // stream: false — Skynet proxy does not support SSE streaming
     }),
     signal,
   })
@@ -166,27 +183,14 @@ async function streamDirectAnthropic({
     const text = await resp.text().catch(() => resp.statusText)
     throw new Error(`Anthropic API error ${resp.status}: ${text}`)
   }
-  const reader = resp.body?.getReader()
-  if (!reader) return
-  const decoder = new TextDecoder()
-  let buf = ''
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buf += decoder.decode(value, { stream: true })
-    const lines = buf.split('\n')
-    buf = lines.pop() ?? ''
-    for (const line of lines) {
-      if (!line.startsWith('data:')) continue
-      const data = line.slice(5).trim()
-      if (!data || data === '[DONE]') return
-      try {
-        const ev = JSON.parse(data)
-        if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
-          onChunk(ev.delta.text ?? '')
-        }
-      } catch { /* ignore */ }
-    }
+  const data = await resp.json()
+  const text = data.content?.[0]?.text ?? ''
+  // Simulate streaming: emit chunks of ~8 chars with small delay
+  const CHUNK = 8
+  for (let i = 0; i < text.length; i += CHUNK) {
+    if (signal?.aborted) return
+    onChunk(text.slice(i, i + CHUNK))
+    await new Promise<void>(r => setTimeout(r, 16))
   }
 }
 
@@ -262,6 +266,7 @@ async function streamDirectOpenAI({
  */
 export async function streamAI({
   prompt,
+  imageDataUrl,
   contextType = 'script',
   model,
   onChunk,
@@ -270,6 +275,7 @@ export async function streamAI({
   signal,
 }: {
   prompt: string
+  imageDataUrl?: string | null
   contextType?: 'script' | 'storyboard' | 'general'
   model?: string
   onChunk: (text: string) => void
@@ -281,15 +287,29 @@ export async function streamAI({
   const API_BASE = (import.meta.env.VITE_API_URL as string) || ''
 
   const { getServiceSettings } = await import('@/stores/settingsStore')
+  const { addLog } = await import('@/stores/logStore')
   const anthropicSettings = getServiceSettings('anthropic')
   const openaiSettings    = getServiceSettings('openai')
 
   const startTime = Date.now()
   let totalChars = 0
-  const trackChunk = (text: string) => { totalChars += text.length; onChunk(text) }
+  let responseBuffer = ''  // collect first 600 chars for log detail
+  const trackChunk = (text: string) => {
+    totalChars += text.length
+    if (responseBuffer.length < 600) responseBuffer += text
+    onChunk(text)
+  }
+
+  const usedModel = model || 'claude-sonnet-4-6'
+  const promptPreview = prompt.length > 200 ? prompt.slice(0, 200) + '…' : prompt
 
   // ── 1. Try backend proxy ─────────────────────────────────────────────────
   let backendFailed = false
+  addLog({
+    level: 'debug', category: 'network',
+    message: `[AI] 尝试后端代理 ${API_BASE}/api/v1/ai/stream`,
+    detail: `contextType: ${contextType}\nmodel: ${usedModel}\n\n${promptPreview}`,
+  })
   try {
     const resp = await fetch(`${API_BASE}/api/v1/ai/stream`, {
       method: 'POST',
@@ -301,11 +321,12 @@ export async function streamAI({
         ...(openaiSettings.apiKey ? { 'X-OpenAI-Key': openaiSettings.apiKey } : {}),
         ...(openaiSettings.baseUrl ? { 'X-OpenAI-Base': openaiSettings.baseUrl } : {}),
       },
-      body: JSON.stringify({ prompt, context_type: contextType, model }),
+      body: JSON.stringify({ prompt, image_data_url: imageDataUrl || undefined, context_type: contextType, model }),
       signal,
     })
 
     if (resp.ok) {
+      addLog({ level: 'info', category: 'network', message: '[AI] 后端代理响应成功，开始接收流...' })
       // Backend responded — consume SSE stream
       const reader = resp.body?.getReader()
       if (reader) {
@@ -321,26 +342,44 @@ export async function streamAI({
             if (!line.startsWith('data:')) continue
             const data = line.slice(5).trim()
             if (!data || data === '[DONE]') {
-              onDone({ chars: totalChars, elapsed: Date.now() - startTime })
+              const elapsed = Date.now() - startTime
+              addLog({
+                level: 'info', category: 'ai', kind: 'response',
+                message: `[AI] 生成完成 — ${totalChars} 字符，耗时 ${(elapsed / 1000).toFixed(1)}s（后端代理）`,
+                detail: responseBuffer.length > 0 ? responseBuffer + (totalChars > responseBuffer.length ? `\n…（共 ${totalChars} 字符）` : '') : undefined,
+              })
+              onDone({ chars: totalChars, elapsed })
               return
             }
             try {
               const ev = JSON.parse(data) as { text?: string; error?: string }
-              if (ev.error) { onError?.(ev.error); return }
+              if (ev.error) {
+                addLog({ level: 'error', category: 'ai', message: `[AI] 后端返回错误: ${ev.error}` })
+                onError?.(ev.error)
+                return
+              }
               if (ev.text) trackChunk(ev.text)
             } catch { /* ignore malformed */ }
           }
         }
-        onDone({ chars: totalChars, elapsed: Date.now() - startTime })
+        const elapsed = Date.now() - startTime
+        addLog({
+          level: 'info', category: 'ai', kind: 'response',
+          message: `[AI] 生成完成 — ${totalChars} 字符，耗时 ${(elapsed / 1000).toFixed(1)}s（后端代理）`,
+          detail: responseBuffer.length > 0 ? responseBuffer + (totalChars > responseBuffer.length ? `\n…（共 ${totalChars} 字符）` : '') : undefined,
+        })
+        onDone({ chars: totalChars, elapsed })
         return
       }
     } else {
       // Backend returned HTTP error (503 = no keys configured, etc.)
+      addLog({ level: 'warn', category: 'network', message: `[AI] 后端代理不可用 (HTTP ${resp.status})，切换直连模式` })
       backendFailed = true
     }
   } catch (fetchErr) {
     // Network error — backend not running
     if (signal?.aborted) throw fetchErr
+    addLog({ level: 'warn', category: 'network', message: '[AI] 后端代理连接失败，切换直连模式', detail: String(fetchErr) })
     backendFailed = true
   }
 
@@ -348,20 +387,34 @@ export async function streamAI({
 
   // ── 2. Direct Anthropic API ──────────────────────────────────────────────
   if (anthropicSettings.apiKey) {
+    const base = (anthropicSettings.baseUrl || '/api/anthropic').replace(/\/$/, '')
+    const displayUrl = base.startsWith('/') ? `[proxy]${base}` : base
+    addLog({
+      level: 'info', category: 'ai', kind: 'prompt',
+      message: `[AI] 请求 Anthropic → ${displayUrl}`,
+      detail: `model: ${usedModel}\ncontextType: ${contextType}\n\nPrompt:\n${promptPreview}`,
+    })
     try {
       const system = DIRECT_SYSTEM_PROMPTS[contextType] ?? DIRECT_SYSTEM_PROMPTS.general
       await streamDirectAnthropic({
-        system, prompt, model,
+        system, prompt, imageDataUrl,  model,
         apiKey: anthropicSettings.apiKey,
         baseUrl: anthropicSettings.baseUrl || undefined,
         onChunk: trackChunk,
         signal,
       })
-      onDone({ chars: totalChars, elapsed: Date.now() - startTime })
+      const elapsed = Date.now() - startTime
+      addLog({
+        level: 'info', category: 'ai', kind: 'response',
+        message: `[AI] Anthropic 生成完成 — ${totalChars} 字符，耗时 ${(elapsed / 1000).toFixed(1)}s`,
+        detail: responseBuffer.length > 0 ? responseBuffer + (totalChars > responseBuffer.length ? `\n…（共 ${totalChars} 字符）` : '') : undefined,
+      })
+      onDone({ chars: totalChars, elapsed })
       return
     } catch (err) {
       if (signal?.aborted) throw err
       const msg = String(err)
+      addLog({ level: 'error', category: 'ai', message: `[AI] Anthropic 请求失败: ${msg.slice(0, 100)}`, detail: msg })
       onError?.(msg)
       throw new Error(msg)
     }
@@ -369,6 +422,12 @@ export async function streamAI({
 
   // ── 3. Direct OpenAI API ─────────────────────────────────────────────────
   if (openaiSettings.apiKey) {
+    const displayUrl = openaiSettings.baseUrl || 'https://api.openai.com'
+    addLog({
+      level: 'info', category: 'ai', kind: 'prompt',
+      message: `[AI] 请求 OpenAI → ${displayUrl}`,
+      detail: `model: ${usedModel}\ncontextType: ${contextType}\n\nPrompt:\n${promptPreview}`,
+    })
     try {
       const system = DIRECT_SYSTEM_PROMPTS[contextType] ?? DIRECT_SYSTEM_PROMPTS.general
       await streamDirectOpenAI({
@@ -378,11 +437,18 @@ export async function streamAI({
         onChunk: trackChunk,
         signal,
       })
-      onDone({ chars: totalChars, elapsed: Date.now() - startTime })
+      const elapsed = Date.now() - startTime
+      addLog({
+        level: 'info', category: 'ai', kind: 'response',
+        message: `[AI] OpenAI 生成完成 — ${totalChars} 字符，耗时 ${(elapsed / 1000).toFixed(1)}s`,
+        detail: responseBuffer.length > 0 ? responseBuffer + (totalChars > responseBuffer.length ? `\n…（共 ${totalChars} 字符）` : '') : undefined,
+      })
+      onDone({ chars: totalChars, elapsed })
       return
     } catch (err) {
       if (signal?.aborted) throw err
       const msg = String(err)
+      addLog({ level: 'error', category: 'ai', message: `[AI] OpenAI 请求失败: ${msg.slice(0, 100)}`, detail: msg })
       onError?.(msg)
       throw new Error(msg)
     }
@@ -390,8 +456,164 @@ export async function streamAI({
 
   // ── 4. No API available ──────────────────────────────────────────────────
   const msg = '未配置 API Key，且后端服务不可用'
+  addLog({ level: 'error', category: 'ai', message: `[AI] 无可用 API: ${msg}` })
   onError?.(msg)
   throw new Error(msg)
+}
+
+// ─── LightAI Image Generation ────────────────────────────────────────────────
+
+// ─── LightAI Image Generation ────────────────────────────────────────────────
+
+const LIGHTAI_API_BASE = '/api/lightai'
+
+export async function lightaiGenerateImage(
+  prompt: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const { getServiceSettings } = await import('@/stores/settingsStore')
+  const { addLog } = await import('@/stores/logStore')
+  const apiKey = getServiceSettings('lightai').apiKey || ''
+  if (!apiKey) throw new Error('未配置 LightAI API Key')
+
+  // 1. 创建异步任务
+  addLog({ level: 'info', category: 'ai', message: '正在提交生图任务...', detail: prompt.slice(0, 60) })
+
+  const createResp = await fetch(`${LIGHTAI_API_BASE}/create_async_task`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      service_name: 'foreign',
+      api_name: 'Genai-banana2img',
+      app_info: { model: 'gemini-3-pro-image-preview', mode: '' },
+      task_query: {
+        path: {},
+        params: {},
+        json: {
+          model: 'gemini-3-pro-image-preview',
+          prompt,
+          image_size: '2K',
+        },
+        data: {},
+        file: {},
+      },
+      custom_data: {},
+    }),
+    signal,
+  })
+
+  if (!createResp.ok) {
+    const errText = await createResp.text().catch(() => createResp.statusText)
+    throw new Error(`LightAI 创建任务失败 ${createResp.status}: ${errText}`)
+  }
+
+  const createData = await createResp.json()
+  const taskId: string = createData.task_id || createData.taskId || createData.data?.task_id || createData.data?.taskId || ''
+  if (!taskId) throw new Error('LightAI 返回无 task_id')
+
+  addLog({ level: 'info', category: 'ai', message: `任务已提交，等待生成...`, detail: `task_id: ${taskId}` })
+
+  // 2. 轮询任务状态（15s间隔，最长10分钟）
+  const INTERVAL = 15000
+  const MAX_WAIT = 600000
+  const start = Date.now()
+
+  await new Promise<void>(r => setTimeout(r, INTERVAL))
+
+  let pollCount = 0
+  while (Date.now() - start < MAX_WAIT) {
+    if (signal?.aborted) throw new Error('已取消')
+
+    pollCount++
+    const elapsed = Math.round((Date.now() - start) / 1000)
+    addLog({ level: 'info', category: 'ai', message: `轮询中 #${pollCount}（已等待 ${elapsed}s）`, detail: taskId })
+
+    const pollResp = await fetch(`${LIGHTAI_API_BASE}/get_task_status/${taskId}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      signal,
+    })
+    if (!pollResp.ok) {
+      await new Promise<void>(r => setTimeout(r, INTERVAL))
+      continue
+    }
+
+    const pollData = await pollResp.json()
+    // status may be a number (2 = success) or string
+    const status: number | string = pollData.status ?? pollData.data?.status ?? ''
+
+    addLog({ level: 'debug', category: 'ai', message: `任务状态: ${status}`, detail: JSON.stringify(pollData).slice(0, 120) })
+
+    // status 2 or "success"/"completed"/"done" means success
+    const isSuccess = status === 2 || status === '2' || status === 'completed' || status === 'success' || status === 'done'
+    const isFailed  = status === 'failed' || status === 'error' || status === -1 || status === '-1'
+
+    if (isSuccess) {
+      // 3. 提取图片URL
+      const urls = _lightaiExtractUrls(pollData)
+      if (urls.length === 0) throw new Error('LightAI 图片生成未返回图片 URL，原始数据: ' + JSON.stringify(pollData).slice(0, 200))
+      addLog({ level: 'info', category: 'ai', message: '生图成功，正在下载...', detail: urls[0].slice(0, 80) })
+      return urls[0]
+    }
+
+    if (isFailed) {
+      throw new Error(`LightAI 任务失败: ${JSON.stringify(pollData)}`)
+    }
+
+    await new Promise<void>(r => setTimeout(r, INTERVAL))
+  }
+
+  throw new Error('LightAI 任务超时 (600s)')
+}
+
+function _lightaiExtractUrls(result: Record<string, unknown>): string[] {
+  const urls: string[] = []
+
+  // Recursively collect all string values that look like image URLs
+  function collectUrls(obj: unknown, depth = 0) {
+    if (depth > 6 || !obj) return
+    if (typeof obj === 'string') {
+      if (obj.startsWith('http') && (
+        obj.includes('.png') || obj.includes('.jpg') || obj.includes('.jpeg') ||
+        obj.includes('.webp') || obj.includes('cos.') || obj.includes('image') ||
+        obj.includes('banana2img') || obj.includes('img')
+      )) {
+        urls.push(obj)
+      }
+      return
+    }
+    if (Array.isArray(obj)) {
+      for (const item of obj) collectUrls(item, depth + 1)
+      return
+    }
+    if (typeof obj === 'object') {
+      for (const val of Object.values(obj as Record<string, unknown>)) {
+        collectUrls(val, depth + 1)
+      }
+    }
+  }
+
+  // Also do a targeted search: data.result.banana2img_* fields
+  const data = (result.data as Record<string, unknown>) ?? result
+  if (typeof data === 'object' && data !== null) {
+    const resultObj = (data as Record<string, unknown>).result
+    if (typeof resultObj === 'object' && resultObj !== null) {
+      for (const [key, val] of Object.entries(resultObj as Record<string, unknown>)) {
+        if (key.startsWith('banana2img') && typeof val === 'string' && val.startsWith('http')) {
+          urls.push(val)
+        }
+      }
+    }
+  }
+
+  if (urls.length === 0) {
+    // Fallback: deep scan entire response for http URLs
+    collectUrls(result)
+  }
+
+  return urls
 }
 
 // ─── Assets Upload ────────────────────────────────────────────────────────────

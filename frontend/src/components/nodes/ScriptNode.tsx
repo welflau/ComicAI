@@ -9,11 +9,10 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { useProjectStore } from '@/stores/projectStore'
 import type { NodeData, EdgeData } from '@/types'
 import CollapsibleSection from './shared/CollapsibleSection'
-import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
 import NodeAddMenu from './shared/NodeAddMenu'
 import { streamAI } from '@/api'
 import { addLog } from '@/stores/logStore'
-import { resolveImageUrl } from '@/stores/imageStore'
+import { resolveImageUrl, resolveImageToDataUrl, DEFAULT_IMAGE_URL } from '@/stores/imageStore'
 
 export interface ScriptNodeData {
   id: string
@@ -294,7 +293,7 @@ function PromptPanel({
         value={value}
         onChange={e => onChange(e.target.value)}
         onKeyDown={handleKey}
-        placeholder="写下你想讲的故事、场景或角色设定。例如：一个来自未来的机器人，在城市屋顶看星星。"
+        placeholder={sourceThumbnailUrl ? '描述你想从图片中提取什么，例如：反推镜头语言、色调、角色描述…' : '写下你想讲的故事、场景或角色设定。例如：一个来自未来的机器人，在城市屋顶看星星。'}
         rows={3}
         style={{
           background: 'transparent', border: 'none', outline: 'none',
@@ -464,11 +463,34 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
 
   const addNode = useProjectStore(s => s.addNode)
   const addEdge = useProjectStore(s => s.addEdge)
+  const allEdges = useProjectStore(s => s.edges)
+  const allNodes = useProjectStore(s => s.nodes)
 
   const nodeLabel = data.title || data.label || '文本'
 
-  // Resolve source image URL (idb:// or plain) → blob URL for thumbnail
-  const sourceImageRef = data.config?.sourceImageUrl as string | undefined
+  // Dynamically resolve source image from connected upstream ImageNodes
+  // Falls back to data.config.sourceImageUrl (set via NodeAddMenu at creation time)
+  const [sourceImageRef, setSourceImageRef] = useState<string | undefined>(
+    data.config?.sourceImageUrl as string | undefined
+  )
+
+  useEffect(() => {
+    const incomingEdges = allEdges.filter(e => e.target === data.id)
+    const upstreamImageUrl = incomingEdges
+      .map(e => allNodes.find(n => n.id === e.source))
+      .filter((n): n is NonNullable<typeof n> => !!n && n.type === 'libtv_image' && !!n.imageUrl)
+      .map(n => n.imageUrl as string)
+      .find(u => u && u !== 'placeholder')  // skip default placeholder
+
+    if (upstreamImageUrl) {
+      setSourceImageRef(upstreamImageUrl)
+    } else {
+      // Fall back to static config value if no live upstream image
+      const configRef = data.config?.sourceImageUrl as string | undefined
+      setSourceImageRef(configRef)
+    }
+  }, [allEdges, allNodes, data.id, data.config?.sourceImageUrl])
+
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
 
   useEffect(() => {
@@ -532,9 +554,20 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
     }, 300)
 
     // Give shimmer a moment to appear, then start streaming
-    setTimeout(() => {
+    // Also resolve the source image to a data URL (for AI vision) during this delay
+    const imageRefSnapshot = sourceImageRef
+    setTimeout(async () => {
       if (ctrl.signal.aborted) return
       setShimmer(false)
+
+      // Resolve idb:// reference → base64 data URL for AI vision (or null if no image)
+      let imageDataUrl: string | null = null
+      if (imageRefSnapshot) {
+        imageDataUrl = await resolveImageToDataUrl(imageRefSnapshot)
+        if (imageDataUrl) {
+          addLog({ level: 'info', category: 'ai', message: '已附加上游图片', detail: imageRefSnapshot })
+        }
+      }
 
       let usedMock = false
       const runMock = () => {
@@ -554,6 +587,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
 
       streamAI({
         prompt: userPrompt,
+        imageDataUrl,
         contextType: 'script',
         signal: ctrl.signal,
         onChunk: c => setStream(prev => prev + c),
@@ -577,7 +611,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         runMock()
       })
     }, 400)
-  }, [prompt, data.id])
+  }, [prompt, data.id, sourceImageRef])
 
   const stopGenerate = useCallback(() => {
     abortRef.current?.abort()
@@ -615,8 +649,26 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
       addLog({ level: 'info', category: 'operation', message: `添加分镜脚本节点`, detail: `源节点ID: ${data.id}` })
       return
     }
+    if (id === 'img2prompt') {
+      // Create an ImageNode upstream (to the left), connected to this ScriptNode
+      const imgNodeId = `libtv_image_${Date.now()}`
+      addNode({
+        id: imgNodeId,
+        type: 'libtv_image' as NodeData['type'],
+        label: '图片',
+        category: 'output',
+        position: { x: data.position.x - 480, y: data.position.y },
+        config: {},
+        imageSource: 'uploaded',
+        imageUrl: DEFAULT_IMAGE_URL,
+      } as NodeData)
+      addEdge({ id: `e-${imgNodeId}-${data.id}`, source: imgNodeId, target: data.id })
+      setPrompt('根据图片生成结构化中文提示词，包括主体描述、环境、光影、镜头语言、风格关键词。')
+      addLog({ level: 'info', category: 'operation', message: `添加图片节点（图片反推提示词）`, detail: `目标节点ID: ${data.id}` })
+      return
+    }
     startGenerate()
-  }, [startGenerate, addNode, addEdge, data.id, data.position])
+  }, [startGenerate, addNode, addEdge, setPrompt, data.id, data.position])
 
   return (
     <div
@@ -687,9 +739,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
           </div>
 
           <CollapsibleSection expanded={isExpanded}>
-            <ZoomInvariantPanel naturalWidth={NODE_W}>
-              <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} sourceThumbnailUrl={thumbnailUrl} />
-            </ZoomInvariantPanel>
+            <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} sourceThumbnailUrl={thumbnailUrl} />
           </CollapsibleSection>
 
           <CircleHandle type="target" position={Position.Left}  top={idleHandleY} visible={handlesVisible}
@@ -858,15 +908,13 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
           </div>
 
           {/* PromptPanel always visible during generation, send button shows spinner */}
-          <ZoomInvariantPanel naturalWidth={NODE_W}>
-            <PromptPanel
-              value={prompt}
-              onChange={setPrompt}
-              onSend={handleSend}
-              loading={true}
-              sourceThumbnailUrl={thumbnailUrl}
-            />
-          </ZoomInvariantPanel>
+          <PromptPanel
+            value={prompt}
+            onChange={setPrompt}
+            onSend={handleSend}
+            loading={true}
+            sourceThumbnailUrl={thumbnailUrl}
+          />
 
           <CircleHandle type="target" position={Position.Left}  top={genHandleY} visible={handlesVisible}
             onSourceClick={() => setTargetMenuOpen(v => !v)} menuOpen={targetMenuOpen} onMenuClose={() => setTargetMenuOpen(false)}
@@ -968,9 +1016,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
           </div>
 
           <CollapsibleSection expanded={isExpanded}>
-            <ZoomInvariantPanel naturalWidth={NODE_W}>
-              <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} sourceThumbnailUrl={thumbnailUrl} />
-            </ZoomInvariantPanel>
+            <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} sourceThumbnailUrl={thumbnailUrl} />
           </CollapsibleSection>
 
           <CircleHandle type="target" position={Position.Left}  top={contentHandleY} visible={handlesVisible}

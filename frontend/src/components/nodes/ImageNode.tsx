@@ -1,5 +1,6 @@
 import { memo, useRef, useState, useEffect, useCallback } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
+import placeholderImage from '@/assets/placeholder-image.webp'
 import {
   Image as ImageIcon, Upload, Monitor, Video,
   Languages, SlidersHorizontal, ChevronDown, ArrowUp,
@@ -32,15 +33,6 @@ const TITLE_H       = 28    // title row height (px) — card starts just below
 const PLACEHOLDER_H = 220   // height of the empty placeholder area
 const MAX_IMG_H     = 260   // max rendered image height — caps tall portrait images
 const DEFAULT_HANDLE_Y = TITLE_H + PLACEHOLDER_H / 2
-
-type QuickActionItem =
-  | { label: string; icon: React.ElementType }
-  | { label: string; hdBadge: true }
-
-const QUICK_ACTIONS: QuickActionItem[] = [
-  { icon: Upload, label: '图生图' },
-  { label: '图片高清', hdBadge: true },
-]
 
 /* ── Image editing toolbar (floats above node when selected + has image) ─── */
 
@@ -427,6 +419,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const [prompt,      setPrompt]      = useState(() => data.imagePrompt ?? '')
   const [generating,  setGenerating]  = useState(false)
   const [genError,    setGenError]    = useState<string | null>(null)
+  const [placeholderHovered, setPlaceholderHovered] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   // Rendered image size (updated on img load)
   const [imgRenderedH,  setImgRenderedH]  = useState<number | null>(null)
@@ -741,12 +734,19 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
         ) : (
           /* ── Empty mode: placeholder + quick actions ── */
           <>
-            {/* Placeholder image area */}
-            <div style={{
-              height: PLACEHOLDER_H, background: '#141414',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              position: 'relative', overflow: 'hidden',
-            }}>
+            {/* Placeholder image area — click to upload */}
+            <div
+              className="nodrag nopan"
+              onClick={!generating ? handleUploadClick : undefined}
+              onMouseEnter={() => setPlaceholderHovered(true)}
+              onMouseLeave={() => setPlaceholderHovered(false)}
+              style={{
+                height: PLACEHOLDER_H, background: '#141414',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                position: 'relative', overflow: 'hidden',
+                cursor: generating ? 'default' : 'pointer',
+              }}
+            >
               {generating ? (
                 <>
                   {/* Shimmer overlay */}
@@ -763,50 +763,39 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
                   </div>
                 </>
               ) : (
-                <svg width="62" height="52" viewBox="0 0 62 52" fill="none">
-                  <path d="M5 47L20 21L30 33.5L40 18L57 47H5Z"
-                    fill="#272727" stroke="#363636" strokeWidth="1.5" strokeLinejoin="round"/>
-                  <circle cx="18" cy="12" r="5.5"
-                    fill="#272727" stroke="#363636" strokeWidth="1.5"/>
-                </svg>
+                <>
+                  <img
+                    src={placeholderImage}
+                    alt=""
+                    style={{
+                      width: '100%', height: '100%',
+                      objectFit: 'cover', display: 'block',
+                      opacity: placeholderHovered ? 0.3 : 0.55,
+                      transition: 'opacity 150ms ease',
+                    }}
+                  />
+                  {/* Upload hint overlay */}
+                  <div style={{
+                    position: 'absolute', inset: 0,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    gap: 8,
+                    opacity: placeholderHovered ? 1 : 0,
+                    transition: 'opacity 150ms ease',
+                    pointerEvents: 'none',
+                  }}>
+                    <div style={{
+                      width: 40, height: 40, borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Upload size={16} color="#ddd" />
+                    </div>
+                    <span style={{ fontSize: 12, color: '#ccc', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>点击上传</span>
+                  </div>
+                </>
               )}
             </div>
-
-            {/* Quick actions — hidden when prompt already filled in */}
-            {!prompt.trim() && (
-              <div style={{ padding: '12px 16px 14px' }}>
-                <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>尝试:</div>
-                {QUICK_ACTIONS.map(a => (
-                  <div
-                    key={a.label}
-                    className="nodrag nopan"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10,
-                      padding: '7px 10px', borderRadius: 7, cursor: 'pointer',
-                      color: '#aaa', fontSize: 14,
-                      transition: 'background 0.12s, color 0.12s',
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.background = '#2a2a2a'; e.currentTarget.style.color = '#ddd' }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#aaa' }}
-                  >
-                    {'hdBadge' in a ? (
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        width: 20, height: 14,
-                        fontSize: 8, fontWeight: 700, color: '#888',
-                        border: '1px solid #555', borderRadius: 3,
-                        lineHeight: 1, flexShrink: 0,
-                      }}>HD</span>
-                    ) : (
-                      <span style={{ flexShrink: 0, opacity: 0.7, display: 'flex', alignItems: 'center' }}>
-                        <a.icon size={14} />
-                      </span>
-                    )}
-                    {a.label}
-                  </div>
-                ))}
-              </div>
-            )}
           </>
         )}
       </div>
@@ -836,44 +825,46 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
         </CollapsibleSection>
       )}
 
-      {/* Target handle (left) + menu */}
-      <div style={{
-        position: 'absolute', left: -11, top: handleY,
-        transform: 'translateY(-50%)', width: 22, height: 22,
-      }}>
-        <Handle
-          type="target"
-          position={Position.Left}
-          style={{
-            width: 22, height: 22,
-            background: '#1a1a1a', border: '1.5px solid #606060',
-            borderRadius: '50%',
-            top: 0, left: 0, transform: 'none',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            opacity: handlesVisible ? 1 : 0,
-            pointerEvents: handlesVisible ? 'auto' : 'none',
-            transition: 'opacity 150ms ease',
-            position: 'relative',
-          }}
-          onClick={(e) => { e.stopPropagation(); setTargetMenuOpen(v => !v) }}
-        >
-          <span style={{
-            pointerEvents: 'none', fontSize: 16, color: '#888', lineHeight: 1,
-            position: 'absolute', top: '50%', left: '50%',
-            transform: 'translate(-50%, -52%)',
-          }}>+</span>
-        </Handle>
-        {targetMenuOpen && (
-          <NodeAddMenu
-            nodeType="libtv_image"
-            sourceNodeId={data.id}
-            sourcePosition={data.position}
-            sourceNodeWidth={NODE_W}
-            direction="left"
-            onClose={() => setTargetMenuOpen(false)}
-          />
-        )}
-      </div>
+      {/* Target handle (left) + menu — hidden for upload-only nodes */}
+      {!isUploadedOnly && (
+        <div style={{
+          position: 'absolute', left: -11, top: handleY,
+          transform: 'translateY(-50%)', width: 22, height: 22,
+        }}>
+          <Handle
+            type="target"
+            position={Position.Left}
+            style={{
+              width: 22, height: 22,
+              background: '#1a1a1a', border: '1.5px solid #606060',
+              borderRadius: '50%',
+              top: 0, left: 0, transform: 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              opacity: handlesVisible ? 1 : 0,
+              pointerEvents: handlesVisible ? 'auto' : 'none',
+              transition: 'opacity 150ms ease',
+              position: 'relative',
+            }}
+            onClick={(e) => { e.stopPropagation(); setTargetMenuOpen(v => !v) }}
+          >
+            <span style={{
+              pointerEvents: 'none', fontSize: 16, color: '#888', lineHeight: 1,
+              position: 'absolute', top: '50%', left: '50%',
+              transform: 'translate(-50%, -52%)',
+            }}>+</span>
+          </Handle>
+          {targetMenuOpen && (
+            <NodeAddMenu
+              nodeType="libtv_image"
+              sourceNodeId={data.id}
+              sourcePosition={data.position}
+              sourceNodeWidth={NODE_W}
+              direction="left"
+              onClose={() => setTargetMenuOpen(false)}
+            />
+          )}
+        </div>
+      )}
 
       {/* Source handle + menu (right) */}
       <div style={{

@@ -8,6 +8,8 @@ interface AuthState {
   token: string | null
   isLoading: boolean
   isAuthenticated: boolean
+  /** true after the initial auth check has completed (either restored or cleared) */
+  isInitialized: boolean
   login: (email: string, password: string) => Promise<void>
   register: (data: { email: string; username: string; password: string; full_name?: string }) => Promise<void>
   logout: () => void
@@ -21,6 +23,7 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       isLoading: false,
       isAuthenticated: false,
+      isInitialized: false,
 
       login: async (email, password) => {
         set({ isLoading: true })
@@ -62,32 +65,37 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         localStorage.removeItem('comicflow_token')
-        set({ user: null, token: null, isAuthenticated: false })
+        set({ user: null, token: null, isAuthenticated: false, isInitialized: true })
       },
 
       loadUser: async () => {
-        const token = localStorage.getItem('comicflow_token')
-        if (!token) return
+        // Prefer the zustand-persisted token; fall back to the standalone key
+        const token = get().token ?? localStorage.getItem('comicflow_token')
+        if (!token) {
+          set({ isInitialized: true })
+          return
+        }
         // DEV: restore mock session without hitting the backend
         if (import.meta.env.DEV && token === 'dev_token') {
           const stored = get().user
           if (stored) {
-            set({ isAuthenticated: true, token })
+            set({ isAuthenticated: true, token, isInitialized: true })
           } else {
             set({
               user: { id: 'dev_user', email: 'dev@comicai.local', username: 'dev', plan: 'pro', credits: 100, created_at: new Date().toISOString() },
               token,
               isAuthenticated: true,
+              isInitialized: true,
             })
           }
           return
         }
         try {
           const user = await authApi.me()
-          set({ user, token, isAuthenticated: true })
+          set({ user, token, isAuthenticated: true, isInitialized: true })
         } catch {
           localStorage.removeItem('comicflow_token')
-          set({ user: null, token: null, isAuthenticated: false })
+          set({ user: null, token: null, isAuthenticated: false, isInitialized: true })
         }
       },
     }),

@@ -67,7 +67,7 @@ export default function CollapsibleSection({ expanded, children, duration = 180 
       style={{
         height: height === 'auto' ? 'auto' : `${height}px`,
         opacity,
-        overflow: 'hidden',
+        overflow: height === 'auto' ? 'visible' : 'hidden',
         transition: `height ${duration}ms cubic-bezier(0.4,0,0.2,1), opacity ${duration}ms ease`,
       }}
     >

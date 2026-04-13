@@ -2,6 +2,7 @@ import { memo, useState } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import { Film, Maximize2, TableIcon } from 'lucide-react'
 import NodeAddMenu from './shared/NodeAddMenu'
+import { useIsMultiSelected } from './shared/useIsMultiSelected'
 
 export interface ShotRow {
   id: string | number
@@ -71,13 +72,15 @@ const MOCK_SHOTS: ShotRow[] = [
 ]
 
 function StoryboardTableNode({ data, selected, dragging }: NodeProps<StoryboardTableNodeData>) {
+  const isMultiSelected = useIsMultiSelected()
+  const effectiveSelected = selected && !isMultiSelected
   const [viewMode, setViewMode] = useState<'table' | 'list'>('table')
   const [isHovered, setIsHovered] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [targetMenuOpen, setTargetMenuOpen] = useState(false)
   const shots = data.shots && data.shots.length > 0 ? data.shots : []
   const title = data.title || '分镜表格'
-  const handlesVisible = isHovered || (!!selected && !dragging)
+  const handlesVisible = isHovered || (!!effectiveSelected && !dragging)
 
   return (
     <div
@@ -133,9 +136,9 @@ function StoryboardTableNode({ data, selected, dragging }: NodeProps<StoryboardT
       <div
         style={{
           background: '#1a1a1a',
-          border: (selected && !dragging) ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1px solid #2e2e2e',
+          border: (effectiveSelected && !dragging) ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1px solid #2e2e2e',
           borderRadius: 8,
-          boxShadow: (selected && !dragging)
+          boxShadow: (effectiveSelected && !dragging)
             ? '0 0 0 2px rgba(255,255,255,0.06), 0 4px 20px rgba(0,0,0,0.5)'
             : '0 4px 20px rgba(0,0,0,0.5)',
           overflow: 'hidden',
