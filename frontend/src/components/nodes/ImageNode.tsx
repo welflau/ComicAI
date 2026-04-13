@@ -721,7 +721,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
           ? '0 0 0 2px rgba(255,255,255,0.04), 0 4px 20px rgba(0,0,0,0.5)'
           : '0 2px 12px rgba(0,0,0,0.4)',
       }}>
-        {(data.imageUrl && !imgBroken) ? (
+        {(data.imageUrl && data.imageUrl !== DEFAULT_IMAGE_URL && !imgBroken) ? (
           /* ── Image mode: render img immediately (opacity 0 until url resolves) ── */
           <>
             <div style={{ position: 'relative', lineHeight: 0 }}>
