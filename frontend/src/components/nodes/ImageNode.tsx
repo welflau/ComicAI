@@ -11,7 +11,7 @@ import CollapsibleSection from './shared/CollapsibleSection'
 import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
 import NodeAddMenu from './shared/NodeAddMenu'
 import { useProjectStore } from '../../stores/projectStore'
-import { saveImage, resolveImageUrl } from '../../stores/imageStore'
+import { saveImage, resolveImageUrl, DEFAULT_IMAGE_URL } from '../../stores/imageStore'
 import { lightaiGenerateImage } from '../../api'
 import { addLog } from '../../stores/logStore'
 
@@ -429,8 +429,11 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const [imgRenderedW,  setImgRenderedW]  = useState<number | null>(data.renderedW ?? null)
   const [imgBroken,     setImgBroken]     = useState(false)
   // widthReady: suppresses the width transition until the node has settled at its
-  // correct size at least once. True immediately if we have persisted dimensions.
-  const [widthReady,    setWidthReady]    = useState(!!(data.imageUrl && data.renderedW))
+  // correct size at least once. True immediately if we have persisted dimensions
+  // for a real image (not the DEFAULT_IMAGE_URL placeholder).
+  const [widthReady,    setWidthReady]    = useState(
+    !!(data.imageUrl && data.imageUrl !== DEFAULT_IMAGE_URL && data.renderedW)
+  )
   // Resolved display URL (blob URL from IndexedDB or plain URL)
   const [displayUrl,    setDisplayUrl]    = useState<string | null>(null)
   const prevImageUrlRef = useRef<string | undefined>(data.imageUrl)
@@ -444,9 +447,11 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const [refImages, setRefImages] = useState<string[]>([])
 
   const hasImage       = !!displayUrl && !imgBroken
-  // True as soon as we know an image exists (even before url resolves) — used to
-  // switch layout so the node doesn't jump from placeholder to image mode.
-  const hasImageData   = !!data.imageUrl && !imgBroken
+  // True as soon as we know a *real* image exists (not the default placeholder).
+  // Used to switch layout immediately on mount without waiting for async URL resolve,
+  // so the node doesn't jump from placeholder to image mode.
+  // DEFAULT_IMAGE_URL is a placeholder stand-in — treat it the same as "no image".
+  const hasImageData   = !!data.imageUrl && data.imageUrl !== DEFAULT_IMAGE_URL && !imgBroken
   const isUploadedOnly = data.imageSource === 'uploaded'
   const handlesVisible = isHovered || (!!selected && !dragging)
   const nodeLabel      = data.label || '图片'
@@ -725,6 +730,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
               <img
                 src={displayUrl ?? undefined}
                 alt=""
+                draggable={false}
                 onLoad={handleImgLoad}
                 onError={handleImgError}
                 style={{
