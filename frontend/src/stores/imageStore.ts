@@ -59,15 +59,29 @@ export async function resolveImageUrl(ref: string | undefined): Promise<string |
 
 /**
  * Resolve an idb:// reference to a data URL (base64) for AI vision calls.
- * - default://placeholder → null  (SVG placeholder, not a real image — skip)
+ * - default://placeholder → fetch the built-in webp asset and convert to base64
  * - idb://N               → data URL via FileReader
  * - data:...              → returned as-is
  * - http(s)://...         → returned as-is (Anthropic accepts URL type)
- * Returns null if the record is not found or the ref is the default placeholder.
+ * Returns null if the record is not found.
  */
 export async function resolveImageToDataUrl(ref: string | undefined): Promise<string | null> {
   if (!ref) return null
-  if (ref.startsWith(DEFAULT_PREFIX)) return null  // SVG placeholder — not suitable for vision
+  if (ref.startsWith(DEFAULT_PREFIX)) {
+    // The placeholder is a real .webp asset — fetch it and convert to base64 for AI vision
+    try {
+      const response = await fetch(placeholderImageUrl)
+      const blob = await response.blob()
+      return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload  = () => resolve(reader.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      })
+    } catch {
+      return null
+    }
+  }
   if (ref.startsWith('data:')) return ref           // already a data URL
   if (!isIdbRef(ref)) return ref                    // plain http(s) URL
 
