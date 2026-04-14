@@ -295,6 +295,7 @@ export interface NodeData {
   imagePrompt?: string                      // prompt used to generate the image
   renderedW?: number                        // persisted rendered image width (px)
   renderedH?: number                        // persisted rendered image height (px)
+  initialPanelExpanded?: boolean            // prompt panel shown by default (e.g. created from + menu)
 }
 
 export interface EdgeData {

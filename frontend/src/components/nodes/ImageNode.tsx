@@ -1,10 +1,11 @@
 import { memo, useRef, useState, useEffect, useCallback } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import {
-  Image as ImageIcon, Upload, Monitor, Video,
-  Languages, SlidersHorizontal, ChevronDown, ArrowUp,
-  Box, Maximize2, Zap,
+  Image as ImageIcon, Upload, Monitor,
+  ChevronDown, ArrowUp,
+  Maximize2, Zap,
   RefreshCw, Wand2, Download, Fullscreen, Loader2,
+  Camera, Type, ArrowUpDown,
 } from 'lucide-react'
 import CollapsibleSection from './shared/CollapsibleSection'
 import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
@@ -28,6 +29,8 @@ export interface ImageNodeData {
   /** Persisted rendered size so the node restores at the correct dimensions on reload */
   renderedW?: number
   renderedH?: number
+  /** When true, the prompt panel starts expanded (e.g. created from + menu) */
+  initialPanelExpanded?: boolean
 }
 
 const NODE_W        = 400
@@ -210,6 +213,8 @@ function RefImageThumbnails({ urls }: { urls: string[] }) {
 
 /* ── Image prompt panel ────────────────────────────────────── */
 
+type PromptTab = 'style' | 'mark' | 'focus'
+
 function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [] }: {
   value: string
   onChange: (v: string) => void
@@ -218,6 +223,14 @@ function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [] 
   hasImage: boolean   // kept in signature for API compat, unused in layout
   refImages?: string[]
 }) {
+  const [activeTab, setActiveTab] = useState<PromptTab>('style')
+
+  const TABS: Array<{ id: PromptTab; label: string }> = [
+    { id: 'style', label: '风格' },
+    { id: 'mark',  label: '标记' },
+    { id: 'focus', label: '聚焦' },
+  ]
+
   return (
     <div
       className="nodrag nopan"
@@ -226,29 +239,46 @@ function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [] 
         background: '#161616',
         border: '1px solid #2a2a2a',
         borderRadius: 14,
-        padding: '12px 14px 10px',
+        padding: '10px 12px 10px',
         boxShadow: '0 2px 12px rgba(0,0,0,0.4)',
       }}
     >
-      {/* ── Row 1: style btn + ref imgs + expand ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        {/* Style button */}
-        <button
-          className="nodrag nopan"
-          style={{
-            flexShrink: 0,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 4, width: 52, height: 52,
-            background: '#1e1e1e', border: '1px solid #2e2e2e',
-            borderRadius: 10, cursor: 'pointer', color: '#666',
-            transition: 'border-color 0.12s, color 0.12s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = '#444'; e.currentTarget.style.color = '#aaa' }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = '#2e2e2e'; e.currentTarget.style.color = '#666' }}
-        >
-          <Box size={17} />
-          <span style={{ fontSize: 10, lineHeight: 1 }}>风格</span>
-        </button>
+      {/* ── Row 1: tab buttons + ref imgs + expand ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+        {/* 3 tab buttons */}
+        <div style={{ display: 'flex', gap: 4 }}>
+          {TABS.map(tab => (
+            <button
+              key={tab.id}
+              className="nodrag nopan"
+              onMouseDown={e => { e.preventDefault(); setActiveTab(tab.id) }}
+              style={{
+                background: activeTab === tab.id ? '#2a2a2a' : 'none',
+                border: activeTab === tab.id ? '1px solid #3a3a3a' : '1px solid transparent',
+                borderRadius: 7,
+                padding: '4px 10px',
+                color: activeTab === tab.id ? '#ddd' : '#555',
+                fontSize: 12,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                transition: 'background 0.12s, color 0.12s, border-color 0.12s',
+                lineHeight: 1.2,
+              }}
+              onMouseEnter={e => {
+                if (activeTab !== tab.id) {
+                  (e.currentTarget as HTMLButtonElement).style.color = '#999'
+                }
+              }}
+              onMouseLeave={e => {
+                if (activeTab !== tab.id) {
+                  (e.currentTarget as HTMLButtonElement).style.color = '#555'
+                }
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
         {/* Reference image thumbnails */}
         {refImages.length > 0 && <RefImageThumbnails urls={refImages} />}
@@ -275,21 +305,21 @@ function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [] 
         value={value}
         onChange={e => onChange(e.target.value)}
         onKeyDown={e => e.stopPropagation()}
-        placeholder="描述你想要生成的画面内容..."
+        placeholder="描述你想要生成的画面内容，按/呼出指令，@引用素材"
         rows={3}
         style={{
           width: '100%', boxSizing: 'border-box',
-          background: '#111', border: '1px solid #2e2e2e', borderRadius: 8,
-          outline: 'none', padding: '8px 10px',
-          color: value ? '#ccc' : '#555', fontSize: 13, lineHeight: 1.65,
+          background: 'transparent', border: 'none',
+          outline: 'none', padding: '2px 2px 8px',
+          color: value ? '#ccc' : '#444', fontSize: 13, lineHeight: 1.65,
           resize: 'none', fontFamily: 'inherit',
         }}
       />
 
       {/* Bottom bar */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 4,
-        paddingTop: 8, marginTop: 8,
+        display: 'flex', alignItems: 'center', gap: 3,
+        paddingTop: 8,
         borderTop: '1px solid #272727',
       }}>
         {/* Model */}
@@ -324,40 +354,43 @@ function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [] 
 
         <div style={{ width: 1, height: 10, background: '#2a2a2a', flexShrink: 0 }} />
 
-        {/* Camera */}
+        {/* Camera control */}
         <button className="nodrag nopan" style={{
           display: 'flex', alignItems: 'center', gap: 3,
           background: 'none', border: 'none', cursor: 'pointer',
-          color: '#666', fontSize: 11, padding: '2px 4px', borderRadius: 5, flexShrink: 0,
+          color: '#666', fontSize: 11, padding: '2px 5px', borderRadius: 5, flexShrink: 0,
         }}
           onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#252525' }}
           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
         >
-          <Video size={11} />
+          <Camera size={11} />
+          <span>摄像机控制</span>
         </button>
 
         <div style={{ flex: 1, minWidth: 0 }} />
 
-        {/* Lang */}
+        {/* Text/lang toggle */}
         <button className="nodrag nopan" style={{
           background: 'none', border: 'none', cursor: 'pointer',
           color: '#555', padding: 3, borderRadius: 4,
         }}
           onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#888' }}
           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#555' }}
+          title="中英文切换"
         >
-          <Languages size={13} />
+          <Type size={12} />
         </button>
 
-        {/* Sliders */}
+        {/* Swap/reorder */}
         <button className="nodrag nopan" style={{
           background: 'none', border: 'none', cursor: 'pointer',
           color: '#555', padding: 3, borderRadius: 4,
         }}
           onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#888' }}
           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#555' }}
+          title="切换顺序"
         >
-          <SlidersHorizontal size={13} />
+          <ArrowUpDown size={12} />
         </button>
 
         {/* Count */}
@@ -421,6 +454,9 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const [prompt,      setPrompt]      = useState(() => data.imagePrompt ?? '')
   const [generating,  setGenerating]  = useState(false)
   const [genError,    setGenError]    = useState<string | null>(null)
+  // When initialPanelExpanded is set, the panel starts expanded until user explicitly
+  // deselects; after that it follows the normal selected-only rule.
+  const [hadInitialExpand, setHadInitialExpand] = useState(() => !!data.initialPanelExpanded)
   const abortRef = useRef<AbortController | null>(null)
   // Rendered image size (updated on img load)
   const [imgRenderedH,  setImgRenderedH]  = useState<number | null>(data.renderedH ?? null)
@@ -593,6 +629,14 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
 
   // Clean up pending request on unmount
   useEffect(() => () => { abortRef.current?.abort() }, [])
+
+  // Once the node loses selection, clear the initialPanelExpanded flag so the panel
+  // follows normal selected-only behavior from that point on.
+  useEffect(() => {
+    if (!selected && hadInitialExpand) {
+      setHadInitialExpand(false)
+    }
+  }, [selected, hadInitialExpand])
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -856,7 +900,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
 
       {/* Prompt panel — expands below when selected (both with and without image), hidden for upload-only nodes */}
       {!isUploadedOnly && (
-        <CollapsibleSection expanded={!!selected && !dragging}>
+        <CollapsibleSection expanded={(!!selected && !dragging) || hadInitialExpand}>
           <ZoomInvariantPanel naturalWidth={NODE_W} nodeWidth={nodeW}>
             <ImagePromptPanel
               value={prompt}

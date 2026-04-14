@@ -162,6 +162,7 @@ export default function NodeAddMenu({
     const extraConfig: Record<string, unknown> = {}
     let initialPrompt: string | undefined
     let hideQuickActions: boolean | undefined
+    let initialPanelExpanded: boolean | undefined
     if (item.targetType === 'libtv_script') {
       // Text nodes created from the + menu never show the quick-action list —
       // the prompt panel is always visible instead.
@@ -170,6 +171,10 @@ export default function NodeAddMenu({
         extraConfig.sourceImageUrl = sourceImageUrl
         initialPrompt = '根据图片生成提示词'
       }
+    }
+    if (item.targetType === 'libtv_image') {
+      // Image nodes created from the + menu start with the prompt panel expanded
+      initialPanelExpanded = true
     }
 
     addNode({
@@ -181,6 +186,7 @@ export default function NodeAddMenu({
       config: extraConfig,
       ...(initialPrompt ? { initialPrompt } : {}),
       ...(hideQuickActions ? { hideQuickActions } : {}),
+      ...(initialPanelExpanded ? { initialPanelExpanded } : {}),
     })
     if (direction === 'right') {
       addEdge({ id: `e-${sourceNodeId}-${newId}`, source: sourceNodeId, target: newId })
