@@ -834,22 +834,69 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
                 </div>
               </div>
             ) : (
-              /* Mountain placeholder icon — click to upload */
-              <div
-                onClick={handleUploadClick}
-                style={{
-                  height: PLACEHOLDER_H, background: '#1a1a1a',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: 'pointer',
-                }}
-              >
-                <svg
-                  width="64" height="52" viewBox="0 0 64 52" fill="none"
+              <>
+                {/* Mountain placeholder icon — click to upload */}
+                <div
+                  onClick={handleUploadClick}
+                  style={{
+                    height: PLACEHOLDER_H, background: '#1a1a1a',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer',
+                  }}
                 >
-                  <circle cx="46" cy="14" r="7" fill="#404040" />
-                  <path d="M0 52 L22 20 L38 38 L46 28 L64 52 Z" fill="#383838" />
-                </svg>
-              </div>
+                  <svg
+                    width="64" height="52" viewBox="0 0 64 52" fill="none"
+                  >
+                    <circle cx="46" cy="14" r="7" fill="#404040" />
+                    <path d="M0 52 L22 20 L38 38 L46 28 L64 52 Z" fill="#383838" />
+                  </svg>
+                </div>
+
+                {/* Quick actions — only for nodes NOT created from + menu */}
+                {!data.initialPanelExpanded && (
+                  <div style={{ padding: '14px 16px 16px' }}>
+                    <span style={{ fontSize: 12, color: '#555', marginBottom: 10, display: 'block' }}>尝试：</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      {[
+                        { Icon: Upload, label: '图生图', onClick: handleUploadClick },
+                        { Icon: null,   label: '图片高清', hd: true, onClick: () => {} },
+                      ].map(({ Icon, label, hd, onClick }) => (
+                        <button
+                          key={label}
+                          className="nodrag nopan"
+                          onClick={onClick}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            color: '#888', fontSize: 13, padding: '7px 8px',
+                            borderRadius: 8, textAlign: 'left', width: '100%',
+                            transition: 'background 150ms, color 150ms',
+                            fontFamily: 'inherit',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#252525'; e.currentTarget.style.color = '#ccc' }}
+                          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#888' }}
+                        >
+                          {hd ? (
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: 22, height: 22, border: '1.5px solid #555', borderRadius: 5,
+                              fontSize: 10, fontWeight: 700, color: '#888', flexShrink: 0,
+                            }}>HD</span>
+                          ) : Icon ? (
+                            <span style={{
+                              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                              width: 22, height: 22, flexShrink: 0,
+                            }}>
+                              <Icon size={14} />
+                            </span>
+                          ) : null}
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
