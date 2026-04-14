@@ -975,9 +975,10 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
             overflow: 'hidden',
             transition: 'border-color 150ms ease',
           }}>
-            {/* Scrollable text area */}
+            {/* Scrollable text area — nowheel only: nodrag/nopan would stopPropagation on mousedown
+                and prevent ReactFlow from selecting/dragging this node via click */}
             <div
-              className="nodrag nopan nowheel"
+              className="nowheel"
               style={{
                 padding: '20px 22px',
                 maxHeight: 400,
