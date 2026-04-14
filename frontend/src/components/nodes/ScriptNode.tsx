@@ -526,21 +526,34 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
     data.config?.sourceImageUrl as string | undefined
   )
 
+  // Text content from upstream ScriptNodes (libtv_script with content)
+  const [sourceTextContent, setSourceTextContent] = useState<string | undefined>(undefined)
+
   useEffect(() => {
     const incomingEdges = allEdges.filter(e => e.target === data.id)
-    const upstreamImageUrl = incomingEdges
+    const upstreamNodes = incomingEdges
       .map(e => allNodes.find(n => n.id === e.source))
-      .filter((n): n is NonNullable<typeof n> => !!n && n.type === 'libtv_image' && !!n.imageUrl)
+      .filter((n): n is NonNullable<typeof n> => !!n)
+
+    // Upstream image
+    const upstreamImageUrl = upstreamNodes
+      .filter(n => n.type === 'libtv_image' && !!n.imageUrl)
       .map(n => n.imageUrl as string)
-      .find(u => u && u !== 'placeholder')  // skip default placeholder
+      .find(u => u && u !== 'placeholder')
 
     if (upstreamImageUrl) {
       setSourceImageRef(upstreamImageUrl)
     } else {
-      // Fall back to static config value if no live upstream image
       const configRef = data.config?.sourceImageUrl as string | undefined
       setSourceImageRef(configRef)
     }
+
+    // Upstream text (libtv_script nodes that have content)
+    const upstreamTexts = upstreamNodes
+      .filter(n => n.type === 'libtv_script' && !!(n as NodeData).content)
+      .map(n => (n as NodeData).content as string)
+      .filter(Boolean)
+    setSourceTextContent(upstreamTexts.length > 0 ? upstreamTexts.join('\n\n') : undefined)
   }, [allEdges, allNodes, data.id, data.config?.sourceImageUrl])
 
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null)
@@ -601,7 +614,15 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
 
     const userPrompt = (promptOverride ?? prompt).trim() || '根据当前内容生成脚本'
 
+    // Build final prompt: prepend upstream text context if available
+    const finalPrompt = sourceTextContent
+      ? `上游内容：\n${sourceTextContent}\n\n指令：${userPrompt}`
+      : userPrompt
+
     addLog({ level: 'info', category: 'ai', message: `开始生成脚本`, detail: userPrompt })
+    if (sourceTextContent) {
+      addLog({ level: 'info', category: 'ai', message: '已附加上游文本', detail: sourceTextContent.slice(0, 80) + (sourceTextContent.length > 80 ? '…' : '') })
+    }
     addLog({ level: 'info', category: 'operation', message: `脚本生成: 开始`, detail: `节点ID: ${data.id}` })
 
     // Simulate progress ticking up to ~85% during shimmer/stream, then jump to 100 on done
@@ -649,7 +670,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
       }
 
       streamAI({
-        prompt: userPrompt,
+        prompt: finalPrompt,
         imageDataUrl,
         contextType: 'script',
         signal: ctrl.signal,
@@ -678,7 +699,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         runMock()
       })
     }, 400)
-  }, [prompt, data.id, sourceImageRef, updateNode])
+  }, [prompt, data.id, sourceImageRef, sourceTextContent, updateNode])
 
   const stopGenerate = useCallback(() => {
     abortRef.current?.abort()
@@ -900,7 +921,11 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
               onChange={e => setText(e.target.value)}
               onKeyDown={e => e.stopPropagation()}
               onFocus={() => setFocused(true)}
-              onBlur={() => setFocused(false)}
+              onBlur={() => {
+                setFocused(false)
+                // Persist write-mode content so downstream nodes can read it
+                if (text.trim()) updateNode(data.id, { content: text, initialMode: 'write' })
+              }}
               style={{
                 position: 'relative', zIndex: 1,
                 width: '100%', minHeight: WRITE_CARD_MIN_H,

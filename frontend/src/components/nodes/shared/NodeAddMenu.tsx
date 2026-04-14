@@ -162,10 +162,14 @@ export default function NodeAddMenu({
     const extraConfig: Record<string, unknown> = {}
     let initialPrompt: string | undefined
     let hideQuickActions: boolean | undefined
-    if (item.targetType === 'libtv_script' && sourceImageUrl) {
-      extraConfig.sourceImageUrl = sourceImageUrl
-      initialPrompt = '根据图片生成提示词'
+    if (item.targetType === 'libtv_script') {
+      // Text nodes created from the + menu never show the quick-action list —
+      // the prompt panel is always visible instead.
       hideQuickActions = true
+      if (sourceImageUrl) {
+        extraConfig.sourceImageUrl = sourceImageUrl
+        initialPrompt = '根据图片生成提示词'
+      }
     }
 
     addNode({
