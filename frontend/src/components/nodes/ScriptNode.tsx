@@ -4,6 +4,7 @@ import {
   FileText, Video, Image as ImageIcon, Volume2,
   ChevronDown, Languages, Zap, ArrowUp,
   CheckCircle2, Download, PenLine,
+  Bold, Italic, List, ListOrdered, Minus, Copy, Maximize2,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useProjectStore } from '@/stores/projectStore'
@@ -386,6 +387,53 @@ const QUICK_ACTIONS = [
   { id: 'text2music', Icon: Volume2,   label: '文字生音乐' },
 ]
 
+/* ── Toolbar helpers ─────────────────────────────────────────── */
+
+const toolbarBtnStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  width: 28, height: 28, borderRadius: 6,
+  background: 'transparent', border: 'none', cursor: 'pointer',
+  flexShrink: 0, transition: 'background 0.1s',
+}
+
+function ToolbarDivider() {
+  return <div style={{ width: 1, height: 18, background: '#2e2e2e', margin: '0 3px', flexShrink: 0 }} />
+}
+
+/** Wrap selected text with `marker` on both sides (e.g. ** for bold). */
+function wrapSelection(
+  ta: HTMLTextAreaElement | null,
+  marker: string,
+  setText: (v: string) => void,
+) {
+  if (!ta) return
+  const { selectionStart, selectionEnd, value } = ta
+  const selected = value.slice(selectionStart, selectionEnd)
+  const newVal = value.slice(0, selectionStart) + marker + selected + marker + value.slice(selectionEnd)
+  setText(newVal)
+  requestAnimationFrame(() => {
+    ta.setSelectionRange(selectionStart + marker.length, selectionEnd + marker.length)
+    ta.focus()
+  })
+}
+
+/** Prefix the current line with `prefix`. */
+function prefixLine(
+  ta: HTMLTextAreaElement | null,
+  prefix: string,
+  setText: (v: string) => void,
+) {
+  if (!ta) return
+  const { selectionStart, selectionEnd, value } = ta
+  const lineStart = value.lastIndexOf('\n', selectionStart - 1) + 1
+  const newVal = value.slice(0, lineStart) + prefix + value.slice(lineStart)
+  setText(newVal)
+  requestAnimationFrame(() => {
+    ta.setSelectionRange(selectionStart + prefix.length, selectionEnd + prefix.length)
+    ta.focus()
+  })
+}
+
 /* ── Handle ──────────────────────────────────────────────────── */
 
 function CircleHandle({ type, position, top, visible, onSourceClick, menuOpen, onMenuClose, nodeType, sourceNodeId, sourcePosition, sourceNodeWidth }: {
@@ -454,16 +502,19 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const [genProgress, setGenProgress] = useState(0)
   const [prompt, setPrompt]       = useState(data.initialPrompt ?? '')
   const [focused, setFocused]     = useState(false)
+  const [editing, setEditing]     = useState(false)   // content mode: double-click enters edit
   const [isHovered, setIsHovered] = useState(false)
   const [showQuickActions, setShowQuickActions] = useState(!data.hideQuickActions)
   const [menuOpen, setMenuOpen]         = useState(false)
   const [targetMenuOpen, setTargetMenuOpen] = useState(false)
 
   const taRef    = useRef<HTMLTextAreaElement>(null)
+  const editTaRef = useRef<HTMLTextAreaElement>(null)   // textarea for content edit mode
   const abortRef = useRef<AbortController | null>(null)
 
   const addNode = useProjectStore(s => s.addNode)
   const addEdge = useProjectStore(s => s.addEdge)
+  const updateNode = useProjectStore(s => s.updateNode)
   const allEdges = useProjectStore(s => s.edges)
   const allNodes = useProjectStore(s => s.nodes)
 
@@ -530,6 +581,13 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
     }
   }, [selected, mode, focused])
 
+  // Exit content editing when node gets deselected
+  useEffect(() => {
+    if (!selected && editing) {
+      setEditing(false)
+    }
+  }, [selected, editing])
+
   useEffect(() => () => { abortRef.current?.abort() }, [])
 
   const startGenerate = useCallback((promptOverride?: string) => {
@@ -579,7 +637,11 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
           () => {
             clearInterval(progressInterval)
             setGenProgress(100)
-            setStream(prev => { setText(prev); return prev })
+            setStream(prev => {
+              setText(prev)
+              updateNode(data.id, { content: prev, initialMode: 'content', initialPrompt: userPrompt })
+              return prev
+            })
             setMode('content')
           },
           ctrl.signal,
@@ -595,7 +657,11 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         onDone: (stats) => {
           clearInterval(progressInterval)
           setGenProgress(100)
-          setStream(prev => { setText(prev); return prev })
+          setStream(prev => {
+            setText(prev)
+            updateNode(data.id, { content: prev, initialMode: 'content', initialPrompt: userPrompt })
+            return prev
+          })
           setMode('content')
           const detail = stats
             ? `生成 ${stats.chars} 字符，耗时 ${(stats.elapsed / 1000).toFixed(1)}s`
@@ -612,14 +678,17 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         runMock()
       })
     }, 400)
-  }, [prompt, data.id, sourceImageRef])
+  }, [prompt, data.id, sourceImageRef, updateNode])
 
   const stopGenerate = useCallback(() => {
     abortRef.current?.abort()
     addLog({ level: 'warn', category: 'ai', message: '用户中止脚本生成' })
-    if (streamText) { setText(streamText); setMode('content') }
-    else setMode('idle')
-  }, [streamText])
+    if (streamText) {
+      setText(streamText)
+      updateNode(data.id, { content: streamText, initialMode: 'content' })
+      setMode('content')
+    } else setMode('idle')
+  }, [streamText, data.id, updateNode])
 
   const handleSend = useCallback(() => {
     if (!prompt.trim()) return
@@ -705,16 +774,18 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
             overflow: 'hidden',
             transition: 'border-color 150ms ease, box-shadow 150ms ease',
           }}>
-            {/* Preview area */}
+            {/* Preview area — fills full card height when quick actions are hidden */}
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              height: 150, background: '#252525',
+              height: (showQuickActions && !prompt.trim() && !sourceImageRef) ? 150 : IDLE_CARD_H,
+              background: '#252525',
             }}>
               <LinesIcon />
             </div>
 
             {/* Quick actions — always visible */}
-            {showQuickActions && (
+            {/* Quick actions — hidden when a prompt or source image is already set */}
+            {showQuickActions && !prompt.trim() && !sourceImageRef && (
               <div style={{ padding: '10px 16px 12px' }}>
                 <div style={{ fontSize: 13, color: '#777', marginBottom: 6 }}>尝试:</div>
                 {QUICK_ACTIONS.map(({ id, Icon, label }) => (
@@ -933,8 +1004,120 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
       {/* ══════════ CONTENT ══════════ */}
       {mode === 'content' && (
         <>
-          {/* Download button — floats above when selected AND has text */}
-          {selected && !dragging && text.trim().length > 0 && (
+          {/* Toolbar — floats above node when in editing state (zoom-invariant) */}
+          {editing && (
+            <ZoomInvariantPanel naturalWidth={NODE_W}>
+              <div
+                className="nodrag nopan"
+                style={{
+                  marginBottom: 8,
+                  display: 'flex', alignItems: 'center', gap: 2,
+                  background: '#1e1e1e',
+                  border: '1px solid #333',
+                  borderRadius: 10,
+                  padding: '6px 10px',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                  flexWrap: 'wrap',
+                }}
+              >
+                {/* Heading group */}
+                {(['H1','H2','H3','¶'] as const).map((t, i) => (
+                  <button
+                    key={t}
+                    className="nodrag nopan"
+                    title={t === '¶' ? '正文' : `标题 ${t.slice(1)}`}
+                    onMouseDown={e => {
+                      e.preventDefault()
+                      const ta = editTaRef.current
+                      if (!ta) return
+                      const { selectionStart, selectionEnd, value } = ta
+                      const lineStart = value.lastIndexOf('\n', selectionStart - 1) + 1
+                      const prefix = t === '¶' ? '' : `${'#'.repeat(Number(t.slice(1)))} `
+                      // Strip existing heading markers
+                      const lineText = value.slice(lineStart)
+                      const stripped = lineText.replace(/^#{1,3}\s/, '')
+                      const newVal = value.slice(0, lineStart) + prefix + stripped
+                      setText(newVal)
+                      requestAnimationFrame(() => {
+                        const offset = newVal.length - value.length
+                        ta.setSelectionRange(selectionStart + offset, selectionEnd + offset)
+                        ta.focus()
+                      })
+                    }}
+                    style={toolbarBtnStyle}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#2e2e2e' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#ccc', letterSpacing: t === '¶' ? 0 : -0.3 }}>{t}</span>
+                  </button>
+                ))}
+
+                <ToolbarDivider />
+
+                {/* Bold / Italic */}
+                <button className="nodrag nopan" title="加粗" onMouseDown={e => { e.preventDefault(); wrapSelection(editTaRef.current, '**', setText) }}
+                  style={toolbarBtnStyle}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#2e2e2e' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+                ><Bold size={13} color="#ccc" /></button>
+                <button className="nodrag nopan" title="斜体" onMouseDown={e => { e.preventDefault(); wrapSelection(editTaRef.current, '*', setText) }}
+                  style={toolbarBtnStyle}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#2e2e2e' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+                ><Italic size={13} color="#ccc" /></button>
+
+                <ToolbarDivider />
+
+                {/* Lists */}
+                <button className="nodrag nopan" title="无序列表" onMouseDown={e => { e.preventDefault(); prefixLine(editTaRef.current, '- ', setText) }}
+                  style={toolbarBtnStyle}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#2e2e2e' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+                ><List size={13} color="#ccc" /></button>
+                <button className="nodrag nopan" title="有序列表" onMouseDown={e => { e.preventDefault(); prefixLine(editTaRef.current, '1. ', setText) }}
+                  style={toolbarBtnStyle}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#2e2e2e' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+                ><ListOrdered size={13} color="#ccc" /></button>
+
+                <ToolbarDivider />
+
+                {/* Divider insert */}
+                <button className="nodrag nopan" title="插入分隔线" onMouseDown={e => {
+                  e.preventDefault()
+                  const ta = editTaRef.current
+                  if (!ta) return
+                  const { selectionStart, value } = ta
+                  const ins = '\n---\n'
+                  const newVal = value.slice(0, selectionStart) + ins + value.slice(selectionStart)
+                  setText(newVal)
+                  requestAnimationFrame(() => { ta.setSelectionRange(selectionStart + ins.length, selectionStart + ins.length); ta.focus() })
+                }}
+                  style={toolbarBtnStyle}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#2e2e2e' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+                ><Minus size={13} color="#ccc" /></button>
+
+                <ToolbarDivider />
+
+                {/* Copy */}
+                <button className="nodrag nopan" title="复制全文" onMouseDown={e => { e.preventDefault(); navigator.clipboard.writeText(text) }}
+                  style={toolbarBtnStyle}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#2e2e2e' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+                ><Copy size={13} color="#ccc" /></button>
+                {/* Maximize placeholder */}
+                <button className="nodrag nopan" title="全屏（暂未实现）" onMouseDown={e => e.preventDefault()}
+                  style={toolbarBtnStyle}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#2e2e2e' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
+                ><Maximize2 size={13} color="#ccc" /></button>
+              </div>
+            </ZoomInvariantPanel>
+          )}
+
+          {/* Download button — floats above when selected AND has text AND not editing */}
+          {!editing && selected && !dragging && text.trim().length > 0 && (
             <div style={{
               position: 'absolute', top: -52, left: '50%',
               transform: 'translateX(-50%)', zIndex: 10,
@@ -965,60 +1148,96 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
             </div>
           )}
 
-          <div style={{
-            background: '#1a1a1a',
-            border: (selected && !dragging) ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #333',
-            borderRadius: 14,
-            minHeight: CONTENT_CARD_MIN_H,
-            maxHeight: 400,
-            position: 'relative',
-            overflow: 'hidden',
-            transition: 'border-color 150ms ease',
-          }}>
-            {/* Scrollable text area — nowheel only: nodrag/nopan would stopPropagation on mousedown
-                and prevent ReactFlow from selecting/dragging this node via click */}
-            <div
-              className="nowheel"
-              style={{
-                padding: '20px 22px',
-                maxHeight: 400,
-                overflowY: 'auto',
-                boxSizing: 'border-box',
-                // Custom scrollbar
-                scrollbarWidth: 'thin',
-                scrollbarColor: '#333 transparent',
-              }}
-            >
-              {/* Render first line as bold title, rest as paragraph */}
-              {(() => {
-                const lines = text.split('\n')
-                const firstLine = lines[0]?.trim()
-                const rest = lines.slice(1).join('\n').trim()
-                return (
-                  <>
-                    {firstLine && (
-                      <p style={{
-                        margin: '0 0 14px 0',
-                        color: '#e8e8e8', fontSize: 15,
-                        fontWeight: 700, lineHeight: 1.6,
-                      }}>
-                        {firstLine}
-                      </p>
-                    )}
-                    {rest && (
-                      <p style={{
-                        margin: 0,
-                        color: '#c0c0c0', fontSize: 14,
-                        lineHeight: 1.8, whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                      }}>
-                        {rest}
-                      </p>
-                    )}
-                  </>
-                )
-              })()}
-            </div>
+          <div
+            onDoubleClick={() => {
+              setEditing(true)
+              requestAnimationFrame(() => { editTaRef.current?.focus() })
+            }}
+            style={{
+              background: '#1a1a1a',
+              border: editing
+                ? '1.5px solid #555'
+                : (selected && !dragging) ? '1.5px solid #707070'
+                : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #333',
+              borderRadius: 14,
+              minHeight: CONTENT_CARD_MIN_H,
+              maxHeight: 400,
+              position: 'relative',
+              overflow: 'hidden',
+              transition: 'border-color 150ms ease',
+              cursor: editing ? 'text' : 'grab',
+            }}
+          >
+            {editing ? (
+              /* ── Edit textarea ── */
+              <textarea
+                ref={editTaRef}
+                className="nodrag nopan nowheel"
+                value={text}
+                onChange={e => setText(e.target.value)}
+                onKeyDown={e => {
+                  e.stopPropagation()
+                  if (e.key === 'Escape') { setEditing(false) }
+                }}
+                onBlur={() => {
+                  setEditing(false)
+                  updateNode(data.id, { content: text })
+                }}
+                style={{
+                  display: 'block',
+                  width: '100%', minHeight: CONTENT_CARD_MIN_H, maxHeight: 400,
+                  boxSizing: 'border-box',
+                  background: 'transparent', border: 'none', outline: 'none',
+                  color: '#e0e0e0', fontSize: 15, lineHeight: 1.75,
+                  padding: '18px 20px',
+                  resize: 'none', fontFamily: 'inherit',
+                  overflowY: 'auto',
+                  scrollbarWidth: 'thin', scrollbarColor: '#333 transparent',
+                }}
+              />
+            ) : (
+              /* ── Read-only rendered view ── */
+              <div
+                className="nowheel"
+                style={{
+                  padding: '20px 22px',
+                  maxHeight: 400,
+                  overflowY: 'auto',
+                  boxSizing: 'border-box',
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: '#333 transparent',
+                }}
+              >
+                {(() => {
+                  const lines = text.split('\n')
+                  const firstLine = lines[0]?.trim()
+                  const rest = lines.slice(1).join('\n').trim()
+                  return (
+                    <>
+                      {firstLine && (
+                        <p style={{
+                          margin: '0 0 14px 0',
+                          color: '#e8e8e8', fontSize: 15,
+                          fontWeight: 700, lineHeight: 1.6,
+                        }}>
+                          {firstLine}
+                        </p>
+                      )}
+                      {rest && (
+                        <p style={{
+                          margin: 0,
+                          color: '#c0c0c0', fontSize: 14,
+                          lineHeight: 1.8, whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                        }}>
+                          {rest}
+                        </p>
+                      )}
+                    </>
+                  )
+                })()}
+              </div>
+            )}
           </div>
 
           <CollapsibleSection expanded={isExpanded}>
