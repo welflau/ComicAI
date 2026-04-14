@@ -5,7 +5,7 @@ import {
   ChevronDown, ArrowUp,
   Maximize2, Zap,
   RefreshCw, Wand2, Download, Fullscreen, Loader2,
-  Camera, Type, ArrowUpDown,
+  Camera, ArrowUpDown, Box, Tag, Crosshair, Languages,
 } from 'lucide-react'
 import CollapsibleSection from './shared/CollapsibleSection'
 import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
@@ -225,10 +225,10 @@ function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [] 
 }) {
   const [activeTab, setActiveTab] = useState<PromptTab>('style')
 
-  const TABS: Array<{ id: PromptTab; label: string }> = [
-    { id: 'style', label: '风格' },
-    { id: 'mark',  label: '标记' },
-    { id: 'focus', label: '聚焦' },
+  const TABS: Array<{ id: PromptTab; label: string; Icon: React.ElementType }> = [
+    { id: 'style', label: '风格', Icon: Box },
+    { id: 'mark',  label: '标记', Icon: Tag },
+    { id: 'focus', label: '聚焦', Icon: Crosshair },
   ]
 
   return (
@@ -247,37 +247,39 @@ function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [] 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
         {/* 3 tab buttons */}
         <div style={{ display: 'flex', gap: 4 }}>
-          {TABS.map(tab => (
-            <button
-              key={tab.id}
-              className="nodrag nopan"
-              onMouseDown={e => { e.preventDefault(); setActiveTab(tab.id) }}
-              style={{
-                background: activeTab === tab.id ? '#2a2a2a' : 'none',
-                border: activeTab === tab.id ? '1px solid #3a3a3a' : '1px solid transparent',
-                borderRadius: 7,
-                padding: '4px 10px',
-                color: activeTab === tab.id ? '#ddd' : '#555',
-                fontSize: 12,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                transition: 'background 0.12s, color 0.12s, border-color 0.12s',
-                lineHeight: 1.2,
-              }}
-              onMouseEnter={e => {
-                if (activeTab !== tab.id) {
-                  (e.currentTarget as HTMLButtonElement).style.color = '#999'
-                }
-              }}
-              onMouseLeave={e => {
-                if (activeTab !== tab.id) {
-                  (e.currentTarget as HTMLButtonElement).style.color = '#555'
-                }
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
+          {TABS.map(tab => {
+            const active = activeTab === tab.id
+            return (
+              <button
+                key={tab.id}
+                className="nodrag nopan"
+                onMouseDown={e => { e.preventDefault(); setActiveTab(tab.id) }}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  gap: 3,
+                  width: 54, height: 50,
+                  background: active ? '#2a2a2a' : 'none',
+                  border: active ? '1px solid #3a3a3a' : '1px solid transparent',
+                  borderRadius: 8,
+                  color: active ? '#ddd' : '#555',
+                  fontSize: 10,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  transition: 'background 0.12s, color 0.12s, border-color 0.12s',
+                  flexShrink: 0,
+                }}
+                onMouseEnter={e => {
+                  if (!active) (e.currentTarget as HTMLButtonElement).style.color = '#999'
+                }}
+                onMouseLeave={e => {
+                  if (activeTab !== tab.id) (e.currentTarget as HTMLButtonElement).style.color = '#555'
+                }}
+              >
+                <tab.Icon size={14} />
+                <span>{tab.label}</span>
+              </button>
+            )
+          })}
         </div>
 
         {/* Reference image thumbnails */}
@@ -378,7 +380,7 @@ function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [] 
           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#555' }}
           title="中英文切换"
         >
-          <Type size={12} />
+          <Languages size={13} />
         </button>
 
         {/* Swap/reorder */}
