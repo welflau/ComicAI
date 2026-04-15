@@ -96,6 +96,15 @@ function WorkflowCanvasInner() {
   const [zoom, setZoom] = useState(100)
   const [snapToGrid, setSnapToGrid] = useState(false)
 
+  // Double-click any node → zoom to fit that node centred in view
+  const onNodeDoubleClick = useCallback((_evt: MouseEvent, node: Node) => {
+    fitView({
+      nodes: [node],
+      padding: 0.35,
+      duration: 350,
+    })
+  }, [fitView])
+
   // Track zoom level
   const onMoveEnd = useCallback((_: unknown, vp: { zoom: number }) => {
     setZoom(Math.round(vp.zoom * 100))
@@ -356,6 +365,7 @@ function WorkflowCanvasInner() {
         onConnect={onConnect}
         onNodeDragStart={onNodeDragStart}
         onNodeDragStop={onNodeDragStop}
+        onNodeDoubleClick={onNodeDoubleClick}
         onNodesDelete={onNodesDelete}
         onEdgesDelete={onEdgesDelete}
         onPaneContextMenu={onPaneContextMenu}
