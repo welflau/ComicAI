@@ -267,6 +267,7 @@ export type NodeType =
   | 'libtv_script_gen'
   | 'libtv_storyboard'
   | 'libtv_image'
+  | 'libtv_video'
 
 export type NodeCategory = 'input' | 'process' | 'output' | 'control'
 
@@ -296,6 +297,10 @@ export interface NodeData {
   renderedW?: number                        // persisted rendered image width (px)
   renderedH?: number                        // persisted rendered image height (px)
   initialPanelExpanded?: boolean            // prompt panel shown by default (e.g. created from + menu)
+  // VideoNode extra fields
+  videoUrl?: string
+  videoSource?: 'uploaded' | 'generated'
+  videoPrompt?: string
 }
 
 export interface EdgeData {

@@ -39,7 +39,7 @@ const MENU_ITEMS: MenuItem[] = [
     id: 'video',
     label: '视频',
     icon: <Video size={14} />,
-    targetType: 'video_gen',
+    targetType: 'libtv_video',
     targetLabel: '视频',
     targetCategory: 'output',
   },
@@ -78,6 +78,7 @@ export type NodeTypeKey =
   | 'libtv_script_gen'
   | 'libtv_storyboard'
   | 'libtv_image'
+  | 'libtv_video'
   | 'default'
 
 const ENABLED_ITEMS: Record<NodeTypeKey, MenuItemId[]> = {
@@ -85,6 +86,7 @@ const ENABLED_ITEMS: Record<NodeTypeKey, MenuItemId[]> = {
   libtv_script_gen: ['text', 'image', 'video', 'script'],
   libtv_storyboard: ['image', 'video', 'script'],
   libtv_image:      ['text', 'image', 'video', 'script'],
+  libtv_video:      ['text', 'image', 'video'],
   default:          ['text', 'image', 'video'],
 }
 
@@ -174,6 +176,10 @@ export default function NodeAddMenu({
     }
     if (item.targetType === 'libtv_image') {
       // Image nodes created from the + menu start with the prompt panel expanded
+      initialPanelExpanded = true
+    }
+    if (item.targetType === 'libtv_video') {
+      // Video nodes created from the + menu start with the prompt panel expanded
       initialPanelExpanded = true
     }
 
