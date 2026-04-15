@@ -245,12 +245,23 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
   }, [])
 
-  // Merge server projects with local ones (local shown when backend is offline)
-  const allProjects = projects.length > 0 ? projects : localProjects
+  // After migration to backend, only show backend projects.
+  // Before/during migration (or if backend is offline), fall back to local projects.
+  const migrationDone = !!localStorage.getItem('comicai_migrated_to_backend')
+  const allProjects = migrationDone
+    ? projects                                              // post-migration: backend only
+    : (projects.length > 0 ? projects : localProjects)     // pre-migration: prefer backend, fall back to local
 
   const handleDelete = async (id: string) => {
     if (!confirm('确认删除该项目？此操作不可撤销。')) return
     try {
+      // local_ prefix projects live in IndexedDB only
+      if (id.startsWith('local_')) {
+        await localDelete(id)
+        setProjects(prev => prev.filter(p => p.id !== id))
+        toast.success('项目已删除')
+        return
+      }
       await projectsApi.delete(id)
       setProjects(prev => prev.filter(p => p.id !== id))
       addLog({

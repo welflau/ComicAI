@@ -2,61 +2,66 @@
 
 **输入剧本，输出完整漫剧视频** — AI 驱动的端到端漫剧创作平台
 
+## 运行效果
+
+### 工作流编辑器
+
+![工作流编辑器](docs/screenshots/workflow-editor.png)
+
+基于 ReactFlow 的可视化节点画布，截图展示了一个以「孙悟空」为角色的创作工作流：
+- 左侧两个 **图片节点** 展示角色参考图（猪头人身妖怪风格）
+- 中间 **文本节点** 自动生成了结构化中文提示词（主体描述 + 环境）
+- 下方 **文本节点** 接收角色名称输入，连接至剧本生成节点
+- 右侧 **文本节点** 输出《齐天》分镜剧本（第一幕：石破 场景）
+- 最右 **图片节点** 展示多帧 AI 生成分镜图
+
+---
+
 ## 技术栈
 
 | 层级 | 技术 |
 |------|------|
 | 前端 | React 18 + TypeScript + Vite + TailwindCSS + ReactFlow + Zustand |
-| 后端 | Python FastAPI + async SQLAlchemy + PostgreSQL (pgvector) |
-| 任务队列 | Celery + Redis |
-| 对象存储 | MinIO (S3-compatible) |
-| AI 引擎 | OpenAI GPT-4o / DALL-E 3, Anthropic Claude 3.5, Stability AI, Replicate SVD, Azure TTS |
+| 后端 | Python FastAPI + SQLite (aiosqlite) / PostgreSQL |
+| 对象存储 | 本地 `/uploads` 目录（开发）/ MinIO S3（生产） |
+| AI 引擎 | OpenAI GPT-4o / DALL-E 3, Anthropic Claude, Stability AI |
 | 基础设施 | Docker Compose |
 
-## 快速开始
+## 快速开始（本地开发）
 
-### 1. 配置环境变量
+### 1. 后端
 
-```bash
-cp .env.example .env
-# 编辑 .env，填入你的 API 密钥
-```
-
-### 2. 启动所有服务
-
-```bash
-docker compose up -d
-```
-
-服务启动后访问：
-- **前端**: http://localhost
-- **API 文档**: http://localhost/api/v1/docs
-- **Flower (任务监控)**: http://localhost:5555
-- **MinIO 控制台**: http://localhost:9001
-
-### 3. 本地开发
-
-**后端：**
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+.venv\Scripts\activate        # Windows
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8001
 ```
 
-**前端：**
+### 2. 前端
+
 ```bash
 cd frontend
 npm install
-npm run dev  # 访问 http://localhost:5173
+npm run dev                    # 访问 http://localhost:3000
 ```
 
-**Celery Worker：**
+> **注意**：前端通过 Vite 代理转发请求到后端（`/api` → `http://localhost:8001`），
+> 无需配置 CORS，保持 `VITE_API_URL=` 为空即可。
+
+### 3. 环境变量
+
 ```bash
-cd backend
-celery -A app.tasks.worker.celery_app worker --loglevel=info -Q generation,default
+# frontend/.env.local
+VITE_API_URL=          # 留空，使用 Vite 代理
+VITE_WS_URL=           # 留空，使用 Vite 代理
 ```
+
+服务启动后访问：
+- **前端**: http://localhost:3000
+- **API 文档**: http://localhost:8001/docs
+- **健康检查**: http://localhost:8001/health
 
 ## 核心功能
 
@@ -64,15 +69,10 @@ celery -A app.tasks.worker.celery_app worker --loglevel=info -Q generation,defau
 基于 ReactFlow 的可视化节点编辑器，支持拖拽连接 AI 处理节点。
 
 **节点类型：**
-- `script_input` — 剧本输入
-- `script_parse` — AI 剧本解析（GPT-4o / Claude）
-- `storyboard_gen` — 分镜生成
-- `character_design` — 角色一致性设计
+- `script_input` — 剧本/角色名称输入
+- `character_design` — AI 角色一致性设计（生成结构化提示词）
 - `image_gen` — AI 图像生成（DALL-E 3 / Stability AI）
-- `video_gen` — 图生视频（Replicate SVD）
-- `tts` — AI 配音合成（Azure TTS）
-- `music_gen` — 背景音乐生成
-- `auto_edit` — 智能剪辑
+- `storyboard_gen` — 分镜剧本生成
 - `preview` / `export` — 预览与导出
 
 ### 🖼️ 分镜板
@@ -81,29 +81,30 @@ celery -A app.tasks.worker.celery_app worker --loglevel=info -Q generation,defau
 ### ⏱️ 时间轴编辑器
 多轨道时间轴（视频/对白/BGM/字幕），支持缩放和播放预览。
 
-### 🤝 实时协作
-基于 WebSocket 的多人协作，支持光标同步和操作变换（OT）。
+### 💾 数据持久化
+- 开发环境：SQLite（`comicflow.db`）
+- 生产环境：PostgreSQL + MinIO
+- 迁移机制：首次登录自动将本地 IndexedDB 数据迁移至后端数据库
 
 ## API 文档
 
-启动后访问 http://localhost/api/v1/docs 查看完整的 OpenAPI 文档。
+启动后访问 http://localhost:8001/docs 查看完整 OpenAPI 文档。
 
 ### 主要端点
 
 ```
 POST /api/v1/auth/register    — 注册
-POST /api/v1/auth/login       — 登录
+POST /api/v1/auth/login       — 登录（返回 JWT Token）
 
 GET  /api/v1/projects         — 项目列表
 POST /api/v1/projects         — 创建项目
-POST /api/v1/projects/{id}/tasks  — 提交 AI 生成任务
-
-POST /api/v1/ai/assistant     — AI 创作助手
-POST /api/v1/ai/optimize-prompt  — 优化提示词
+GET  /api/v1/projects/{id}    — 项目详情
+PUT  /api/v1/projects/{id}    — 更新工作流/节点
 
 POST /api/v1/assets/upload/{project_id}  — 上传素材
+GET  /uploads/{filename}      — 访问已上传文件
 
-WS   /ws/collab/{project_id}  — 实时协作
+WS   /ws/{project_id}         — 实时协作
 ```
 
 ## 项目结构
@@ -116,27 +117,22 @@ ComicAI/
 │   │   ├── core/               # 配置、数据库、安全
 │   │   ├── models/             # SQLAlchemy ORM 模型
 │   │   ├── schemas/            # Pydantic 请求/响应模型
-│   │   ├── services/
-│   │   │   ├── ai/             # AI 核心引擎
-│   │   │   └── generation/     # 图像/视频/TTS 生成服务
-│   │   ├── tasks/              # Celery 异步任务
-│   │   └── websocket/          # 实时协作
-│   └── migrations/             # Alembic 数据库迁移
+│   │   └── services/           # AI / 生成服务
+│   └── comicflow.db            # SQLite 数据库（开发）
 ├── frontend/
 │   └── src/
 │       ├── components/
 │       │   ├── canvas/         # 工作流/分镜/时间轴视图
 │       │   ├── nodes/          # ReactFlow 自定义节点
 │       │   └── panels/         # 左/右侧面板
-│       ├── pages/              # 路由页面
+│       ├── pages/              # Dashboard / ProjectEditor
 │       ├── stores/             # Zustand 状态管理
-│       ├── api/                # API 客户端
+│       ├── api/                # Axios API 客户端
 │       └── types/              # TypeScript 类型定义
-├── docker/
-│   ├── nginx/nginx.conf
-│   └── postgres/init.sql
+├── docs/
+│   └── screenshots/            # 运行截图
 ├── docker-compose.yml
-└── .env.example
+└── README.md
 ```
 
 ## License

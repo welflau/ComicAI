@@ -5,7 +5,6 @@ import type {
   NodeData, EdgeData, CollabUser
 } from '@/types'
 import { projectsApi } from '@/api'
-import { useLocalProjectsStore } from '@/stores/localProjectsStore'
 import { addLog } from "@/stores/logStore"
 
 interface ProjectState {
@@ -74,40 +73,51 @@ export const useProjectStore = create<ProjectState>()(
     isLoading: false,
 
     loadProject: async (projectId) => {
-      // DEV fallback: load from IndexedDB for local projects
-      if (import.meta.env.DEV) {
+      // local_ 前缀项目：从 IndexedDB 读取（迁移前的遗留项目）
+      if (projectId.startsWith('local_')) {
+        const { useLocalProjectsStore } = await import('@/stores/localProjectsStore')
         const localStore = useLocalProjectsStore.getState()
-        // Ensure IndexedDB is initialised (and legacy localStorage migrated)
         await localStore.init()
-
-        const localProject = projectId === 'demo'
-          ? {
-              id: 'demo',
-              name: '三体·红岸基地',
-              user_id: 'dev',
-              status: 'draft' as const,
-              workflow_config: {},
-              tags: [],
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            }
-          : useLocalProjectsStore.getState().projects.find(p => p.id === projectId) ?? null
-
-        if (localProject) {
-          const savedWorkflow = await localStore.getWorkflow(projectId)
-          set({
-            currentProject: localProject,
-            scripts: [],
-            storyboards: [],
-            characters: [],
-            assets: [],
-            nodes: savedWorkflow?.nodes ?? (projectId === 'demo' ? getDefaultNodes() : []),
-            edges: savedWorkflow?.edges ?? (projectId === 'demo' ? getDefaultEdges() : []),
-            isLoading: false,
-          })
-          return
-        }
+        const localProject = localStore.projects.find(p => p.id === projectId)
+        const wf = await localStore.getWorkflow(projectId)
+        set({
+          currentProject: localProject ?? {
+            id: projectId, name: '本地项目', user_id: 'local',
+            status: 'draft', workflow_config: {}, tags: [],
+            created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+          },
+          scripts: [], storyboards: [], characters: [], assets: [],
+          nodes: wf?.nodes ?? getDefaultNodes(),
+          edges: wf?.edges ?? getDefaultEdges(),
+          isLoading: false,
+        })
+        return
       }
+
+      // demo 项目：使用默认节点，不查后端
+      if (projectId === 'demo') {
+        set({
+          currentProject: {
+            id: 'demo',
+            name: '三体·红岸基地',
+            user_id: 'local',
+            status: 'draft',
+            workflow_config: {},
+            tags: [],
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          scripts: [],
+          storyboards: [],
+          characters: [],
+          assets: [],
+          nodes: getDefaultNodes(),
+          edges: getDefaultEdges(),
+          isLoading: false,
+        })
+        return
+      }
+
       set({ isLoading: true })
       try {
         const [project, scripts, storyboards, characters, assets] = await Promise.all([
@@ -154,12 +164,6 @@ export const useProjectStore = create<ProjectState>()(
       if (!currentProject) return
 
       set({ nodes, edges })
-
-      // Local project: save to IndexedDB
-      if (import.meta.env.DEV && (currentProject.id === 'demo' || currentProject.id.startsWith('local_'))) {
-        await useLocalProjectsStore.getState().saveWorkflow(currentProject.id, nodes, edges)
-        return
-      }
 
       // Debounced save (in production use debounce hook)
       try {
@@ -208,13 +212,6 @@ export const useProjectStore = create<ProjectState>()(
       set((state) => ({
         nodes: state.nodes.map(n => n.id === id ? { ...n, ...updates } : n)
       }))
-      // Persist the updated nodes so properties like renderedW/H survive page reload
-      const { currentProject, nodes: updatedNodes, edges } = get()
-      if (currentProject) {
-        if (import.meta.env.DEV && (currentProject.id === 'demo' || currentProject.id.startsWith('local_'))) {
-          useLocalProjectsStore.getState().saveWorkflow(currentProject.id, updatedNodes, edges).catch(() => {})
-        }
-      }
       // No log here — called on every keystroke/image-url change, would be very noisy
     },
 

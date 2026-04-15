@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useAuthStore } from '@/stores/authStore'
+import { useLocalProjectsStore } from '@/stores/localProjectsStore'
 import Login from '@/pages/Login'
 import Register from '@/pages/Register'
 import Dashboard from '@/pages/Dashboard'
@@ -23,7 +24,7 @@ function GuestGuard({ children }: { children: React.ReactNode }) {
 }
 
 function AppInitializer({ children }: { children: React.ReactNode }) {
-  const { loadUser } = useAuthStore()
+  const { loadUser, isAuthenticated } = useAuthStore()
 
   useEffect(() => {
     // zustand-persist rehydrates synchronously on first render for localStorage,
@@ -34,6 +35,15 @@ function AppInitializer({ children }: { children: React.ReactNode }) {
       // Token expired or invalid — authStore handles clearing + sets isInitialized
     })
   }, [])
+
+  // After login is confirmed, trigger one-time IndexedDB → backend migration
+  useEffect(() => {
+    if (isAuthenticated) {
+      useLocalProjectsStore.getState().migrateToBackend().catch((e) => {
+        console.warn('[App] IndexedDB migration failed:', e)
+      })
+    }
+  }, [isAuthenticated])
 
   return <>{children}</>
 }

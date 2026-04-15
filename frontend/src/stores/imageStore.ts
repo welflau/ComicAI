@@ -18,16 +18,23 @@ const DEFAULT_PREFIX = 'default://'
 /** The imageUrl value that represents "show the default placeholder image" */
 export const DEFAULT_IMAGE_URL = 'default://placeholder'
 
-/** Persist an image File/Blob to IndexedDB. Returns the reference string to store in nodeData. */
+/** Persist an image File/Blob to backend storage. Returns the URL to store in nodeData. */
 export async function saveImage(projectId: string, file: File): Promise<string> {
-  const id = await db.images.add({
-    projectId,
-    fileName: file.name,
-    mimeType: file.type || 'image/jpeg',
-    data: file,
-    createdAt: Date.now(),
-  })
-  return `${IDB_PREFIX}${id}`
+  const { assetsApi } = await import('@/api')
+  try {
+    const result = await assetsApi.upload(projectId, file, 'image')
+    return result.url as string   // e.g. "/uploads/images/abc.png"
+  } catch {
+    // Fallback: backend unavailable → store in IndexedDB (offline/dev compatibility)
+    const id = await db.images.add({
+      projectId,
+      fileName: file.name,
+      mimeType: file.type || 'image/jpeg',
+      data: file,
+      createdAt: Date.now(),
+    })
+    return `${IDB_PREFIX}${id}`
+  }
 }
 
 /** Returns true if a string looks like an IDB reference. */

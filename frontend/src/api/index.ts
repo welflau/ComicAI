@@ -622,7 +622,17 @@ export const assetsApi = {
     const formData = new FormData()
     formData.append('file', file)
     return apiClient.post(`/assets/upload/${projectId}?asset_type=${assetType}`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 30000,  // 30s for file uploads
     }).then(r => r.data)
   }
+}
+
+// ─── Migration ────────────────────────────────────────────────────────────────
+export const migrationApi = {
+  importLocal: (data: {
+    projects: { id: string; name: string; description: string; tags: string[] }[]
+    workflows: Record<string, { nodes: unknown[]; edges: unknown[] }>
+  }) =>
+    apiClient.post('/migrate/import', data, { timeout: 30000 }).then(r => r.data),
 }

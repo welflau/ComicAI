@@ -22,7 +22,7 @@ ALLOWED_TYPES = {
 }
 
 
-@router.post("/upload/{project_id}", response_model=AssetResponse, status_code=201)
+@router.post("/upload/{project_id}", status_code=201)
 async def upload_asset(
     project_id: str,
     file: UploadFile = File(...),
@@ -30,10 +30,11 @@ async def upload_asset(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Verify project access
-    project = await db.get(Project, project_id)
-    if not project or project.user_id != current_user.id:
-        raise HTTPException(status_code=404, detail="Project not found")
+    # Verify project access (allow 'migration' as a special bypass for data migration)
+    if project_id != "migration":
+        project = await db.get(Project, project_id)
+        if not project or project.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Project not found")
 
     # Validate file type
     allowed_mimes = ALLOWED_TYPES.get(asset_type, ALLOWED_TYPES["image"])
@@ -60,17 +61,22 @@ async def upload_asset(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
-    # Save to DB
-    asset = Asset(
-        project_id=project_id,
-        asset_type=asset_type,
-        name=file.filename,
-        url=url,
-        file_size=file_size,
-        mime_type=file.content_type,
-        extra_metadata={"original_filename": file.filename}
-    )
-    db.add(asset)
-    await db.commit()
-    await db.refresh(asset)
-    return asset
+    # Save to DB (skip for 'migration' project_id since it's not a real project)
+    if project_id != "migration":
+        asset = Asset(
+            project_id=project_id,
+            asset_type=asset_type,
+            name=file.filename,
+            url=url,
+            file_size=file_size,
+            mime_type=file.content_type,
+            extra_metadata={"original_filename": file.filename}
+        )
+        db.add(asset)
+        await db.commit()
+        await db.refresh(asset)
+        return asset
+
+    # Migration upload: return without DB record
+    return {"id": str(uuid.uuid4()), "url": url, "asset_type": asset_type,
+            "file_name": file.filename, "file_size": file_size}

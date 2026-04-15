@@ -27,6 +27,8 @@ interface LocalProjectsState {
   init: () => Promise<void>
   /** Migrate legacy localStorage data to IndexedDB (one-time) */
   migrateFromLocalStorage: () => Promise<void>
+  /** Migrate IndexedDB data to backend SQLite (one-time, runs after login) */
+  migrateToBackend: () => Promise<{ migrated: number; skipped: number }>
 
   createProject: (name: string, description?: string) => Promise<Project>
   deleteProject: (id: string) => Promise<void>
@@ -169,5 +171,76 @@ export const useLocalProjectsStore = create<LocalProjectsState>()((set, get) => 
     const record = await db.workflows.get(projectId)
     if (!record) return null
     return { nodes: record.nodes, edges: record.edges }
+  },
+
+  /* ── migrateToBackend ── */
+  migrateToBackend: async () => {
+    const MIGRATION_KEY = 'comicai_migrated_to_backend'
+    if (localStorage.getItem(MIGRATION_KEY)) {
+      return { migrated: 0, skipped: 0 }
+    }
+
+    await get().init()
+    const projects = get().projects
+    if (projects.length === 0) {
+      localStorage.setItem(MIGRATION_KEY, '1')
+      return { migrated: 0, skipped: 0 }
+    }
+
+    const { migrationApi, assetsApi } = await import('@/api')
+    const { isIdbRef, parseImageId } = await import('./imageStore')
+
+    // 1. 收集所有工作流
+    const workflows: Record<string, { nodes: NodeData[]; edges: EdgeData[] }> = {}
+    for (const p of projects) {
+      const wf = await db.workflows.get(p.id)
+      if (wf) workflows[p.id] = { nodes: [...wf.nodes], edges: [...wf.edges] }
+    }
+
+    // 2. 迁移图片：idb:// → 后端 URL，建立映射
+    const imageUrlMap: Record<string, string> = {}
+    for (const wf of Object.values(workflows)) {
+      for (const node of wf.nodes) {
+        const ref = (node as Record<string, unknown>).imageUrl as string | undefined
+        if (ref && isIdbRef(ref) && !imageUrlMap[ref]) {
+          try {
+            const record = await db.images.get(parseImageId(ref))
+            if (record) {
+              const file = new File([record.data], record.fileName, { type: record.mimeType })
+              const result = await assetsApi.upload('migration', file, 'image')
+              imageUrlMap[ref] = result.url
+            }
+          } catch { /* skip failed images, keep idb:// ref */ }
+        }
+      }
+      // 更新 nodes 中的 imageUrl 引用
+      for (let i = 0; i < wf.nodes.length; i++) {
+        const node = wf.nodes[i] as Record<string, unknown>
+        const ref = node.imageUrl as string | undefined
+        if (ref && imageUrlMap[ref]) {
+          wf.nodes[i] = { ...node, imageUrl: imageUrlMap[ref] } as NodeData
+        }
+      }
+    }
+
+    // 3. 批量导入项目到后端
+    try {
+      const result = await migrationApi.importLocal({
+        projects: projects.map(p => ({
+          id: p.id,
+          name: p.name,
+          description: p.description || '',
+          tags: p.tags || [],
+        })),
+        workflows,
+      })
+      localStorage.setItem(MIGRATION_KEY, '1')
+      console.info(`[Migration] IndexedDB → Backend: ${result.imported} projects migrated`)
+      return { migrated: result.imported as number, skipped: 0 }
+    } catch (e) {
+      console.warn('[Migration] Failed to migrate to backend:', e)
+      // Don't set the flag — allow retry next time
+      return { migrated: 0, skipped: projects.length }
+    }
   },
 }))

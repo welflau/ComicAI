@@ -25,6 +25,13 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
 
     logger.info("Database tables created")
+
+    # Ensure uploads subdirectories exist
+    from pathlib import Path
+    for subdir in ["images", "videos", "audio", "assets"]:
+        Path(f"uploads/{subdir}").mkdir(parents=True, exist_ok=True)
+    logger.info("Upload directories ready")
+
     yield
     logger.info("Shutting down...")
     await engine.dispose()
@@ -53,6 +60,12 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # ─── Routes ─────────────────────────────────────────────────────────────────
 
 app.include_router(api_router)
+
+# 静态文件服务：/uploads/* → backend/uploads/
+from pathlib import Path as _Path
+from fastapi.staticfiles import StaticFiles
+_Path("uploads").mkdir(exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
 @app.websocket("/ws/collab/{project_id}")
