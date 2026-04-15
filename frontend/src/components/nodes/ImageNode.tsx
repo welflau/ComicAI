@@ -14,6 +14,7 @@ import { useProjectStore } from '../../stores/projectStore'
 import { saveImage, resolveImageUrl, DEFAULT_IMAGE_URL } from '../../stores/imageStore'
 import { lightaiGenerateImage } from '../../api'
 import { addLog } from '../../stores/logStore'
+import type { NodeData } from '../../types'
 
 export interface ImageNodeData {
   id: string
@@ -524,6 +525,18 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
     }
   }, [data.imageUrl])
 
+  // Upstream text content from connected ScriptNodes
+  const [sourceTextContent, setSourceTextContent] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    const incomingEdges = allEdges.filter(e => e.target === data.id)
+    const upstreamTexts = incomingEdges
+      .map(e => allNodes.find(n => n.id === e.source))
+      .filter((n): n is NonNullable<typeof n> => !!n && n.type === 'libtv_script' && !!(n as NodeData).content)
+      .map(n => (n as NodeData).content as string)
+      .filter(Boolean)
+    setSourceTextContent(upstreamTexts.length > 0 ? upstreamTexts.join('\n\n') : undefined)
+  }, [allEdges, allNodes, data.id])
+
   // Resolve reference images from connected source nodes
   useEffect(() => {
     const incomingEdges = allEdges.filter(e => e.target === data.id)
@@ -572,18 +585,32 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
     const ctrl = new AbortController()
     abortRef.current = ctrl
 
-    const promptPreview = prompt.trim().length > 100 ? prompt.trim().slice(0, 100) + '…' : prompt.trim()
+    const userPrompt = prompt.trim()
+    // Prepend upstream text content if a ScriptNode is connected
+    const finalPrompt = sourceTextContent
+      ? `参考内容：\n${sourceTextContent}\n\n画面描述：${userPrompt}`
+      : userPrompt
+
+    const promptPreview = finalPrompt.length > 100 ? finalPrompt.slice(0, 100) + '…' : finalPrompt
     addLog({
       level: 'info',
       category: 'operation',
       message: `开始生成图片: ${nodeLabel}`,
       detail: `节点ID: ${data.id}\nPrompt: ${promptPreview}`,
     })
+    if (sourceTextContent) {
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: '已附加上游文本内容',
+        detail: sourceTextContent.slice(0, 120) + (sourceTextContent.length > 120 ? '…' : ''),
+      })
+    }
     const t0 = Date.now()
 
     try {
       // Call LightAI and get image URL
-      const imageUrl = await lightaiGenerateImage(prompt.trim(), ctrl.signal)
+      const imageUrl = await lightaiGenerateImage(finalPrompt, ctrl.signal)
 
       // Fetch image bytes — try direct first (pre-signed COS URLs are public),
       // fall back to cors-proxy if blocked by CORS
@@ -627,7 +654,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
       setGenerating(false)
       abortRef.current = null
     }
-  }, [prompt, generating, currentProject, data.id, nodeLabel, updateNode])
+  }, [prompt, generating, sourceTextContent, currentProject, data.id, nodeLabel, updateNode])
 
   // Clean up pending request on unmount
   useEffect(() => () => { abortRef.current?.abort() }, [])
