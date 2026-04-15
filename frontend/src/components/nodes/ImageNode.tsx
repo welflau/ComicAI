@@ -835,13 +835,11 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
               </div>
             ) : (
               <>
-                {/* Mountain placeholder icon — click to upload */}
+                {/* Mountain placeholder icon */}
                 <div
-                  onClick={handleUploadClick}
                   style={{
                     height: PLACEHOLDER_H, background: '#1a1a1a',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer',
                   }}
                 >
                   <svg
