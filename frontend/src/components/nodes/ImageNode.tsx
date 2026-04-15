@@ -490,6 +490,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   // DEFAULT_IMAGE_URL is a placeholder stand-in — treat it the same as "no image".
   const hasImageData   = !!data.imageUrl && data.imageUrl !== DEFAULT_IMAGE_URL && !imgBroken
   const isUploadedOnly = data.imageSource === 'uploaded'
+  const hasAnyEdge = allEdges.some(e => e.target === data.id || e.source === data.id)
   const handlesVisible = isHovered || (!!selected && !dragging)
   const nodeLabel      = data.label || '图片'
 
@@ -878,8 +879,8 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
                   </svg>
                 </div>
 
-                {/* Quick actions — only for nodes NOT created from + menu */}
-                {!data.initialPanelExpanded && (
+                {/* Quick actions — only when no edges connected and no image content */}
+                {!hasImage && !hasAnyEdge && (
                   <div style={{ padding: '14px 16px 16px' }}>
                     <span style={{ fontSize: 12, color: '#555', marginBottom: 10, display: 'block' }}>尝试：</span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

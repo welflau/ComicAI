@@ -404,7 +404,7 @@ const TOOLBOX_ITEMS = [
 const ADD_NODE_ITEMS = [
   { id: 'libtv_script',     icon: <FileText size={20} />,  label: '文本',    badge: null,   desc: '剧本、广告词、品牌文案' },
   { id: 'libtv_image',      icon: <Image size={20} />,     label: '图片',    badge: null,   desc: '海报、分镜、角色设计' },
-  { id: 'video',            icon: <Video size={20} />,     label: '视频',    badge: null,   desc: '创意广告、动画、电影' },
+  { id: 'libtv_video',      icon: <Video size={20} />,     label: '视频',    badge: null,   desc: '创意广告、动画、电影' },
   { id: 'video_compose',    icon: <Scissors size={20} />,  label: '视频合成', badge: 'Beta', desc: '多个视频片段合为一个' },
   { id: 'audio',            icon: <Music size={20} />,     label: '音频',    badge: null,   desc: '音效、配音、音乐' },
   { id: 'libtv_script_gen', icon: <ScrollText size={20} />,label: '脚本',    badge: 'Beta', desc: '创意脚本、AI 生成故事板' },
@@ -445,19 +445,34 @@ function LeftSidebar() {
 
   const handleAddNode = (typeId: string) => {
     // Only add supported node types
-    if (!['libtv_script', 'libtv_script_gen', 'libtv_storyboard', 'libtv_image'].includes(typeId)) return
+    if (!['libtv_script', 'libtv_script_gen', 'libtv_storyboard', 'libtv_image', 'libtv_video'].includes(typeId)) return
     const id = `${typeId}_${Date.now()}`
     // Place node at current viewport centre with a small random jitter so
     // multiple nodes don't stack exactly on top of each other
     const centre = getViewportCenter()
     const jitter = () => (Math.random() - 0.5) * 60
+    const LABELS: Record<string, string> = {
+      libtv_script: '文本',
+      libtv_script_gen: '脚本',
+      libtv_image: '图片',
+      libtv_storyboard: '分镜',
+      libtv_video: '视频',
+    }
+    const CATEGORIES: Record<string, string> = {
+      libtv_script: 'input',
+      libtv_script_gen: 'input',
+      libtv_storyboard: 'process',
+      libtv_image: 'process',
+      libtv_video: 'output',
+    }
     addNode({
       id,
       type: typeId as any,
-      label: typeId === 'libtv_script' ? '文本' : typeId === 'libtv_script_gen' ? '脚本' : typeId === 'libtv_image' ? '图片' : '分镜',
-      category: typeId === 'libtv_script' || typeId === 'libtv_script_gen' ? 'input' : typeId === 'libtv_storyboard' ? 'process' : 'output',
+      label: LABELS[typeId] ?? typeId,
+      category: (CATEGORIES[typeId] ?? 'output') as any,
       position: { x: centre.x + jitter(), y: centre.y + jitter() },
       config: {},
+      ...(typeId === 'libtv_video' ? { initialPanelExpanded: true } : {}),
     })
     setActive(null)
   }

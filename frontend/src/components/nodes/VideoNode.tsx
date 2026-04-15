@@ -9,6 +9,7 @@ import CollapsibleSection from './shared/CollapsibleSection'
 import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
 import NodeAddMenu from './shared/NodeAddMenu'
 import { useIsMultiSelected } from './shared/useIsMultiSelected'
+import { useProjectStore } from '@/stores/projectStore'
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 
@@ -319,8 +320,10 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
   const [hadInitialExpand,  setHadInitialExpand]  = useState(() => !!data.initialPanelExpanded)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isMultiSelected = useIsMultiSelected()
+  const allEdges = useProjectStore(s => s.edges)
 
   const hasVideo        = !!data.videoUrl
+  const hasAnyEdge      = allEdges.some(e => e.target === data.id || e.source === data.id)
   const handlesVisible  = isHovered || (!!selected && !dragging)
   const nodeLabel       = data.label || '视频'
   // Show selected-state styling only when a single node is selected
@@ -493,8 +496,8 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
               )}
             </div>
 
-            {/* Quick actions */}
-            {!data.initialPanelExpanded && !generating && (
+            {/* Quick actions — only when no edges connected and no video content */}
+            {!hasVideo && !hasAnyEdge && !generating && (
               <div style={{ padding: '14px 16px 16px' }}>
                 <span style={{ fontSize: 12, color: '#555', marginBottom: 10, display: 'block' }}>尝试：</span>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

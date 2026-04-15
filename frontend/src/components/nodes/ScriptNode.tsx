@@ -504,7 +504,6 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const [focused, setFocused]     = useState(false)
   const [editing, setEditing]     = useState(false)   // content mode: double-click enters edit
   const [isHovered, setIsHovered] = useState(false)
-  const [showQuickActions, setShowQuickActions] = useState(!data.hideQuickActions)
   const [menuOpen, setMenuOpen]         = useState(false)
   const [targetMenuOpen, setTargetMenuOpen] = useState(false)
 
@@ -517,6 +516,9 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const updateNode = useProjectStore(s => s.updateNode)
   const allEdges = useProjectStore(s => s.edges)
   const allNodes = useProjectStore(s => s.nodes)
+
+  // Quick actions visible when no incoming edges (text nodes are chain starters)
+  const hasIncomingEdge = allEdges.some(e => e.target === data.id)
 
   const nodeLabel = data.title || data.label || '文本'
 
@@ -798,15 +800,14 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
             {/* Preview area — fills full card height when quick actions are hidden */}
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              height: (showQuickActions && !prompt.trim() && !sourceImageRef) ? 150 : IDLE_CARD_H,
+              height: !hasIncomingEdge ? 150 : IDLE_CARD_H,
               background: '#252525',
             }}>
               <LinesIcon />
             </div>
 
-            {/* Quick actions — always visible */}
-            {/* Quick actions — hidden when a prompt or source image is already set */}
-            {showQuickActions && !prompt.trim() && !sourceImageRef && (
+            {/* Quick actions — only when no incoming edges */}
+            {!hasIncomingEdge && (
               <div style={{ padding: '10px 16px 12px' }}>
                 <div style={{ fontSize: 13, color: '#777', marginBottom: 6 }}>尝试:</div>
                 {QUICK_ACTIONS.map(({ id, Icon, label }) => (
