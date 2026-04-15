@@ -835,10 +835,11 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
               </div>
             ) : (
               <>
-                {/* Mountain placeholder icon */}
+                {/* Mountain placeholder icon — taller when quick-actions are hidden to keep node size consistent */}
                 <div
                   style={{
-                    height: PLACEHOLDER_H, background: '#1a1a1a',
+                    height: data.initialPanelExpanded ? PLACEHOLDER_H + 122 : PLACEHOLDER_H,
+                    background: '#1a1a1a',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}
                 >
