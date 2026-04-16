@@ -12,7 +12,7 @@ import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
 import NodeAddMenu from './shared/NodeAddMenu'
 import { useProjectStore } from '../../stores/projectStore'
 import { saveImage, resolveImageUrl, DEFAULT_IMAGE_URL } from '../../stores/imageStore'
-import { lightaiGenerateImage } from '../../api'
+import { lightaiGenerateImage, streamAI } from '../../api'
 import { addLog } from '../../stores/logStore'
 import type { NodeData } from '../../types'
 
@@ -72,7 +72,20 @@ const TOOLBAR_GROUPS: Array<{
   },
 ]
 
-function ImageEditToolbar({ visible }: { visible: boolean }) {
+function ImageEditToolbar({ visible, imageUrl }: { visible: boolean; imageUrl?: string }) {
+  async function handleDownload() {
+    if (!imageUrl) return
+    const { resolveImageUrl } = await import('@/stores/imageStore')
+    const resolved = await resolveImageUrl(imageUrl)
+    if (!resolved) return
+    const a = document.createElement('a')
+    a.href = resolved
+    a.download = `image_${Date.now()}.png`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
   return (
     <div
       className="nodrag nopan"
@@ -138,23 +151,34 @@ function ImageEditToolbar({ visible }: { visible: boolean }) {
 
       {/* Right icon buttons */}
       {[
-        { Icon: Wand2,    title: '一键优化' },
-        { Icon: RefreshCw, title: '重新生成' },
-        { Icon: Download,  title: '下载' },
-        { Icon: Fullscreen, title: '全屏预览' },
-      ].map(({ Icon, title }) => (
+        { Icon: Wand2,     title: '一键优化',  onClick: undefined },
+        { Icon: RefreshCw, title: '重新生成',  onClick: undefined },
+        { Icon: Download,  title: '下载',      onClick: handleDownload },
+        { Icon: Fullscreen, title: '全屏预览', onClick: undefined },
+      ].map(({ Icon, title, onClick }) => (
         <button
           key={title}
           className="nodrag nopan"
           title={title}
+          onClick={onClick}
+          disabled={title === '下载' && !imageUrl}
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 28, height: 28, background: 'none', border: 'none',
-            cursor: 'pointer', color: '#777', borderRadius: 7,
+            cursor: (title === '下载' && !imageUrl) ? 'not-allowed' : 'pointer',
+            color: (title === '下载' && !imageUrl) ? '#444' : '#777',
+            borderRadius: 7,
             transition: 'color 0.12s, background 0.12s',
           }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#ddd'; (e.currentTarget as HTMLButtonElement).style.background = '#2a2a2a' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#777'; (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
+          onMouseEnter={e => {
+            if (title === '下载' && !imageUrl) return
+            ;(e.currentTarget as HTMLButtonElement).style.color = '#ddd'
+            ;(e.currentTarget as HTMLButtonElement).style.background = '#2a2a2a'
+          }}
+          onMouseLeave={e => {
+            ;(e.currentTarget as HTMLButtonElement).style.color = (title === '下载' && !imageUrl) ? '#444' : '#777'
+            ;(e.currentTarget as HTMLButtonElement).style.background = 'none'
+          }}
         >
           <Icon size={14} />
         </button>
@@ -587,31 +611,67 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
     abortRef.current = ctrl
 
     const userPrompt = prompt.trim()
-    // Prepend upstream text content if a ScriptNode is connected
-    const finalPrompt = sourceTextContent
-      ? `参考内容：\n${sourceTextContent}\n\n画面描述：${userPrompt}`
-      : userPrompt
+    const t0 = Date.now()
 
-    const promptPreview = finalPrompt.length > 100 ? finalPrompt.slice(0, 100) + '…' : finalPrompt
     addLog({
       level: 'info',
       category: 'operation',
       message: `开始生成图片: ${nodeLabel}`,
-      detail: `节点ID: ${data.id}\nPrompt: ${promptPreview}`,
+      detail: `节点ID: ${data.id}\nPrompt: ${userPrompt.slice(0, 100)}`,
     })
+
+    // Determine the actual image generation prompt
+    let imageGenPrompt: string
     if (sourceTextContent) {
+      // Step 1: Use text AI to convert script content → image generation prompt
       addLog({
         level: 'info',
         category: 'operation',
-        message: '已附加上游文本内容',
+        message: '正在将剧本内容转换为绘图提示词…',
         detail: sourceTextContent.slice(0, 120) + (sourceTextContent.length > 120 ? '…' : ''),
       })
+      try {
+        let aiPrompt = ''
+        await streamAI({
+          prompt: `剧本内容：\n${sourceTextContent}\n\n用户指令：${userPrompt}`,
+          contextType: 'general',
+          systemOverride: '你是专业的AI绘图提示词工程师。根据提供的剧本内容和用户指令，生成一段简洁、适合AI图像生成的英文提示词（prompt）。只输出prompt本身，不要有任何解释、标题或前缀。prompt要包含画面构图、人物外貌、场景氛围、光线风格等视觉元素。',
+          signal: ctrl.signal,
+          onChunk: (chunk) => { aiPrompt += chunk },
+          onDone: () => {},
+          onError: (err) => { throw new Error(err) },
+        })
+        imageGenPrompt = aiPrompt.trim() || userPrompt
+        addLog({
+          level: 'info',
+          category: 'operation',
+          message: '绘图提示词生成完成',
+          detail: imageGenPrompt.slice(0, 200) + (imageGenPrompt.length > 200 ? '…' : ''),
+        })
+      } catch (err: unknown) {
+        if ((err as Error)?.name === 'AbortError' || (err as Error)?.message === '已取消') {
+          setGenerating(false)
+          abortRef.current = null
+          return
+        }
+        // If AI conversion fails, fall back to user prompt directly
+        imageGenPrompt = userPrompt
+        addLog({
+          level: 'warn',
+          category: 'operation',
+          message: '提示词转换失败，使用原始提示词',
+          detail: (err as Error)?.message || String(err),
+        })
+      }
+    } else {
+      imageGenPrompt = userPrompt
     }
-    const t0 = Date.now()
+
+    const promptPreview = imageGenPrompt.length > 100 ? imageGenPrompt.slice(0, 100) + '…' : imageGenPrompt
 
     try {
-      // Call LightAI and get image URL
-      const imageUrl = await lightaiGenerateImage(finalPrompt, ctrl.signal)
+      // Call LightAI with the resolved image generation prompt
+      const imageUrl = await lightaiGenerateImage(imageGenPrompt, ctrl.signal)
 
       // Fetch image bytes — try direct first (pre-signed COS URLs are public),
       // fall back to cors-proxy if blocked by CORS
@@ -770,7 +830,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
 
       {/* Edit toolbar — floats above node when selected AND has image */}
       {hasImage && (
-        <ImageEditToolbar visible={!!selected && !dragging} />
+        <ImageEditToolbar visible={!!selected && !dragging} imageUrl={data.imageUrl} />
       )}
 
       {/* Title */}

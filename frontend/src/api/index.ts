@@ -5,7 +5,7 @@ const API_BASE = import.meta.env.VITE_API_URL || ''
 export const apiClient = axios.create({
   baseURL: `${API_BASE}/api/v1`,
   headers: { 'Content-Type': 'application/json' },
-  timeout: 3000, // 后端不可用时 3s 内 fallback
+  timeout: 15000,
 })
 
 // Auth interceptor
@@ -22,6 +22,11 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      const token = localStorage.getItem('comicflow_token')
+      // DEV mode with mock token: don't redirect, just let callers handle it
+      if (import.meta.env.DEV && token === 'dev_token') {
+        return Promise.reject(error)
+      }
       localStorage.removeItem('comicflow_token')
       window.location.href = '/login'
     }
@@ -269,6 +274,7 @@ export async function streamAI({
   imageDataUrl,
   contextType = 'script',
   model,
+  systemOverride,
   onChunk,
   onDone,
   onError,
@@ -278,6 +284,8 @@ export async function streamAI({
   imageDataUrl?: string | null
   contextType?: 'script' | 'storyboard' | 'general'
   model?: string
+  /** Override the system prompt — useful for specialized one-off tasks */
+  systemOverride?: string
   onChunk: (text: string) => void
   onDone: (stats?: { chars: number; elapsed: number }) => void
   onError?: (err: string) => void
@@ -317,11 +325,12 @@ export async function streamAI({
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(anthropicSettings.apiKey ? { 'X-Anthropic-Key': anthropicSettings.apiKey } : {}),
-        ...(anthropicSettings.baseUrl ? { 'X-Anthropic-Base': anthropicSettings.baseUrl } : {}),
+        // Only send base URL if it's a full HTTP URL — relative paths (e.g. /api/anthropic) are Vite proxy paths and cannot be used by the backend's httpx
+        ...(anthropicSettings.baseUrl?.startsWith('http') ? { 'X-Anthropic-Base': anthropicSettings.baseUrl } : {}),
         ...(openaiSettings.apiKey ? { 'X-OpenAI-Key': openaiSettings.apiKey } : {}),
-        ...(openaiSettings.baseUrl ? { 'X-OpenAI-Base': openaiSettings.baseUrl } : {}),
+        ...(openaiSettings.baseUrl?.startsWith('http') ? { 'X-OpenAI-Base': openaiSettings.baseUrl } : {}),
       },
-      body: JSON.stringify({ prompt, image_data_url: imageDataUrl || undefined, context_type: contextType, model }),
+      body: JSON.stringify({ prompt, image_data_url: imageDataUrl || undefined, context_type: contextType, model, system_override: systemOverride || undefined }),
       signal,
     })
 
@@ -395,7 +404,7 @@ export async function streamAI({
       detail: `model: ${usedModel}\ncontextType: ${contextType}\n\nPrompt:\n${promptPreview}`,
     })
     try {
-      const system = DIRECT_SYSTEM_PROMPTS[contextType] ?? DIRECT_SYSTEM_PROMPTS.general
+      const system = systemOverride || DIRECT_SYSTEM_PROMPTS[contextType] ?? DIRECT_SYSTEM_PROMPTS.general
       await streamDirectAnthropic({
         system, prompt, imageDataUrl,  model,
         apiKey: anthropicSettings.apiKey,
@@ -429,7 +438,7 @@ export async function streamAI({
       detail: `model: ${usedModel}\ncontextType: ${contextType}\n\nPrompt:\n${promptPreview}`,
     })
     try {
-      const system = DIRECT_SYSTEM_PROMPTS[contextType] ?? DIRECT_SYSTEM_PROMPTS.general
+      const system = systemOverride || DIRECT_SYSTEM_PROMPTS[contextType] ?? DIRECT_SYSTEM_PROMPTS.general
       await streamDirectOpenAI({
         system, prompt, model,
         apiKey: openaiSettings.apiKey,

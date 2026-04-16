@@ -66,18 +66,27 @@ export async function resolveImageUrl(ref: string | undefined): Promise<string |
 
 /**
  * Resolve an idb:// reference to a data URL (base64) for AI vision calls.
- * - default://placeholder → fetch the built-in webp asset and convert to base64
+ * - default://placeholder → null (skip placeholder)
  * - idb://N               → data URL via FileReader
  * - data:...              → returned as-is
+ * - /uploads/...          → fetch locally and convert to base64 (Anthropic cannot reach localhost)
  * - http(s)://...         → returned as-is (Anthropic accepts URL type)
  * Returns null if the record is not found.
  */
 export async function resolveImageToDataUrl(ref: string | undefined): Promise<string | null> {
   if (!ref) return null
   if (ref.startsWith(DEFAULT_PREFIX)) {
-    // The placeholder is a real .webp asset — fetch it and convert to base64 for AI vision
+    // Placeholder — no real image, skip
+    return null
+  }
+  if (ref.startsWith('data:')) return ref           // already a data URL
+
+  // Local server path (e.g. /uploads/images/xxx.png) — fetch and convert to base64
+  // because Anthropic's servers cannot reach localhost
+  if (ref.startsWith('/')) {
     try {
-      const response = await fetch(placeholderImageUrl)
+      const response = await fetch(ref)
+      if (!response.ok) return null
       const blob = await response.blob()
       return new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
@@ -89,7 +98,7 @@ export async function resolveImageToDataUrl(ref: string | undefined): Promise<st
       return null
     }
   }
-  if (ref.startsWith('data:')) return ref           // already a data URL
+
   if (!isIdbRef(ref)) return ref                    // plain http(s) URL
 
   const id = parseImageId(ref)
