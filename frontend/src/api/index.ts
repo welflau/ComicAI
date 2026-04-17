@@ -1,9 +1,8 @@
 import axios from 'axios'
 
-const API_BASE = import.meta.env.VITE_API_URL || ''
-
+// 不使用 VITE_API_URL 作为 baseURL，走 Vite 代理 /api → localhost:8001
 export const apiClient = axios.create({
-  baseURL: `${API_BASE}/api/v1`,
+  baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
   timeout: 15000,
 })
@@ -292,7 +291,7 @@ export async function streamAI({
   signal?: AbortSignal
 }): Promise<void> {
   const token = localStorage.getItem('comicflow_token')
-  const API_BASE = (import.meta.env.VITE_API_URL as string) || ''
+  const API_BASE = ''
 
   const { getServiceSettings } = await import('@/stores/settingsStore')
   const { addLog } = await import('@/stores/logStore')
@@ -404,7 +403,7 @@ export async function streamAI({
       detail: `model: ${usedModel}\ncontextType: ${contextType}\n\nPrompt:\n${promptPreview}`,
     })
     try {
-      const system = systemOverride || DIRECT_SYSTEM_PROMPTS[contextType] ?? DIRECT_SYSTEM_PROMPTS.general
+      const system = systemOverride || (DIRECT_SYSTEM_PROMPTS[contextType] ?? DIRECT_SYSTEM_PROMPTS.general)
       await streamDirectAnthropic({
         system, prompt, imageDataUrl,  model,
         apiKey: anthropicSettings.apiKey,
@@ -438,7 +437,7 @@ export async function streamAI({
       detail: `model: ${usedModel}\ncontextType: ${contextType}\n\nPrompt:\n${promptPreview}`,
     })
     try {
-      const system = systemOverride || DIRECT_SYSTEM_PROMPTS[contextType] ?? DIRECT_SYSTEM_PROMPTS.general
+      const system = systemOverride || (DIRECT_SYSTEM_PROMPTS[contextType] ?? DIRECT_SYSTEM_PROMPTS.general)
       await streamDirectOpenAI({
         system, prompt, model,
         apiKey: openaiSettings.apiKey,
@@ -623,6 +622,287 @@ function _lightaiExtractUrls(result: Record<string, unknown>): string[] {
   }
 
   return urls
+}
+
+// ─── LightAI Video Generation (可灵 / 即梦) ─────────────────────────────────
+
+export interface VideoGenerateOptions {
+  /** 文本提示词 */
+  prompt: string
+  /** 负向提示词 */
+  negativePrompt?: string
+  /** 参考图片 base64 data URL (img2video / keyframe) */
+  imageDataUrl?: string
+  /** 尾帧图片 base64 data URL (keyframes mode) */
+  tailImageDataUrl?: string
+  /** 视频时长（秒）: 5 or 10 */
+  duration?: 5 | 10
+  /** 画面比例: '16:9' | '9:16' | '1:1' */
+  aspectRatio?: '16:9' | '9:16' | '1:1'
+  /** AbortSignal */
+  signal?: AbortSignal
+  /** Progress callback: message */
+  onProgress?: (msg: string) => void
+}
+
+/**
+ * 将 base64 dataUrl 图片上传到 LightAI COS，返回 COS 下载链接。
+ * 供可灵/即梦图生视频时传入首帧/尾帧使用。
+ */
+async function _lightaiUploadImageForVideo(
+  dataUrl: string,
+  apiKey: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const sep = dataUrl.indexOf(',')
+  const meta = sep >= 0 ? dataUrl.slice(0, sep) : ''
+  const b64  = sep >= 0 ? dataUrl.slice(sep + 1) : dataUrl
+  const mimeMatch = meta.match(/data:([^;]+)/)
+  const mime = mimeMatch?.[1] ?? 'image/png'
+  const ext  = mime.split('/')[1]?.split('+')[0] ?? 'png'
+
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+  const blob  = new Blob([bytes], { type: mime })
+
+  const cosPath = `skill_api/user_upload/${Date.now()}_frame.${ext}`
+  const form = new FormData()
+  form.append('image_file', blob, `frame.${ext}`)
+  form.append('cos_path', cosPath)
+  form.append('cover', '0')
+
+  const resp = await fetch('/api/lightai/upload_cos', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+    body: form,
+    signal,
+  })
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => resp.statusText)
+    throw new Error(`上传图片到 COS 失败 ${resp.status}: ${text}`)
+  }
+
+  const data = await resp.json()
+  const cosUrl: string = data.download_url ?? data.url ?? ''
+  if (!cosUrl) throw new Error('COS 上传未返回 download_url，原始: ' + JSON.stringify(data).slice(0, 120))
+  return cosUrl
+}
+
+/** 从 LightAI 轮询结果中提取视频 URL */
+function _lightaiExtractVideoUrl(result: Record<string, unknown>): string {
+  const data = (result.data as Record<string, unknown>) ?? result
+
+  // Pattern 1: data.videos[].url
+  const videos = (data as Record<string, unknown>).videos
+  if (Array.isArray(videos) && videos.length > 0) {
+    const first = videos[0] as Record<string, unknown>
+    for (const k of ['url', 'video_url', 'download_url']) {
+      if (typeof first[k] === 'string' && (first[k] as string).startsWith('http')) return first[k] as string
+    }
+  }
+
+  // Pattern 2: data.video_url / data.url / data.download_url
+  for (const k of ['video_url', 'url', 'download_url']) {
+    const val = (data as Record<string, unknown>)[k]
+    if (typeof val === 'string' && val.startsWith('http')) return val
+  }
+
+  // Pattern 3: deep scan the JSON for .mp4 / .mov URLs
+  const text = JSON.stringify(result)
+  const match = text.match(/https?:\/\/[^\s"'<>]+\.(?:mp4|mov|avi|webm)/i)
+  return match?.[0] ?? ''
+}
+
+/** 从 create_async_task 响应中提取 task_id */
+function _lightaiExtractTaskId(result: Record<string, unknown>): string {
+  for (const key of ['task_id', 'taskId']) {
+    if (typeof result[key] === 'string') return result[key] as string
+  }
+  const data = result.data as Record<string, unknown> | undefined
+  if (data) {
+    for (const key of ['task_id', 'taskId']) {
+      if (typeof data[key] === 'string') return data[key] as string
+    }
+  }
+  return ''
+}
+
+/** 轮询 LightAI 视频任务，status===2 表示成功 */
+async function _lightaiPollVideoTask(
+  taskId: string,
+  apiKey: string,
+  label: string,
+  opts: VideoGenerateOptions,
+): Promise<string> {
+  const { addLog } = await import('@/stores/logStore')
+  const INTERVAL = 15000
+  const MAX_POLLS = 40  // 40×15s = 600s
+  const start = Date.now()
+
+  for (let i = 1; i <= MAX_POLLS; i++) {
+    await new Promise<void>(r => setTimeout(r, INTERVAL))
+    if (opts.signal?.aborted) throw new Error('已取消')
+
+    const elapsed = Math.round((Date.now() - start) / 1000)
+    opts.onProgress?.(`${label}生成中... (${i}/${MAX_POLLS})`)
+    addLog({ level: 'debug', category: 'ai', message: `[${label}] 轮询 #${i}，已等待 ${elapsed}s` })
+
+    const pollResp = await fetch(`/api/lightai/get_task_status/${taskId}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      signal: opts.signal,
+    })
+    if (!pollResp.ok) continue
+
+    const pollData = await pollResp.json() as Record<string, unknown>
+    const status = pollData.status
+
+    if (status === 2) {
+      const videoUrl = _lightaiExtractVideoUrl(pollData)
+      if (!videoUrl) throw new Error(`${label}未返回视频 URL，原始: ` + JSON.stringify(pollData).slice(0, 200))
+      addLog({ level: 'info', category: 'ai', message: `[${label}] 视频生成成功`, detail: videoUrl.slice(0, 80) })
+      return videoUrl
+    }
+    if (typeof status === 'number' && (status < 0 || status >= 3)) {
+      const msg = (pollData.message as string) ?? JSON.stringify(pollData).slice(0, 100)
+      throw new Error(`${label}任务失败 (status=${status}): ${msg}`)
+    }
+  }
+
+  throw new Error(`${label}任务超时 (600s)，task_id: ${taskId}`)
+}
+
+/**
+ * 可灵（Kling v3）视频生成 — 通过 LightAI create_async_task 接口。
+ * 文生视频: service_name="keling", api_name="text_to_video"
+ * 图生视频: service_name="keling", api_name="image_to_video"（图片先上传 COS）
+ */
+export async function klingGenerateVideo(opts: VideoGenerateOptions): Promise<string> {
+  const { getServiceSettings } = await import('@/stores/settingsStore')
+  const { addLog } = await import('@/stores/logStore')
+  const apiKey = getServiceSettings('lightai').apiKey
+  if (!apiKey) throw new Error('未配置 LightAI API Key')
+
+  const { prompt, negativePrompt = '', duration = 5, aspectRatio = '16:9' } = opts
+  const hasImage = !!opts.imageDataUrl
+
+  // 图生视频：先上传图片到 COS，获取 COS URL
+  let imageUrl: string | undefined
+  let tailImageUrl: string | undefined
+  if (opts.imageDataUrl) {
+    opts.onProgress?.('上传首帧图片到 COS...')
+    imageUrl = await _lightaiUploadImageForVideo(opts.imageDataUrl, apiKey, opts.signal)
+  }
+  if (opts.tailImageDataUrl) {
+    opts.onProgress?.('上传尾帧图片到 COS...')
+    tailImageUrl = await _lightaiUploadImageForVideo(opts.tailImageDataUrl, apiKey, opts.signal)
+  }
+
+  const taskJson: Record<string, unknown> = {
+    model_name: 'kling-v3',
+    duration,
+    aspect_ratio: aspectRatio,
+    mode: 'pro',
+    sound: 'off',
+  }
+  if (prompt) taskJson.prompt = prompt
+  if (negativePrompt) taskJson.negative_prompt = negativePrompt
+  if (imageUrl) taskJson.image = imageUrl
+  if (tailImageUrl) taskJson.image_tail = tailImageUrl
+
+  const payload = {
+    service_name: 'keling',
+    api_name: hasImage ? 'image_to_video' : 'text_to_video',
+    app_info: { model: 'kling-v3', mode: 'pro' },
+    task_query: { path: {}, params: {}, json: taskJson, data: {}, file: {} },
+    custom_data: {},
+  }
+
+  opts.onProgress?.('提交可灵生成任务...')
+  addLog({ level: 'info', category: 'ai', message: '[可灵] 提交视频生成任务', detail: prompt.slice(0, 60) })
+
+  const createResp = await fetch('/api/lightai/create_async_task', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify(payload),
+    signal: opts.signal,
+  })
+  if (!createResp.ok) {
+    const text = await createResp.text().catch(() => createResp.statusText)
+    throw new Error(`可灵任务提交失败 ${createResp.status}: ${text}`)
+  }
+
+  const createData = await createResp.json()
+  const taskId = _lightaiExtractTaskId(createData)
+  if (!taskId) throw new Error('可灵 API 未返回 task_id，响应: ' + JSON.stringify(createData).slice(0, 120))
+
+  addLog({ level: 'info', category: 'ai', message: `[可灵] 任务已提交: ${taskId}` })
+  return _lightaiPollVideoTask(taskId, apiKey, '可灵', opts)
+}
+
+/**
+ * 即梦（Doubao Seedance）视频生成 — 通过 LightAI create_async_task 接口。
+ * service_name="volces_ark", api_name="video30_generate"
+ * 图片先上传 COS 再传入 content[].image_url
+ */
+export async function jimengGenerateVideo(opts: VideoGenerateOptions): Promise<string> {
+  const { getServiceSettings } = await import('@/stores/settingsStore')
+  const { addLog } = await import('@/stores/logStore')
+  const apiKey = getServiceSettings('lightai').apiKey
+  if (!apiKey) throw new Error('未配置 LightAI API Key')
+
+  const { prompt, duration = 5 } = opts
+
+  // 图生视频：先上传图片到 COS
+  let imageUrl: string | undefined
+  if (opts.imageDataUrl) {
+    opts.onProgress?.('上传图片到 COS...')
+    imageUrl = await _lightaiUploadImageForVideo(opts.imageDataUrl, apiKey, opts.signal)
+  }
+
+  type ContentItem = { type: string; text?: string; image_url?: { url: string } }
+  const content: ContentItem[] = [{ type: 'text', text: prompt }]
+  if (imageUrl) {
+    content.push({ type: 'image_url', image_url: { url: imageUrl } })
+  }
+
+  const taskJson = {
+    model: 'doubao-seedance-1-5-pro-251215',
+    ratio: 'adaptive',
+    duration,
+    resolution: '720p',
+    generate_audio: false,
+    watermark: false,
+    content,
+  }
+
+  const payload = {
+    service_name: 'volces_ark',
+    api_name: 'video30_generate',
+    app_info: { model: 'doubao-seedance-1-5-pro-251215', mode: '' },
+    task_query: { path: {}, params: {}, json: taskJson, data: {}, file: {} },
+    custom_data: {},
+  }
+
+  opts.onProgress?.('提交即梦生成任务...')
+  addLog({ level: 'info', category: 'ai', message: '[即梦] 提交视频生成任务', detail: prompt.slice(0, 60) })
+
+  const createResp = await fetch('/api/lightai/create_async_task', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify(payload),
+    signal: opts.signal,
+  })
+  if (!createResp.ok) {
+    const text = await createResp.text().catch(() => createResp.statusText)
+    throw new Error(`即梦任务提交失败 ${createResp.status}: ${text}`)
+  }
+
+  const createData = await createResp.json()
+  const taskId = _lightaiExtractTaskId(createData)
+  if (!taskId) throw new Error('即梦 API 未返回 task_id，响应: ' + JSON.stringify(createData).slice(0, 120))
+
+  addLog({ level: 'info', category: 'ai', message: `[即梦] 任务已提交: ${taskId}` })
+  return _lightaiPollVideoTask(taskId, apiKey, '即梦', opts)
 }
 
 // ─── Assets Upload ────────────────────────────────────────────────────────────

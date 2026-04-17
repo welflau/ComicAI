@@ -222,7 +222,8 @@ export default function Dashboard() {
   const localInit = useLocalProjectsStore(s => s.init)
   const localDelete = useLocalProjectsStore(s => s.deleteProject)
   const [projects, setProjects] = useState<Project[]>([])
-  const [loading, setLoading] = useState(false)
+  const [backendOnline, setBackendOnline] = useState(true)
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [showCreate, setShowCreate] = useState(false)
@@ -232,25 +233,22 @@ export default function Dashboard() {
 
   useEffect(() => {
     // Ensure IndexedDB local projects are loaded (runs migration if needed)
-    localInit()
-  }, [localInit])
+    useLocalProjectsStore.getState().init()
+  }, [])
 
   useEffect(() => {
     projectsApi.list()
-      .then(setProjects)
+      .then(data => { setProjects(data); setBackendOnline(true) })
       .catch(() => {
-        // DEV: backend offline, use local projects
+        setBackendOnline(false)
         if (!import.meta.env.DEV) toast.error('加载项目失败')
       })
       .finally(() => setLoading(false))
   }, [])
 
-  // After migration to backend, only show backend projects.
-  // Before/during migration (or if backend is offline), fall back to local projects.
-  const migrationDone = !!localStorage.getItem('comicai_migrated_to_backend')
-  const allProjects = migrationDone
-    ? projects                                              // post-migration: backend only
-    : (projects.length > 0 ? projects : localProjects)     // pre-migration: prefer backend, fall back to local
+  // When backend is online, always show backend projects (source of truth).
+  // Only fall back to local IndexedDB projects when backend is unreachable.
+  const allProjects = backendOnline ? projects : localProjects
 
   const handleDelete = async (id: string) => {
     if (!confirm('确认删除该项目？此操作不可撤销。')) return

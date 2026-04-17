@@ -44,6 +44,26 @@ async def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    # DEV mode: accept "dev_token" and auto-create/return a dev user
+    if settings.DEBUG and token == "dev_token":
+        DEV_USER_ID = "dev_user_local"
+        result = await db.execute(select(User).where(User.id == DEV_USER_ID))
+        dev_user = result.scalar_one_or_none()
+        if dev_user is None:
+            dev_user = User(
+                id=DEV_USER_ID,
+                email="dev@comicai.local",
+                username="dev",
+                hashed_password=hash_password("dev_password"),
+                plan="pro",
+                credits=9999,
+            )
+            db.add(dev_user)
+            await db.commit()
+            await db.refresh(dev_user)
+        return dev_user
+
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")

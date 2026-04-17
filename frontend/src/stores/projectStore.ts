@@ -7,6 +7,9 @@ import type {
 import { projectsApi } from '@/api'
 import { addLog } from "@/stores/logStore"
 
+// Debounce timer for auto-saving node updates
+let _saveTimer: ReturnType<typeof setTimeout> | undefined
+
 interface ProjectState {
   // Current project
   currentProject: Project | null
@@ -87,8 +90,8 @@ export const useProjectStore = create<ProjectState>()(
             created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
           },
           scripts: [], storyboards: [], characters: [], assets: [],
-          nodes: wf?.nodes ?? getDefaultNodes(),
-          edges: wf?.edges ?? getDefaultEdges(),
+          nodes: wf?.nodes ?? [],
+          edges: wf?.edges ?? [],
           isLoading: false,
         })
         return
@@ -135,8 +138,8 @@ export const useProjectStore = create<ProjectState>()(
           storyboards,
           characters,
           assets,
-          nodes: workflowConfig.nodes || getDefaultNodes(),
-          edges: workflowConfig.edges || getDefaultEdges(),
+          nodes: workflowConfig.nodes ?? [],
+          edges: workflowConfig.edges ?? [],
           isLoading: false
         })
         addLog({
@@ -196,6 +199,15 @@ export const useProjectStore = create<ProjectState>()(
         message: '节点已添加',
         detail: `类型: ${node.type}, 标签: ${node.label}`,
       })
+      // Save immediately on structural changes
+      clearTimeout(_saveTimer)
+      _saveTimer = setTimeout(() => {
+        const { currentProject, nodes, edges } = get()
+        if (!currentProject) return
+        projectsApi.update(currentProject.id, {
+          workflow_config: { ...currentProject.workflow_config, nodes, edges }
+        }).catch(e => console.error('Failed to save after addNode:', e))
+      }, 300)
     },
 
     addEdge: (edge) => {
@@ -206,13 +218,33 @@ export const useProjectStore = create<ProjectState>()(
         message: '连接已创建',
         detail: `从 ${edge.source} 到 ${edge.target}`,
       })
+      clearTimeout(_saveTimer)
+      _saveTimer = setTimeout(() => {
+        const { currentProject, nodes, edges } = get()
+        if (!currentProject) return
+        projectsApi.update(currentProject.id, {
+          workflow_config: { ...currentProject.workflow_config, nodes, edges }
+        }).catch(e => console.error('Failed to save after addEdge:', e))
+      }, 300)
     },
 
     updateNode: (id, updates) => {
       set((state) => ({
         nodes: state.nodes.map(n => n.id === id ? { ...n, ...updates } : n)
       }))
-      // No log here — called on every keystroke/image-url change, would be very noisy
+      // Persist to backend — debounced via a module-level timer
+      clearTimeout(_saveTimer)
+      _saveTimer = setTimeout(() => {
+        const { currentProject, nodes, edges } = get()
+        if (!currentProject) return
+        projectsApi.update(currentProject.id, {
+          workflow_config: {
+            ...currentProject.workflow_config,
+            nodes,
+            edges,
+          }
+        }).catch(e => console.error('Failed to save node update:', e))
+      }, 800)
     },
 
     deleteNode: (id) => {
@@ -226,6 +258,14 @@ export const useProjectStore = create<ProjectState>()(
         message: '节点已删除',
         detail: `节点ID: ${id}`,
       })
+      clearTimeout(_saveTimer)
+      _saveTimer = setTimeout(() => {
+        const { currentProject, nodes, edges } = get()
+        if (!currentProject) return
+        projectsApi.update(currentProject.id, {
+          workflow_config: { ...currentProject.workflow_config, nodes, edges }
+        }).catch(e => console.error('Failed to save after deleteNode:', e))
+      }, 300)
     },
 
     addTask: (task) => {

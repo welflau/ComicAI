@@ -1,4 +1,4 @@
-import { memo, useRef, useState, useEffect } from 'react'
+import { memo, useRef, useState, useEffect, useCallback } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import {
   Play, Upload, ChevronDown, ArrowUp,
@@ -10,8 +10,12 @@ import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
 import NodeAddMenu from './shared/NodeAddMenu'
 import { useIsMultiSelected } from './shared/useIsMultiSelected'
 import { useProjectStore } from '@/stores/projectStore'
+import defaultFirstFrame from '@/assets/keyframe-default-first.png'
+import defaultLastFrame  from '@/assets/keyframe-default-last.png'
 
 /* ── Types ─────────────────────────────────────────────────────────── */
+
+export type VideoModel = 'kling' | 'jimeng'
 
 export interface VideoNodeData {
   id: string
@@ -24,6 +28,7 @@ export interface VideoNodeData {
   nodeIndex?: number
   videoSource?: 'uploaded' | 'generated'
   videoPrompt?: string
+  videoModel?: VideoModel
   /** When true, the prompt panel starts expanded (e.g. created from + menu) */
   initialPanelExpanded?: boolean
 }
@@ -35,19 +40,30 @@ const TITLE_H       = 28    // title row height (px) — card starts just below
 const PLACEHOLDER_H = 220   // height of empty placeholder
 const HANDLE_Y      = TITLE_H + PLACEHOLDER_H / 2
 
-/* ── Seedance icon ─────────────────────────────────────────────────── */
+/* ── Model icons ────────────────────────────────────────────────────── */
 
-function SeedanceIcon() {
+function KlingIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-      <path
-        d="M7 1L12 5.5V8.5L7 13L2 8.5V5.5L7 1Z"
-        fill="none" stroke="#a78bfa" strokeWidth="1.2" strokeLinejoin="round"
-      />
-      <circle cx="7" cy="7" r="2" fill="#a78bfa" />
+      <path d="M2 3L7 7L2 11V3Z" fill="#4ade80" />
+      <path d="M8 3L13 7L8 11V3Z" fill="#4ade80" opacity="0.6" />
     </svg>
   )
 }
+
+function JimengIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="7" r="5" stroke="#60a5fa" strokeWidth="1.3" fill="none" />
+      <path d="M4 7h6M7 4v6" stroke="#60a5fa" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+const MODEL_OPTIONS: Array<{ id: VideoModel; label: string; Icon: React.ElementType; color: string }> = [
+  { id: 'kling',  label: '可灵',  Icon: KlingIcon,  color: '#4ade80' },
+  { id: 'jimeng', label: '即梦',  Icon: JimengIcon, color: '#60a5fa' },
+]
 
 /* ── Video prompt panel ─────────────────────────────────────────────── */
 
@@ -67,13 +83,18 @@ const ICON_BTNS: Array<{ Icon: React.ElementType; label: string }> = [
   { Icon: Users,  label: '角色库' },
 ]
 
-function VideoPromptPanel({ value, onChange, onSend, generating }: {
+function VideoPromptPanel({ value, onChange, onSend, generating, activeTab, onTabChange, keyframeUrls, selectedModel, onModelChange, statusMsg }: {
   value: string
   onChange: (v: string) => void
   onSend: () => void
   generating: boolean
+  activeTab: VideoTab
+  onTabChange: (tab: VideoTab) => void
+  keyframeUrls: string[]
+  selectedModel: VideoModel
+  onModelChange: (m: VideoModel) => void
+  statusMsg: string
 }) {
-  const [activeTab, setActiveTab] = useState<VideoTab>('text2video')
 
   return (
     <div
@@ -96,7 +117,7 @@ function VideoPromptPanel({ value, onChange, onSend, generating }: {
               <button
                 key={tab.id}
                 className="nodrag nopan"
-                onMouseDown={e => { e.preventDefault(); setActiveTab(tab.id) }}
+                onMouseDown={e => { e.preventDefault(); onTabChange(tab.id) }}
                 style={{
                   padding: '4px 10px',
                   background: active ? '#2a2a2a' : 'none',
@@ -137,42 +158,87 @@ function VideoPromptPanel({ value, onChange, onSend, generating }: {
         </button>
       </div>
 
-      {/* ── Row 2: icon action buttons ── */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
-        {ICON_BTNS.map(({ Icon, label }) => (
-          <button
-            key={label}
-            className="nodrag nopan"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              padding: '5px 9px',
-              background: 'none',
-              border: '1px solid #282828',
-              borderRadius: 7,
-              color: '#666',
-              fontSize: 11,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              transition: 'background 0.12s, color 0.12s, border-color 0.12s',
-            }}
-            onMouseEnter={e => {
-              const el = e.currentTarget as HTMLButtonElement
-              el.style.background = '#1e1e1e'
-              el.style.color = '#999'
-              el.style.borderColor = '#383838'
-            }}
-            onMouseLeave={e => {
-              const el = e.currentTarget as HTMLButtonElement
-              el.style.background = 'none'
-              el.style.color = '#666'
-              el.style.borderColor = '#282828'
-            }}
-          >
-            <Icon size={12} />
-            <span>{label}</span>
-          </button>
-        ))}
-      </div>
+      {/* ── Row 2: icon action buttons OR keyframe slots ── */}
+      {activeTab === 'keyframes' ? (
+        /* Keyframe slots: 首帧 + 尾帧 thumbnail chips */
+        <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+          {[
+            { label: '首帧', index: 1, imgUrl: keyframeUrls[0] },
+            { label: '尾帧', index: 2, imgUrl: keyframeUrls[1] },
+          ].map(({ label, index, imgUrl }) => (
+            <div
+              key={label}
+              className="nodrag nopan"
+              style={{
+                position: 'relative',
+                width: 48, height: 48,
+                borderRadius: 8,
+                background: imgUrl ? 'transparent' : '#1e1e1e',
+                border: `1px solid ${imgUrl ? 'transparent' : '#2e2e2e'}`,
+                overflow: 'hidden',
+                flexShrink: 0,
+                cursor: 'pointer',
+              }}
+            >
+              {imgUrl ? (
+                <img src={imgUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              ) : (
+                <div style={{
+                  width: '100%', height: '100%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#444', fontSize: 11,
+                }}>
+                  <Upload size={13} />
+                </div>
+              )}
+              {/* index badge */}
+              <div style={{
+                position: 'absolute', top: 3, left: 3,
+                width: 14, height: 14, borderRadius: 4,
+                background: 'rgba(0,0,0,0.7)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 9, color: '#aaa', fontWeight: 600,
+              }}>{index}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+          {ICON_BTNS.map(({ Icon, label }) => (
+            <button
+              key={label}
+              className="nodrag nopan"
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '5px 9px',
+                background: 'none',
+                border: '1px solid #282828',
+                borderRadius: 7,
+                color: '#666',
+                fontSize: 11,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                transition: 'background 0.12s, color 0.12s, border-color 0.12s',
+              }}
+              onMouseEnter={e => {
+                const el = e.currentTarget as HTMLButtonElement
+                el.style.background = '#1e1e1e'
+                el.style.color = '#999'
+                el.style.borderColor = '#383838'
+              }}
+              onMouseLeave={e => {
+                const el = e.currentTarget as HTMLButtonElement
+                el.style.background = 'none'
+                el.style.color = '#666'
+                el.style.borderColor = '#282828'
+              }}
+            >
+              <Icon size={12} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ── Row 3: prompt textarea ── */}
       <textarea
@@ -191,6 +257,16 @@ function VideoPromptPanel({ value, onChange, onSend, generating }: {
         }}
       />
 
+      {/* Status message */}
+      {statusMsg && (
+        <div style={{
+          fontSize: 11, color: statusMsg.startsWith('生成失败') ? '#f87171' : '#888',
+          padding: '2px 2px 6px', lineHeight: 1.4,
+        }}>
+          {statusMsg}
+        </div>
+      )}
+
       {/* ── Bottom toolbar ── */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 3,
@@ -198,20 +274,30 @@ function VideoPromptPanel({ value, onChange, onSend, generating }: {
         borderTop: '1px solid #272727',
       }}>
         {/* Model selector */}
-        <button className="nodrag nopan" style={{
-          display: 'flex', alignItems: 'center', gap: 4,
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: '#777', fontSize: 11, padding: '2px 4px', borderRadius: 5, flexShrink: 0,
-        }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#252525' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
-        >
-          <SeedanceIcon />
-          <span style={{ fontWeight: 500 }}>Seedance 2.0</span>
-          <span style={{ color: '#a78bfa', fontSize: 10, fontWeight: 600, marginLeft: 1 }}>VIP</span>
-          <span style={{ color: '#555', fontSize: 11, marginLeft: 1 }}>♥</span>
-          <ChevronDown size={9} />
-        </button>
+        {MODEL_OPTIONS.map(opt => {
+          const active = selectedModel === opt.id
+          return (
+            <button
+              key={opt.id}
+              className="nodrag nopan"
+              onMouseDown={e => { e.preventDefault(); onModelChange(opt.id) }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                background: active ? '#252525' : 'none',
+                border: active ? `1px solid #3a3a3a` : '1px solid transparent',
+                cursor: 'pointer',
+                color: active ? opt.color : '#555', fontSize: 11,
+                padding: '2px 6px', borderRadius: 5, flexShrink: 0,
+                transition: 'background 0.12s, color 0.12s',
+              }}
+              onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.color = '#999' }}
+              onMouseLeave={e => { if (selectedModel !== opt.id) (e.currentTarget as HTMLButtonElement).style.color = '#555' }}
+            >
+              <opt.Icon />
+              <span style={{ fontWeight: active ? 600 : 400 }}>{opt.label}</span>
+            </button>
+          )
+        })}
 
         <div style={{ width: 1, height: 10, background: '#2a2a2a', flexShrink: 0 }} />
 
@@ -317,17 +403,32 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
   const [targetMenuOpen,    setTargetMenuOpen]    = useState(false)
   const [prompt,            setPrompt]            = useState(() => data.videoPrompt ?? '')
   const [generating,        setGenerating]        = useState(false)
+  const [statusMsg,         setStatusMsg]         = useState('')
+  const [selectedModel,     setSelectedModel]     = useState<VideoModel>(() => data.videoModel ?? 'kling')
   const [hadInitialExpand,  setHadInitialExpand]  = useState(() => !!data.initialPanelExpanded)
+  const [activeTab,         setActiveTab]         = useState<VideoTab>('text2video')
+  const abortRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isMultiSelected = useIsMultiSelected()
-  const allEdges = useProjectStore(s => s.edges)
+  const allEdges  = useProjectStore(s => s.edges)
+  const allNodes  = useProjectStore(s => s.nodes)
+  const addNode   = useProjectStore(s => s.addNode)
+  const addEdge   = useProjectStore(s => s.addEdge)
+  const updateNode = useProjectStore(s => s.updateNode)
 
-  const hasVideo        = !!data.videoUrl
-  const hasAnyEdge      = allEdges.some(e => e.target === data.id || e.source === data.id)
-  const handlesVisible  = isHovered || (!!selected && !dragging)
-  const nodeLabel       = data.label || '视频'
-  // Show selected-state styling only when a single node is selected
-  const showSelected    = !!selected && !dragging && !isMultiSelected
+  const hasVideo       = !!data.videoUrl
+  const hasAnyEdge     = allEdges.some(e => e.target === data.id || e.source === data.id)
+  const handlesVisible = isHovered || (!!selected && !dragging)
+  const nodeLabel      = data.label || '视频'
+  const showSelected   = !!selected && !dragging && !isMultiSelected
+
+  // Collect incoming image nodes (for keyframe slots)
+  const incomingImageUrls: string[] = allEdges
+    .filter(e => e.target === data.id)
+    .map(e => allNodes.find(n => n.id === e.source))
+    .filter(n => n?.type === 'libtv_image')
+    .map(n => n?.imageUrl)
+    .filter(Boolean) as string[]
 
   // Sync prompt from data
   useEffect(() => {
@@ -351,11 +452,140 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
     console.info('[VideoNode] Upload:', file.name)
   }
 
-  function handleSend() {
+  const handleSend = useCallback(async () => {
     if (!prompt.trim() || generating) return
+
+    // If already generating, abort
+    if (generating && abortRef.current) {
+      abortRef.current.abort()
+      return
+    }
+
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
     setGenerating(true)
-    // TODO: call video generation API
-    setTimeout(() => setGenerating(false), 2000)
+    setStatusMsg('准备中...')
+
+    try {
+      const { klingGenerateVideo, jimengGenerateVideo } = await import('@/api')
+      const { resolveImageToDataUrl } = await import('@/stores/imageStore')
+      const { addLog } = await import('@/stores/logStore')
+
+      // Resolve upstream image URLs to base64 for API call
+      const resolveRef = async (ref: string | undefined) => {
+        if (!ref) return undefined
+        const dataUrl = await resolveImageToDataUrl(ref)
+        return dataUrl ?? undefined
+      }
+
+      // Collect keyframe images (first / last) from connected upstream nodes
+      const upstreamImages = incomingImageUrls
+      const firstFrameRef = upstreamImages[0]
+      const lastFrameRef  = upstreamImages[1]
+
+      let imageDataUrl: string | undefined
+      let tailImageDataUrl: string | undefined
+
+      if (activeTab === 'img2video' || activeTab === 'keyframes') {
+        imageDataUrl = await resolveRef(firstFrameRef)
+        if (activeTab === 'keyframes') {
+          tailImageDataUrl = await resolveRef(lastFrameRef)
+        }
+      }
+
+      const opts = {
+        prompt: prompt.trim(),
+        imageDataUrl,
+        tailImageDataUrl,
+        duration: 5 as const,
+        aspectRatio: '16:9' as const,
+        signal: ctrl.signal,
+        onProgress: (msg: string) => setStatusMsg(msg),
+      }
+
+      let videoUrl: string
+      if (selectedModel === 'kling') {
+        videoUrl = await klingGenerateVideo(opts)
+      } else {
+        videoUrl = await jimengGenerateVideo(opts)
+      }
+
+      // Save to node data
+      updateNode(data.id, {
+        videoUrl,
+        videoSource: 'generated',
+        videoPrompt: prompt.trim(),
+        videoModel: selectedModel,
+      } as any)
+
+      addLog({ level: 'info', category: 'ai', message: `[VideoNode] 视频生成成功 (${selectedModel})`, detail: videoUrl.slice(0, 80) })
+      setStatusMsg('')
+    } catch (err) {
+      if ((err as Error).message === '已取消') {
+        setStatusMsg('')
+      } else {
+        const msg = String(err)
+        setStatusMsg(`生成失败: ${msg.slice(0, 60)}`)
+        const { addLog } = await import('@/stores/logStore')
+        addLog({ level: 'error', category: 'ai', message: `[VideoNode] 视频生成失败`, detail: msg })
+      }
+    } finally {
+      setGenerating(false)
+      abortRef.current = null
+    }
+  }, [prompt, generating, selectedModel, activeTab, incomingImageUrls, data.id, updateNode])
+
+  /** 点击「首尾帧生成视频」快捷项：在左侧创建首帧+尾帧图片节点并连线 */
+  function handleKeyframesQuickAction() {
+    const GAP = 80
+    const IMG_W = 380
+    const x = data.position.x - IMG_W - GAP
+    const firstId = `libtv_image_${Date.now()}_first`
+    const lastId  = `libtv_image_${Date.now() + 1}_last`
+
+    addNode({
+      id: firstId,
+      type: 'libtv_image',
+      label: '首帧',
+      category: 'process',
+      position: { x, y: data.position.y - 220 },
+      config: {},
+      imageUrl: defaultFirstFrame,
+      imageSource: 'uploaded',
+    } as any)
+    addNode({
+      id: lastId,
+      type: 'libtv_image',
+      label: '尾帧',
+      category: 'process',
+      position: { x, y: data.position.y + 60 },
+      config: {},
+      imageUrl: defaultLastFrame,
+      imageSource: 'uploaded',
+    } as any)
+    addEdge({ id: `e-${firstId}-${data.id}`, source: firstId, target: data.id })
+    addEdge({ id: `e-${lastId}-${data.id}`,  source: lastId,  target: data.id })
+    setActiveTab('keyframes')
+  }
+
+  /** 点击「首帧生成视频」快捷项：在左侧创建一个首帧图片节点并连线 */
+  function handleFirstFrameQuickAction() {
+    const GAP = 80
+    const IMG_W = 380
+    const firstId = `libtv_image_${Date.now()}_first`
+
+    addNode({
+      id: firstId,
+      type: 'libtv_image',
+      label: '首帧',
+      category: 'process',
+      position: { x: data.position.x - IMG_W - GAP, y: data.position.y },
+      config: {},
+      imageUrl: defaultFirstFrame,
+      imageSource: 'uploaded',
+    } as any)
+    addEdge({ id: `e-${firstId}-${data.id}`, source: firstId, target: data.id })
+    setActiveTab('img2video')
   }
 
   return (
@@ -438,7 +668,11 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
             <video
               src={data.videoUrl}
               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-              controls={false}
+              controls
+              autoPlay
+              loop
+              muted
+              playsInline
             />
             {/* Replace button */}
             <button
@@ -480,7 +714,7 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
               {generating ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
                   <Loader2 size={28} color="#555" style={{ animation: 'spin 1s linear infinite' }} />
-                  <span style={{ color: '#555', fontSize: 12 }}>正在生成视频...</span>
+                  <span style={{ color: '#555', fontSize: 12 }}>{statusMsg || '正在生成视频...'}</span>
                 </div>
               ) : (
                 /* Play circle icon */
@@ -502,12 +736,13 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
                 <span style={{ fontSize: 12, color: '#555', marginBottom: 10, display: 'block' }}>尝试：</span>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   {[
-                    { Icon: Layers,   label: '首尾帧生成视频' },
-                    { Icon: Sparkles, label: '首帧生成视频' },
-                  ].map(({ Icon, label }) => (
+                    { Icon: Layers,   label: '首尾帧生成视频', action: handleKeyframesQuickAction },
+                    { Icon: Sparkles, label: '首帧生成视频',   action: handleFirstFrameQuickAction },
+                  ].map(({ Icon, label, action }) => (
                     <button
                       key={label}
                       className="nodrag nopan"
+                      onClick={action}
                       style={{
                         display: 'flex', alignItems: 'center', gap: 10,
                         background: 'none', border: 'none', cursor: 'pointer',
@@ -549,6 +784,12 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
             onChange={setPrompt}
             onSend={handleSend}
             generating={generating}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            keyframeUrls={incomingImageUrls}
+            selectedModel={selectedModel}
+            onModelChange={setSelectedModel}
+            statusMsg={statusMsg}
           />
         </ZoomInvariantPanel>
       </CollapsibleSection>

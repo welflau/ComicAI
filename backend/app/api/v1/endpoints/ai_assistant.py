@@ -153,6 +153,7 @@ class StreamRequest(BaseModel):
     context_type: str = "script"  # script | storyboard
     model: Optional[str] = None   # client-side model hint (informational)
     system_override: Optional[str] = None
+    image_data_url: Optional[str] = None  # base64 data URL or http(s) URL for vision
 
 
 STREAM_SYSTEM_PROMPTS = {
@@ -174,10 +175,14 @@ STREAM_SYSTEM_PROMPTS = {
 
 async def _stream_anthropic(system: str, prompt: str, model: str,
                             api_key: Optional[str] = None,
-                            base_url: Optional[str] = None):
+                            base_url: Optional[str] = None,
+                            image_data_url: Optional[str] = None):
     """Stream from Anthropic API using httpx."""
     import httpx
     api_key = api_key or settings.ANTHROPIC_API_KEY
+    # Discard relative paths (e.g. "/api/anthropic" sent by frontend as a Vite proxy path)
+    if base_url and not base_url.startswith("http"):
+        base_url = None
     base_url = (base_url or settings.ANTHROPIC_BASE_URL or "https://api.anthropic.com").rstrip("/")
     endpoint = f"{base_url}/v1/messages"
     headers = {
@@ -186,10 +191,29 @@ async def _stream_anthropic(system: str, prompt: str, model: str,
         "content-type": "application/json",
         "accept": "text/event-stream",
     }
+
+    # Build message content: image + text if image provided
+    if image_data_url:
+        if image_data_url.startswith("data:"):
+            media_type = image_data_url.split(";")[0].split(":")[1]
+            image_data = image_data_url.split(",")[1]
+            image_block = {
+                "type": "image",
+                "source": {"type": "base64", "media_type": media_type, "data": image_data},
+            }
+        else:
+            image_block = {
+                "type": "image",
+                "source": {"type": "url", "url": image_data_url},
+            }
+        user_content = [image_block, {"type": "text", "text": prompt}]
+    else:
+        user_content = prompt
+
     payload = {
         "model": model or settings.ANTHROPIC_MODEL,
         "system": system,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{"role": "user", "content": user_content}],
         "max_tokens": 2048,
         "stream": True,
     }
@@ -218,6 +242,9 @@ async def _stream_openai(system: str, prompt: str, model: str,
     """Stream from OpenAI API using httpx."""
     import httpx
     api_key = api_key or settings.OPENAI_API_KEY
+    # Discard relative paths (e.g. "/api/openai" sent by frontend as a Vite proxy path)
+    if base_url and not base_url.startswith("http"):
+        base_url = None
     base_url = (base_url or "https://api.openai.com").rstrip("/")
     endpoint = f"{base_url}/v1/chat/completions"
     headers = {
@@ -290,6 +317,7 @@ async def ai_stream(
                     system, request.prompt, request.model or "",
                     api_key=eff_anthropic_key,
                     base_url=client_anthropic_base,
+                    image_data_url=request.image_data_url,
                 )
             else:
                 gen = _stream_openai(

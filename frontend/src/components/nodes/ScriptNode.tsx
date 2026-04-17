@@ -537,11 +537,11 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
       .map(e => allNodes.find(n => n.id === e.source))
       .filter((n): n is NonNullable<typeof n> => !!n)
 
-    // Upstream image
+    // Upstream image — exclude placeholder/default images (only use actually uploaded/generated images)
     const upstreamImageUrl = upstreamNodes
       .filter(n => n.type === 'libtv_image' && !!n.imageUrl)
       .map(n => n.imageUrl as string)
-      .find(u => u && u !== 'placeholder')
+      .find(u => u && u !== 'placeholder' && !u.startsWith('default://'))
 
     if (upstreamImageUrl) {
       setSourceImageRef(upstreamImageUrl)
