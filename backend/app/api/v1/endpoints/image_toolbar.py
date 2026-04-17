@@ -10,6 +10,7 @@ from loguru import logger
 from app.core.security import get_current_user
 from app.models.user import User
 from app.core.config import settings
+from app.services.generation.image_processing import ImageProcessingService
 
 router = APIRouter(prefix="/image-toolbar", tags=["image-toolbar"])
 
@@ -88,16 +89,16 @@ async def generate_multi_angles(
     try:
         logger.info(f"Generate multi-angles for image: {request.image_url}")
         
-        # TODO: Integrate with LightAI / ComfyUI or other image generation service
-        # Generate images for each specified angle
-        
-        generated_images = [
-            f"https://example.com/generated/angle-{i}.png"
-            for i in range(len(request.angles))
-        ]
+        service = ImageProcessingService()
+        images = await service.generate_multi_angles(
+            image_url=request.image_url,
+            angles=request.angles,
+            style=request.style,
+            project_id=current_user.id
+        )
         
         return MultiImageResponse(
-            images=generated_images,
+            images=images,
             descriptions=request.angles
         )
     
@@ -115,10 +116,16 @@ async def apply_lighting(
     try:
         logger.info(f"Apply {request.lighting_type} lighting to image: {request.image_url}")
         
-        processed_url = f"{request.image_url}?lighting={request.lighting_type}"
+        service = ImageProcessingService()
+        image_url = await service.apply_lighting(
+            image_url=request.image_url,
+            lighting_type=request.lighting_type,
+            intensity=request.intensity,
+            project_id=current_user.id
+        )
         
         return ImageResponse(
-            image_url=processed_url,
+            image_url=image_url,
             description=f"Applied {request.lighting_type} lighting effect"
         )
     
@@ -136,12 +143,14 @@ async def crop_grid_9(
     try:
         logger.info(f"Crop image to 9-grid: {request.image_url}")
         
-        grid_images = [
-            f"{request.image_url}?grid=crop-{i}"
-            for i in range(9)
-        ]
+        service = ImageProcessingService()
+        images = await service.crop_grid_9(
+            image_url=request.image_url,
+            auto_detect=request.auto_detect,
+            project_id=current_user.id
+        )
         
-        return MultiImageResponse(images=grid_images)
+        return MultiImageResponse(images=images)
     
     except Exception as e:
         logger.error(f"Error cropping to grid: {e}")
@@ -157,10 +166,16 @@ async def upscale_hd(
     try:
         logger.info(f"Upscale image to {request.scale}x: {request.image_url}")
         
-        upscaled_url = f"{request.image_url}?upscale={request.scale}x"
+        service = ImageProcessingService()
+        image_url = await service.upscale_hd(
+            image_url=request.image_url,
+            scale=request.scale,
+            model=request.model,
+            project_id=current_user.id
+        )
         
         return ImageResponse(
-            image_url=upscaled_url,
+            image_url=image_url,
             description=f"Upscaled {request.scale}x using {request.model}"
         )
     
@@ -178,13 +193,14 @@ async def split_grid(
     try:
         logger.info(f"Split image into {request.grid_size}x{request.grid_size} grid")
         
-        grid_count = request.grid_size * request.grid_size
-        grid_images = [
-            f"{request.image_url}?grid-split={i}"
-            for i in range(grid_count)
-        ]
+        service = ImageProcessingService()
+        images = await service.split_grid(
+            image_url=request.image_url,
+            grid_size=request.grid_size,
+            project_id=current_user.id
+        )
         
-        return MultiImageResponse(images=grid_images)
+        return MultiImageResponse(images=images)
     
     except Exception as e:
         logger.error(f"Error splitting grid: {e}")
@@ -200,10 +216,16 @@ async def optimize_image(
     try:
         logger.info(f"Optimize image with {request.enhance_type}: {request.image_url}")
         
-        optimized_url = f"{request.image_url}?optimize={request.enhance_type}"
+        service = ImageProcessingService()
+        image_url = await service.optimize_image(
+            image_url=request.image_url,
+            enhance_type=request.enhance_type,
+            intensity=request.intensity,
+            project_id=current_user.id
+        )
         
         return ImageResponse(
-            image_url=optimized_url,
+            image_url=image_url,
             description=f"Optimized with {request.enhance_type} enhancement"
         )
     
@@ -221,10 +243,18 @@ async def regenerate_image(
     try:
         logger.info(f"Regenerate image with new prompt: {request.prompt}")
         
-        regenerated_url = "https://example.com/regenerated-image.png"
+        # For regeneration, use the ImageGenerationService
+        from app.services.generation.image_service import ImageGenerationService
+        service = ImageGenerationService()
+        result = await service.generate_image(
+            prompt=request.prompt,
+            negative_prompt=request.negative_prompt or "",
+            style=request.style or "manga",
+            project_id=current_user.id
+        )
         
         return ImageResponse(
-            image_url=regenerated_url,
+            image_url=result.get("url", ""),
             description="Regenerated with new prompt"
         )
     
@@ -242,10 +272,8 @@ async def get_fullscreen_preview(
     try:
         logger.info(f"Get fullscreen preview: {image_url}")
         
-        preview_url = f"{image_url}?preview=fullscreen"
-        
         return ImageResponse(
-            image_url=preview_url,
+            image_url=image_url,
             description="Fullscreen preview"
         )
     
