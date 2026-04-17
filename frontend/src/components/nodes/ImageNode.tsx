@@ -12,7 +12,7 @@ import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
 import NodeAddMenu from './shared/NodeAddMenu'
 import { useProjectStore } from '../../stores/projectStore'
 import { saveImage, resolveImageUrl, DEFAULT_IMAGE_URL } from '../../stores/imageStore'
-import { lightaiGenerateImage, streamAI } from '../../api'
+import { lightaiGenerateImage, streamAI, imageToolbarApi } from '../../api'
 import { addLog } from '../../stores/logStore'
 import type { NodeData } from '../../types'
 
@@ -119,6 +119,17 @@ function ImageEditToolbar({ visible, imageUrl }: { visible: boolean; imageUrl?: 
             <button
               key={item.label}
               className="nodrag nopan"
+              onClick={() => {
+                const handlerMap: Record<string, () => Promise<void>> = {
+                  '多角度': handleMultiAngles,
+                  '打光': handleLighting,
+                  '九宫格': handleCropGrid9,
+                  'HD 高清': handleUpscaleHD,
+                  '宫格切分': handleSplitGrid,
+                }
+                const handler = handlerMap[item.label]
+                if (handler) handler()
+              }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 4,
                 background: 'none', border: 'none', cursor: 'pointer',
@@ -151,10 +162,10 @@ function ImageEditToolbar({ visible, imageUrl }: { visible: boolean; imageUrl?: 
 
       {/* Right icon buttons */}
       {[
-        { Icon: Wand2,     title: '一键优化',  onClick: undefined },
-        { Icon: RefreshCw, title: '重新生成',  onClick: undefined },
+        { Icon: Wand2,     title: '一键优化',  onClick: handleOptimize },
+        { Icon: RefreshCw, title: '重新生成',  onClick: handleRegenerate },
         { Icon: Download,  title: '下载',      onClick: handleDownload },
-        { Icon: Fullscreen, title: '全屏预览', onClick: undefined },
+        { Icon: Fullscreen, title: '全屏预览', onClick: handleFullscreenPreview },
       ].map(({ Icon, title, onClick }) => (
         <button
           key={title}
@@ -716,6 +727,176 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
       abortRef.current = null
     }
   }, [prompt, generating, sourceTextContent, currentProject, data.id, nodeLabel, updateNode])
+
+  // Image Toolbar Handlers
+  const handleMultiAngles = useCallback(async () => {
+    if (!displayUrl) return
+    setGenerating(true)
+    try {
+      const result = await imageToolbarApi.generateMultiAngles({ image_url: displayUrl, prompt: prompt || '', angles: ['front', 'left', 'right', 'top', 'bottom'], style: 'manga' })
+      if (result.images?.length > 0) {
+        const projectId = currentProject?.id ?? 'local'
+        try {
+          const resp = await fetch(result.images[0])
+          if (resp.ok) {
+            const blob = await resp.blob()
+            const file = new File([blob], `multi-angles_${Date.now()}.png`, { type: blob.type })
+            const ref = await saveImage(projectId, file)
+            updateNode(data.id, { imageUrl: ref, imageSource: 'generated' })
+          }
+        } catch (e) {
+          updateNode(data.id, { imageUrl: result.images[0], imageSource: 'generated' })
+        }
+      }
+    } catch (err) {}
+    finally { setGenerating(false) }
+  }, [displayUrl, prompt, data.id, currentProject, updateNode])
+
+  const handleLighting = useCallback(async () => {
+    if (!displayUrl) return
+    setGenerating(true)
+    try {
+      const result = await imageToolbarApi.applyLighting({ image_url: displayUrl, lighting_type: 'studio', intensity: 1.0 })
+      if (result.image_url) {
+        const projectId = currentProject?.id ?? 'local'
+        try {
+          const resp = await fetch(result.image_url)
+          if (resp.ok) {
+            const blob = await resp.blob()
+            const file = new File([blob], `lighting_${Date.now()}.png`, { type: blob.type })
+            const ref = await saveImage(projectId, file)
+            updateNode(data.id, { imageUrl: ref, imageSource: 'generated' })
+          }
+        } catch (e) {
+          updateNode(data.id, { imageUrl: result.image_url, imageSource: 'generated' })
+        }
+      }
+    } catch (err) {}
+    finally { setGenerating(false) }
+  }, [displayUrl, data.id, currentProject, updateNode])
+
+  const handleCropGrid9 = useCallback(async () => {
+    if (!displayUrl) return
+    setGenerating(true)
+    try {
+      const result = await imageToolbarApi.cropGrid9({ image_url: displayUrl, auto_detect: true })
+      if (result.images?.length > 0) {
+        const projectId = currentProject?.id ?? 'local'
+        try {
+          const resp = await fetch(result.images[0])
+          if (resp.ok) {
+            const blob = await resp.blob()
+            const file = new File([blob], `crop-grid9_${Date.now()}.png`, { type: blob.type })
+            const ref = await saveImage(projectId, file)
+            updateNode(data.id, { imageUrl: ref, imageSource: 'generated' })
+          }
+        } catch (e) {
+          updateNode(data.id, { imageUrl: result.images[0], imageSource: 'generated' })
+        }
+      }
+    } catch (err) {}
+    finally { setGenerating(false) }
+  }, [displayUrl, data.id, currentProject, updateNode])
+
+  const handleUpscaleHD = useCallback(async () => {
+    if (!displayUrl) return
+    setGenerating(true)
+    try {
+      const result = await imageToolbarApi.upscaleHD({ image_url: displayUrl, scale: 2, model: 'realesrgan' })
+      if (result.image_url) {
+        const projectId = currentProject?.id ?? 'local'
+        try {
+          const resp = await fetch(result.image_url)
+          if (resp.ok) {
+            const blob = await resp.blob()
+            const file = new File([blob], `upscale_${Date.now()}.png`, { type: blob.type })
+            const ref = await saveImage(projectId, file)
+            updateNode(data.id, { imageUrl: ref, imageSource: 'generated' })
+          }
+        } catch (e) {
+          updateNode(data.id, { imageUrl: result.image_url, imageSource: 'generated' })
+        }
+      }
+    } catch (err) {}
+    finally { setGenerating(false) }
+  }, [displayUrl, data.id, currentProject, updateNode])
+
+  const handleSplitGrid = useCallback(async () => {
+    if (!displayUrl) return
+    setGenerating(true)
+    try {
+      const result = await imageToolbarApi.splitGrid({ image_url: displayUrl, grid_size: 3 })
+      if (result.images?.length > 0) {
+        const projectId = currentProject?.id ?? 'local'
+        try {
+          const resp = await fetch(result.images[0])
+          if (resp.ok) {
+            const blob = await resp.blob()
+            const file = new File([blob], `split-grid_${Date.now()}.png`, { type: blob.type })
+            const ref = await saveImage(projectId, file)
+            updateNode(data.id, { imageUrl: ref, imageSource: 'generated' })
+          }
+        } catch (e) {
+          updateNode(data.id, { imageUrl: result.images[0], imageSource: 'generated' })
+        }
+      }
+    } catch (err) {}
+    finally { setGenerating(false) }
+  }, [displayUrl, data.id, currentProject, updateNode])
+
+  const handleOptimize = useCallback(async () => {
+    if (!displayUrl) return
+    setGenerating(true)
+    try {
+      const result = await imageToolbarApi.optimizeImage({ image_url: displayUrl, enhance_type: 'auto', intensity: 1.0 })
+      if (result.image_url) {
+        const projectId = currentProject?.id ?? 'local'
+        try {
+          const resp = await fetch(result.image_url)
+          if (resp.ok) {
+            const blob = await resp.blob()
+            const file = new File([blob], `optimized_${Date.now()}.png`, { type: blob.type })
+            const ref = await saveImage(projectId, file)
+            updateNode(data.id, { imageUrl: ref, imageSource: 'generated' })
+          }
+        } catch (e) {
+          updateNode(data.id, { imageUrl: result.image_url, imageSource: 'generated' })
+        }
+      }
+    } catch (err) {}
+    finally { setGenerating(false) }
+  }, [displayUrl, data.id, currentProject, updateNode])
+
+  const handleRegenerate = useCallback(async () => {
+    if (!displayUrl || !prompt.trim()) return
+    setGenerating(true)
+    try {
+      const result = await imageToolbarApi.regenerate({ image_url: displayUrl, prompt: prompt.trim(), negative_prompt: 'low quality, blurry', style: 'manga' })
+      if (result.image_url) {
+        const projectId = currentProject?.id ?? 'local'
+        try {
+          const resp = await fetch(result.image_url)
+          if (resp.ok) {
+            const blob = await resp.blob()
+            const file = new File([blob], `regenerated_${Date.now()}.png`, { type: blob.type })
+            const ref = await saveImage(projectId, file)
+            updateNode(data.id, { imageUrl: ref, imageSource: 'generated', imagePrompt: prompt.trim() })
+          }
+        } catch (e) {
+          updateNode(data.id, { imageUrl: result.image_url, imageSource: 'generated', imagePrompt: prompt.trim() })
+        }
+      }
+    } catch (err) {}
+    finally { setGenerating(false) }
+  }, [displayUrl, prompt, data.id, currentProject, updateNode])
+
+  const handleFullscreenPreview = useCallback(async () => {
+    if (!displayUrl) return
+    try {
+      const result = await imageToolbarApi.getFullscreenPreview(displayUrl)
+      window.open(result.image_url, '_blank', 'width=1200,height=800,scrollbars=yes')
+    } catch (err) {}
+  }, [displayUrl])
 
   // Clean up pending request on unmount
   useEffect(() => () => { abortRef.current?.abort() }, [])
