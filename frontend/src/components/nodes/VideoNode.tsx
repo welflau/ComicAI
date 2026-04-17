@@ -17,6 +17,13 @@ import defaultLastFrame  from '@/assets/keyframe-default-last.png'
 
 export type VideoModel = 'kling' | 'jimeng'
 
+export interface VideoParams {
+  aspectRatio: '16:9' | '9:16' | '1:1'
+  resolution:  '480p' | '720p' | '1080p'
+  duration:    5 | 10
+  generateAudio: boolean
+}
+
 export interface VideoNodeData {
   id: string
   type: string
@@ -40,6 +47,23 @@ const TITLE_H       = 28    // title row height (px) — card starts just below
 const PLACEHOLDER_H = 220   // height of empty placeholder
 const HANDLE_Y      = TITLE_H + PLACEHOLDER_H / 2
 
+const DEFAULT_PARAMS: VideoParams = {
+  aspectRatio: '16:9',
+  resolution:  '720p',
+  duration:    5,
+  generateAudio: false,
+}
+
+/* ── Aspect ratio definitions ───────────────────────────────────────── */
+
+type AspectRatioDef = { value: '16:9' | '9:16' | '1:1'; label: string; w: number; h: number }
+
+const KLING_RATIOS: AspectRatioDef[] = [
+  { value: '16:9', label: '16:9', w: 32, h: 18 },
+  { value: '9:16', label: '9:16', w: 18, h: 32 },
+  { value: '1:1',  label: '1:1',  w: 24, h: 24 },
+]
+
 /* ── Model icons ────────────────────────────────────────────────────── */
 
 function KlingIcon() {
@@ -60,9 +84,32 @@ function JimengIcon() {
   )
 }
 
-const MODEL_OPTIONS: Array<{ id: VideoModel; label: string; Icon: React.ElementType; color: string }> = [
-  { id: 'kling',  label: '可灵',  Icon: KlingIcon,  color: '#4ade80' },
-  { id: 'jimeng', label: '即梦',  Icon: JimengIcon, color: '#60a5fa' },
+interface ModelOption {
+  id: VideoModel
+  label: string
+  subLabel?: string
+  Icon: React.ElementType
+  color: string
+  description?: string
+}
+
+const MODEL_OPTIONS: ModelOption[] = [
+  {
+    id: 'jimeng',
+    label: 'Seedance 1.5',
+    subLabel: '即梦',
+    Icon: JimengIcon,
+    color: '#60a5fa',
+    description: '高质量长视频，自适应画面比例',
+  },
+  {
+    id: 'kling',
+    label: 'Kling 3.0',
+    subLabel: '可灵',
+    Icon: KlingIcon,
+    color: '#4ade80',
+    description: '专业级视频生成，支持多种比例',
+  },
 ]
 
 /* ── Video prompt panel ─────────────────────────────────────────────── */
@@ -83,7 +130,7 @@ const ICON_BTNS: Array<{ Icon: React.ElementType; label: string }> = [
   { Icon: Users,  label: '角色库' },
 ]
 
-function VideoPromptPanel({ value, onChange, onSend, generating, activeTab, onTabChange, keyframeUrls, selectedModel, onModelChange, statusMsg }: {
+function VideoPromptPanel({ value, onChange, onSend, generating, activeTab, onTabChange, keyframeUrls, refImageUrls, selectedModel, onModelChange, statusMsg, videoParams, onParamsChange }: {
   value: string
   onChange: (v: string) => void
   onSend: () => void
@@ -91,10 +138,58 @@ function VideoPromptPanel({ value, onChange, onSend, generating, activeTab, onTa
   activeTab: VideoTab
   onTabChange: (tab: VideoTab) => void
   keyframeUrls: string[]
+  refImageUrls: string[]
   selectedModel: VideoModel
   onModelChange: (m: VideoModel) => void
   statusMsg: string
+  videoParams: VideoParams
+  onParamsChange: (p: VideoParams) => void
 }) {
+  const [paramsOpen,  setParamsOpen]  = useState(false)
+  const [modelOpen,   setModelOpen]   = useState(false)
+  const paramsButtonRef  = useRef<HTMLButtonElement>(null)
+  const paramsPopoverRef = useRef<HTMLDivElement>(null)
+  const modelButtonRef   = useRef<HTMLButtonElement>(null)
+  const modelDropdownRef = useRef<HTMLDivElement>(null)
+
+  // Close params popover when clicking outside
+  useEffect(() => {
+    if (!paramsOpen) return
+    function handleMouseDown(e: MouseEvent) {
+      const target = e.target as Node
+      if (
+        paramsPopoverRef.current && !paramsPopoverRef.current.contains(target) &&
+        paramsButtonRef.current && !paramsButtonRef.current.contains(target)
+      ) {
+        setParamsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [paramsOpen])
+
+  // Close model dropdown when clicking outside
+  useEffect(() => {
+    if (!modelOpen) return
+    function handleMouseDown(e: MouseEvent) {
+      const target = e.target as Node
+      if (
+        modelDropdownRef.current && !modelDropdownRef.current.contains(target) &&
+        modelButtonRef.current  && !modelButtonRef.current.contains(target)
+      ) {
+        setModelOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => document.removeEventListener('mousedown', handleMouseDown)
+  }, [modelOpen])
+
+  const ratios = KLING_RATIOS  // kling has 3 ratios; jimeng is fixed to Auto
+
+  // Derived display label
+  const ratioLabel = selectedModel === 'jimeng' ? 'Auto' : videoParams.aspectRatio
+  const resLabel   = selectedModel === 'kling'  ? '720P' : videoParams.resolution.toUpperCase()
+  const audioIcon  = videoParams.generateAudio ? '🔊' : '🔇'
 
   return (
     <div
@@ -203,7 +298,9 @@ function VideoPromptPanel({ value, onChange, onSend, generating, activeTab, onTa
           ))}
         </div>
       ) : (
-        <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 6 }}>
+          {/* Icon action buttons */}
+          <div style={{ display: 'flex', gap: 4 }}>
           {ICON_BTNS.map(({ Icon, label }) => (
             <button
               key={label}
@@ -237,6 +334,21 @@ function VideoPromptPanel({ value, onChange, onSend, generating, activeTab, onTa
               <span>{label}</span>
             </button>
           ))}
+          </div>
+          {/* Connected reference image thumbnails */}
+          {refImageUrls.length > 0 && (
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {refImageUrls.map((url, i) => (
+                <div key={i} style={{
+                  width: 40, height: 40, borderRadius: 6, overflow: 'hidden',
+                  border: '1px solid #333', flexShrink: 0,
+                  position: 'relative',
+                }}>
+                  <img src={url} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -272,48 +384,158 @@ function VideoPromptPanel({ value, onChange, onSend, generating, activeTab, onTa
         display: 'flex', alignItems: 'center', gap: 3,
         paddingTop: 8,
         borderTop: '1px solid #272727',
+        position: 'relative',
       }}>
-        {/* Model selector */}
-        {MODEL_OPTIONS.map(opt => {
-          const active = selectedModel === opt.id
+        {/* Model selector dropdown trigger */}
+        {(() => {
+          const activeOpt = MODEL_OPTIONS.find(o => o.id === selectedModel) ?? MODEL_OPTIONS[0]
           return (
-            <button
-              key={opt.id}
-              className="nodrag nopan"
-              onMouseDown={e => { e.preventDefault(); onModelChange(opt.id) }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4,
-                background: active ? '#252525' : 'none',
-                border: active ? `1px solid #3a3a3a` : '1px solid transparent',
-                cursor: 'pointer',
-                color: active ? opt.color : '#555', fontSize: 11,
-                padding: '2px 6px', borderRadius: 5, flexShrink: 0,
-                transition: 'background 0.12s, color 0.12s',
-              }}
-              onMouseEnter={e => { if (!active) (e.currentTarget as HTMLButtonElement).style.color = '#999' }}
-              onMouseLeave={e => { if (selectedModel !== opt.id) (e.currentTarget as HTMLButtonElement).style.color = '#555' }}
-            >
-              <opt.Icon />
-              <span style={{ fontWeight: active ? 600 : 400 }}>{opt.label}</span>
-            </button>
+            <div style={{ position: 'relative', flexShrink: 0 }}>
+              <button
+                ref={modelButtonRef}
+                className="nodrag nopan"
+                onMouseDown={e => { e.preventDefault(); setModelOpen(v => !v); setParamsOpen(false) }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  background: modelOpen ? '#252525' : 'none',
+                  border: modelOpen ? '1px solid #3a3a3a' : '1px solid transparent',
+                  cursor: 'pointer',
+                  color: activeOpt.color,
+                  fontSize: 11,
+                  padding: '3px 6px 3px 5px',
+                  borderRadius: 6,
+                  transition: 'background 0.12s, border-color 0.12s',
+                  whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={e => {
+                  if (!modelOpen) {
+                    (e.currentTarget as HTMLButtonElement).style.background = '#202020'
+                    ;(e.currentTarget as HTMLButtonElement).style.borderColor = '#333'
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (!modelOpen) {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'none'
+                    ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'transparent'
+                  }
+                }}
+              >
+                <activeOpt.Icon />
+                <span style={{ fontWeight: 600 }}>{activeOpt.label}</span>
+                <ChevronDown size={9} style={{ transform: modelOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', opacity: 0.6 }} />
+              </button>
+
+              {/* Dropdown menu */}
+              {modelOpen && (
+                <div
+                  ref={modelDropdownRef}
+                  className="nodrag nopan nowheel"
+                  onMouseDown={e => e.stopPropagation()}
+                  style={{
+                    position: 'absolute',
+                    bottom: 'calc(100% + 6px)',
+                    left: 0,
+                    minWidth: 260,
+                    background: '#1c1c1c',
+                    border: '1px solid #333',
+                    borderRadius: 10,
+                    padding: '5px',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
+                    zIndex: 10000,
+                  }}
+                >
+                  {MODEL_OPTIONS.map(opt => {
+                    const isActive = opt.id === selectedModel
+                    return (
+                      <button
+                        key={opt.id}
+                        className="nodrag nopan"
+                        onMouseDown={e => {
+                          e.preventDefault()
+                          onModelChange(opt.id)
+                          setModelOpen(false)
+                        }}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          width: '100%', padding: '8px 10px',
+                          background: isActive ? '#252525' : 'none',
+                          border: 'none', borderRadius: 7,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          transition: 'background 0.1s',
+                        }}
+                        onMouseEnter={e => {
+                          if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = '#222'
+                        }}
+                        onMouseLeave={e => {
+                          if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'none'
+                        }}
+                      >
+                        {/* Icon */}
+                        <div style={{
+                          width: 28, height: 28, borderRadius: 7, flexShrink: 0,
+                          background: '#252525',
+                          border: `1px solid ${isActive ? opt.color + '55' : '#333'}`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          <opt.Icon />
+                        </div>
+
+                        {/* Text */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ fontSize: 12, color: isActive ? '#eee' : '#ccc', fontWeight: 600 }}>
+                              {opt.label}
+                            </span>
+                            {opt.subLabel && (
+                              <span style={{ fontSize: 10, color: '#555' }}>{opt.subLabel}</span>
+                            )}
+                          </div>
+                          {opt.description && (
+                            <div style={{ fontSize: 10, color: '#555', marginTop: 1, lineHeight: 1.3 }}>
+                              {opt.description}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Active checkmark */}
+                        {isActive && (
+                          <div style={{
+                            width: 6, height: 6, borderRadius: '50%',
+                            background: opt.color, flexShrink: 0,
+                          }} />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           )
-        })}
+        })()}
 
         <div style={{ width: 1, height: 10, background: '#2a2a2a', flexShrink: 0 }} />
 
-        {/* Resolution / duration / audio */}
-        <button className="nodrag nopan" style={{
-          display: 'flex', alignItems: 'center', gap: 3,
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: '#666', fontSize: 11, padding: '2px 4px', borderRadius: 5, flexShrink: 0,
-          whiteSpace: 'nowrap',
-        }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#252525' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
+        {/* Params button — shows real selected values */}
+        <button
+          ref={paramsButtonRef}
+          className="nodrag nopan"
+          onMouseDown={e => { e.preventDefault(); setParamsOpen(v => !v) }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 3,
+            background: paramsOpen ? '#252525' : 'none',
+            border: paramsOpen ? '1px solid #3a3a3a' : '1px solid transparent',
+            cursor: 'pointer',
+            color: '#666', fontSize: 11, padding: '2px 4px', borderRadius: 5, flexShrink: 0,
+            whiteSpace: 'nowrap',
+            transition: 'background 0.12s',
+          }}
+          onMouseEnter={e => { if (!paramsOpen) (e.currentTarget as HTMLButtonElement).style.background = '#252525' }}
+          onMouseLeave={e => { if (!paramsOpen) (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
         >
-          <span>16:9 · 720P · 5s</span>
-          <span style={{ fontSize: 10, marginLeft: 1 }}>🔊</span>
-          <ChevronDown size={9} />
+          <span>{ratioLabel} · {resLabel} · {videoParams.duration}s</span>
+          <span style={{ fontSize: 10, marginLeft: 1 }}>{audioIcon}</span>
+          <ChevronDown size={9} style={{ transform: paramsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
         </button>
 
         <div style={{ flex: 1, minWidth: 0 }} />
@@ -390,6 +612,263 @@ function VideoPromptPanel({ value, onChange, onSend, generating, activeTab, onTa
             ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
             : <ArrowUp size={13} />}
         </button>
+
+        {/* ── Params Popover ── */}
+        {paramsOpen && (
+          <div
+            ref={paramsPopoverRef}
+            className="nodrag nopan nowheel"
+            onMouseDown={e => e.stopPropagation()}
+            style={{
+              position: 'absolute',
+              bottom: 'calc(100% + 8px)',
+              left: 0,
+              width: 280,
+              background: '#1c1c1c',
+              border: '1px solid #333',
+              borderRadius: 12,
+              padding: '14px 14px 12px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+              zIndex: 9999,
+            }}
+          >
+            {/* ── 比例 ── */}
+            {selectedModel === 'kling' && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: '#666', marginBottom: 8, fontWeight: 500, letterSpacing: '0.02em' }}>比例</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {ratios.map(r => {
+                    const active = videoParams.aspectRatio === r.value
+                    return (
+                      <button
+                        key={r.value}
+                        className="nodrag nopan"
+                        onMouseDown={e => {
+                          e.preventDefault()
+                          onParamsChange({ ...videoParams, aspectRatio: r.value })
+                        }}
+                        style={{
+                          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                          gap: 6,
+                          width: 72, height: 68,
+                          background: active ? '#2a2a2a' : '#161616',
+                          border: active ? '1.5px solid #aaa' : '1px solid #333',
+                          borderRadius: 8,
+                          cursor: 'pointer',
+                          transition: 'border-color 0.12s, background 0.12s',
+                          flexShrink: 0,
+                        }}
+                        onMouseEnter={e => {
+                          if (!active) (e.currentTarget as HTMLButtonElement).style.borderColor = '#555'
+                        }}
+                        onMouseLeave={e => {
+                          if (videoParams.aspectRatio !== r.value) (e.currentTarget as HTMLButtonElement).style.borderColor = '#333'
+                        }}
+                      >
+                        {/* Ratio shape icon */}
+                        <div style={{
+                          width: r.w * 0.85, height: r.h * 0.85,
+                          border: `1.5px solid ${active ? '#ccc' : '#555'}`,
+                          borderRadius: 3,
+                          flexShrink: 0,
+                          transition: 'border-color 0.12s',
+                        }} />
+                        <span style={{ fontSize: 10, color: active ? '#ddd' : '#666', fontWeight: active ? 600 : 400 }}>
+                          {r.label}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 即梦：比例固定 Auto，不可选 */}
+            {selectedModel === 'jimeng' && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: '#666', marginBottom: 8, fontWeight: 500, letterSpacing: '0.02em' }}>比例</div>
+                <div style={{
+                  display: 'inline-flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  gap: 6,
+                  width: 72, height: 68,
+                  background: '#2a2a2a',
+                  border: '1.5px solid #aaa',
+                  borderRadius: 8,
+                  cursor: 'not-allowed',
+                  opacity: 0.75,
+                }}>
+                  <div style={{
+                    width: 22, height: 18,
+                    border: '1.5px solid #ccc',
+                    borderRadius: 3,
+                    flexShrink: 0,
+                  }} />
+                  <span style={{ fontSize: 10, color: '#ddd', fontWeight: 600 }}>Auto</span>
+                </div>
+                <div style={{ fontSize: 10, color: '#444', marginTop: 6 }}>即梦比例固定为自适应</div>
+              </div>
+            )}
+
+            {/* ── 清晰度 ── */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: '#666', marginBottom: 8, fontWeight: 500, letterSpacing: '0.02em' }}>清晰度</div>
+              <div style={{ display: 'flex', gap: 5 }}>
+                {(['480p', '720p', '1080p'] as const).map(res => {
+                  const disabled = selectedModel === 'kling'
+                  const active   = selectedModel === 'kling' ? res === '720p' : videoParams.resolution === res
+                  return (
+                    <button
+                      key={res}
+                      className="nodrag nopan"
+                      disabled={disabled}
+                      onMouseDown={e => {
+                        e.preventDefault()
+                        if (!disabled) onParamsChange({ ...videoParams, resolution: res })
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '5px 0',
+                        background: active ? '#2a2a2a' : '#161616',
+                        border: active ? '1.5px solid #aaa' : '1px solid #333',
+                        borderRadius: 7,
+                        color: active ? '#ddd' : disabled ? '#3a3a3a' : '#777',
+                        fontSize: 11,
+                        cursor: disabled ? 'not-allowed' : 'pointer',
+                        fontFamily: 'inherit',
+                        fontWeight: active ? 600 : 400,
+                        transition: 'border-color 0.12s, background 0.12s, color 0.12s',
+                        opacity: disabled && !active ? 0.4 : 1,
+                      }}
+                      onMouseEnter={e => {
+                        if (!disabled && !active) {
+                          const el = e.currentTarget as HTMLButtonElement
+                          el.style.borderColor = '#555'
+                          el.style.color = '#aaa'
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        if (!disabled && videoParams.resolution !== res) {
+                          const el = e.currentTarget as HTMLButtonElement
+                          el.style.borderColor = '#333'
+                          el.style.color = '#777'
+                        }
+                      }}
+                    >
+                      {res.toUpperCase()}
+                    </button>
+                  )
+                })}
+              </div>
+              {selectedModel === 'kling' && (
+                <div style={{ fontSize: 10, color: '#444', marginTop: 5 }}>可灵不支持自定义清晰度</div>
+              )}
+            </div>
+
+            {/* ── 视频时长 ── */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                marginBottom: 8,
+              }}>
+                <span style={{ fontSize: 11, color: '#666', fontWeight: 500, letterSpacing: '0.02em' }}>视频时长</span>
+                <span style={{ fontSize: 12, color: '#bbb', fontWeight: 600 }}>{videoParams.duration}s</span>
+              </div>
+              <input
+                type="range"
+                min={5}
+                max={10}
+                step={5}
+                value={videoParams.duration}
+                className="nodrag nopan nowheel"
+                onChange={e => onParamsChange({ ...videoParams, duration: Number(e.target.value) as 5 | 10 })}
+                style={{
+                  width: '100%',
+                  appearance: 'none', WebkitAppearance: 'none',
+                  height: 4,
+                  borderRadius: 2,
+                  outline: 'none',
+                  cursor: 'pointer',
+                  background: `linear-gradient(to right, #aaa ${(videoParams.duration - 5) / 5 * 100}%, #333 ${(videoParams.duration - 5) / 5 * 100}%)`,
+                }}
+              />
+              <style>{`
+                input[type=range]::-webkit-slider-thumb {
+                  -webkit-appearance: none;
+                  width: 14px; height: 14px;
+                  border-radius: 50%;
+                  background: #fff;
+                  border: none;
+                  cursor: pointer;
+                  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+                }
+                input[type=range]::-moz-range-thumb {
+                  width: 14px; height: 14px;
+                  border-radius: 50%;
+                  background: #fff;
+                  border: none;
+                  cursor: pointer;
+                  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+                }
+              `}</style>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                <span style={{ fontSize: 10, color: '#444' }}>5s</span>
+                <span style={{ fontSize: 10, color: '#444' }}>10s</span>
+              </div>
+            </div>
+
+            {/* ── 生成音频 ── */}
+            <div>
+              <div style={{ fontSize: 11, color: '#666', marginBottom: 8, fontWeight: 500, letterSpacing: '0.02em' }}>生成音频</div>
+              <div style={{ display: 'flex', gap: 5 }}>
+                {[
+                  { label: '🔊 开启', value: true  },
+                  { label: '🔇 关闭', value: false },
+                ].map(opt => {
+                  const active = videoParams.generateAudio === opt.value
+                  return (
+                    <button
+                      key={String(opt.value)}
+                      className="nodrag nopan"
+                      onMouseDown={e => {
+                        e.preventDefault()
+                        onParamsChange({ ...videoParams, generateAudio: opt.value })
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '5px 0',
+                        background: active ? '#2a2a2a' : '#161616',
+                        border: active ? '1.5px solid #aaa' : '1px solid #333',
+                        borderRadius: 7,
+                        color: active ? '#ddd' : '#777',
+                        fontSize: 11,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        fontWeight: active ? 600 : 400,
+                        transition: 'border-color 0.12s, background 0.12s, color 0.12s',
+                      }}
+                      onMouseEnter={e => {
+                        if (!active) {
+                          const el = e.currentTarget as HTMLButtonElement
+                          el.style.borderColor = '#555'
+                          el.style.color = '#aaa'
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        if (videoParams.generateAudio !== opt.value) {
+                          const el = e.currentTarget as HTMLButtonElement
+                          el.style.borderColor = '#333'
+                          el.style.color = '#777'
+                        }
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -407,6 +886,7 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
   const [selectedModel,     setSelectedModel]     = useState<VideoModel>(() => data.videoModel ?? 'kling')
   const [hadInitialExpand,  setHadInitialExpand]  = useState(() => !!data.initialPanelExpanded)
   const [activeTab,         setActiveTab]         = useState<VideoTab>('text2video')
+  const [videoParams,       setVideoParams]       = useState<VideoParams>(DEFAULT_PARAMS)
   const abortRef = useRef<AbortController | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const isMultiSelected = useIsMultiSelected()
@@ -429,6 +909,19 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
     .filter(n => n?.type === 'libtv_image')
     .map(n => n?.imageUrl)
     .filter(Boolean) as string[]
+
+  // Resolve idb:// URLs to displayable URLs for ref image thumbnails
+  const [resolvedRefUrls, setResolvedRefUrls] = useState<string[]>([])
+  useEffect(() => {
+    if (!incomingImageUrls.length) { setResolvedRefUrls([]); return }
+    let cancelled = false
+    import('@/stores/imageStore').then(({ resolveImageUrl }) => {
+      Promise.all(incomingImageUrls.map(u => resolveImageUrl(u))).then(urls => {
+        if (!cancelled) setResolvedRefUrls(urls.filter(Boolean) as string[])
+      })
+    })
+    return () => { cancelled = true }
+  }, [incomingImageUrls.join(',')])
 
   // Sync prompt from data
   useEffect(() => {
@@ -497,8 +990,11 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
         prompt: prompt.trim(),
         imageDataUrl,
         tailImageDataUrl,
-        duration: 5 as const,
-        aspectRatio: '16:9' as const,
+        duration:      videoParams.duration,
+        aspectRatio:   videoParams.aspectRatio,
+        resolution:    videoParams.resolution,
+        generateAudio: videoParams.generateAudio,
+        sound:         (videoParams.generateAudio ? 'on' : 'off') as 'on' | 'off',
         signal: ctrl.signal,
         onProgress: (msg: string) => setStatusMsg(msg),
       }
@@ -533,7 +1029,7 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
       setGenerating(false)
       abortRef.current = null
     }
-  }, [prompt, generating, selectedModel, activeTab, incomingImageUrls, data.id, updateNode])
+  }, [prompt, generating, selectedModel, activeTab, incomingImageUrls, data.id, updateNode, videoParams])
 
   /** 点击「首尾帧生成视频」快捷项：在左侧创建首帧+尾帧图片节点并连线 */
   function handleKeyframesQuickAction() {
@@ -787,9 +1283,12 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
             activeTab={activeTab}
             onTabChange={setActiveTab}
             keyframeUrls={incomingImageUrls}
+            refImageUrls={resolvedRefUrls}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
             statusMsg={statusMsg}
+            videoParams={videoParams}
+            onParamsChange={setVideoParams}
           />
         </ZoomInvariantPanel>
       </CollapsibleSection>
