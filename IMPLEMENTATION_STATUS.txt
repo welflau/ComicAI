@@ -1,0 +1,124 @@
+IMAGE TOOLBAR API IMPLEMENTATION STATUS
+========================================
+
+PHASE 1: Backend Setup [COMPLETE]
+---------------------------------
+✅ Created /backend/app/api/v1/endpoints/image_toolbar.py
+   - 8 endpoints defined with request/response models
+   - All endpoints stubbed with TODO comments
+   - Ready for implementation
+
+✅ Updated /backend/app/api/v1/router.py
+   - Added: from app.api.v1.endpoints import ... image_toolbar
+   - Added: api_router.include_router(image_toolbar.router)
+   - All routes accessible at /api/v1/image-toolbar/*
+
+PHASE 2: Frontend API Client [COMPLETE]
+----------------------------------------
+✅ Updated /frontend/src/api/index.ts
+   - Added 9 TypeScript interfaces for request/response models
+   - Created imageToolbarApi object with 8 methods
+   - All methods properly typed with async support
+   - Location: Lines 935+ in api/index.ts
+
+API Methods Available:
+1. generateMultiAngles(options: MultiAnglesOptions)
+2. applyLighting(options: LightingOptions)
+3. cropGrid9(options: CropGrid9Options)
+4. upscaleHD(options: UpscaleHDOptions)
+5. splitGrid(options: SplitGridOptions)
+6. optimizeImage(options: OptimizeOptions)
+7. regenerate(options: RegenerateOptions)
+8. getFullscreenPreview(imageUrl: string)
+
+PHASE 3: Backend Implementation [TODO]
+---------------------------------------
+Endpoints that need implementation:
+- POST /multi-angles
+- POST /lighting
+- POST /crop-grid9
+- POST /upscale-hd
+- POST /split-grid
+- POST /optimize
+- POST /regenerate
+- GET /preview
+
+Each endpoint needs:
+1. Image processing service integration
+2. Error handling
+3. Response URL generation
+
+PHASE 4: Frontend Integration [TODO]
+-------------------------------------
+Required changes to /frontend/src/components/nodes/ImageNode.tsx:
+
+1. Import imageToolbarApi:
+   import { imageToolbarApi } from '@/api'
+
+2. Create 8 handler functions using useCallback:
+   - handleMultiAngles
+   - handleLighting
+   - handleCropGrid9
+   - handleUpscaleHD
+   - handleSplitGrid
+   - handleOptimize
+   - handleRegenerate
+   - handleFullscreenPreview
+
+3. Update button onClick handlers:
+   - Left buttons (TOOLBAR_GROUPS): Add onClick to call handlers
+   - Right buttons (icon buttons): Update onClick from undefined
+
+KEY IMPLEMENTATION POINTS:
+=========================
+
+1. Node Update Pattern:
+   const updateNode = useProjectStore(s => s.updateNode)
+   updateNode(data.id, { imageUrl: newImageUrl })
+
+2. Image Saving:
+   const savedUrl = await saveImage(imageData, 'generated')
+
+3. Error Logging:
+   addLog({
+     level: 'error',
+     category: 'operation',
+     message: 'Operation failed',
+     detail: String(error)
+   })
+
+4. Handler Dependencies:
+   useCallback(async () => { ... }, [displayUrl, data.id, updateNode, ...])
+
+FILES CREATED/MODIFIED:
+=======================
+✅ backend/app/api/v1/endpoints/image_toolbar.py (NEW)
+✅ backend/app/api/v1/router.py (MODIFIED)
+✅ frontend/src/api/index.ts (MODIFIED)
+📄 IMAGE_TOOLBAR_INTEGRATION.md (NEW)
+📄 HANDLER_TEMPLATE.tsx (NEW)
+📄 IMPLEMENTATION_CHECKLIST.md (NEW)
+📄 IMPLEMENTATION_STATUS.txt (THIS FILE)
+
+NEXT STEPS:
+===========
+1. Implement backend handlers in image_toolbar.py
+2. Integrate with image processing services
+3. Add handlers to ImageNode.tsx
+4. Connect handlers to toolbar buttons
+5. Test all operations end-to-end
+
+BUTTON MAPPING:
+===============
+Left Buttons:
+  多角度 -> handleMultiAngles -> POST /multi-angles
+  打光 -> handleLighting -> POST /lighting
+  九宫格 -> handleCropGrid9 -> POST /crop-grid9
+  HD高清 -> handleUpscaleHD -> POST /upscale-hd
+  宫格切分 -> handleSplitGrid -> POST /split-grid
+
+Right Buttons:
+  一键优化 (Wand2) -> handleOptimize -> POST /optimize
+  重新生成 (RefreshCw) -> handleRegenerate -> POST /regenerate
+  下载 (Download) -> handleDownload -> ALREADY IMPLEMENTED
+  全屏预览 (Fullscreen) -> handleFullscreenPreview -> GET /preview

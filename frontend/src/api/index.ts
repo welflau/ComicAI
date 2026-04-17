@@ -639,6 +639,12 @@ export interface VideoGenerateOptions {
   duration?: 5 | 10
   /** 画面比例: '16:9' | '9:16' | '1:1' */
   aspectRatio?: '16:9' | '9:16' | '1:1'
+  /** 清晰度（即梦专用）: '480p' | '720p' | '1080p' */
+  resolution?: '480p' | '720p' | '1080p'
+  /** 生成音频（即梦专用）: true=开启, false=关闭 */
+  generateAudio?: boolean
+  /** 可灵音效: 'on' | 'off' */
+  sound?: 'on' | 'off'
   /** AbortSignal */
   signal?: AbortSignal
   /** Progress callback: message */
@@ -802,7 +808,7 @@ export async function klingGenerateVideo(opts: VideoGenerateOptions): Promise<st
     duration,
     aspect_ratio: aspectRatio,
     mode: 'pro',
-    sound: 'off',
+    sound: opts.sound ?? 'off',
   }
   if (prompt) taskJson.prompt = prompt
   if (negativePrompt) taskJson.negative_prompt = negativePrompt
@@ -869,8 +875,8 @@ export async function jimengGenerateVideo(opts: VideoGenerateOptions): Promise<s
     model: 'doubao-seedance-1-5-pro-251215',
     ratio: 'adaptive',
     duration,
-    resolution: '720p',
-    generate_audio: false,
+    resolution: opts.resolution ?? '720p',
+    generate_audio: opts.generateAudio ?? false,
     watermark: false,
     content,
   }
@@ -924,4 +930,108 @@ export const migrationApi = {
     workflows: Record<string, { nodes: unknown[]; edges: unknown[] }>
   }) =>
     apiClient.post('/migrate/import', data, { timeout: 30000 }).then(r => r.data),
+}
+
+// ─── Image Toolbar ────────────────────────────────────────────────────────────
+
+export interface MultiAnglesOptions {
+  image_url: string
+  prompt: string
+  angles?: string[]
+  style?: string
+}
+
+export interface LightingOptions {
+  image_url: string
+  lighting_type: 'warm' | 'cool' | 'dramatic' | 'soft' | 'studio'
+  intensity?: number
+}
+
+export interface CropGrid9Options {
+  image_url: string
+  auto_detect?: boolean
+}
+
+export interface UpscaleHDOptions {
+  image_url: string
+  scale?: 2 | 4
+  model?: 'realesrgan' | 'upsampler'
+}
+
+export interface SplitGridOptions {
+  image_url: string
+  grid_size?: 3 | 4 | 6
+}
+
+export interface OptimizeOptions {
+  image_url: string
+  enhance_type: 'colors' | 'contrast' | 'sharpness' | 'auto'
+  intensity?: number
+}
+
+export interface RegenerateOptions {
+  image_url: string
+  prompt: string
+  negative_prompt?: string
+  style?: string
+}
+
+export interface ImageResponse {
+  image_url: string
+  description?: string
+}
+
+export interface MultiImageResponse {
+  images: string[]
+  descriptions?: string[]
+}
+
+export const imageToolbarApi = {
+  /**
+   * Generate multi-angle views of an image
+   */
+  generateMultiAngles: (options: MultiAnglesOptions): Promise<MultiImageResponse> =>
+    apiClient.post('/image-toolbar/multi-angles', options).then(r => r.data),
+
+  /**
+   * Apply lighting effects to image
+   */
+  applyLighting: (options: LightingOptions): Promise<ImageResponse> =>
+    apiClient.post('/image-toolbar/lighting', options).then(r => r.data),
+
+  /**
+   * Crop image into 9 grid sections (3x3)
+   */
+  cropGrid9: (options: CropGrid9Options): Promise<MultiImageResponse> =>
+    apiClient.post('/image-toolbar/crop-grid9', options).then(r => r.data),
+
+  /**
+   * Upscale image to HD resolution
+   */
+  upscaleHD: (options: UpscaleHDOptions): Promise<ImageResponse> =>
+    apiClient.post('/image-toolbar/upscale-hd', options).then(r => r.data),
+
+  /**
+   * Split image into grid sections
+   */
+  splitGrid: (options: SplitGridOptions): Promise<MultiImageResponse> =>
+    apiClient.post('/image-toolbar/split-grid', options).then(r => r.data),
+
+  /**
+   * Optimize image quality and enhancement
+   */
+  optimizeImage: (options: OptimizeOptions): Promise<ImageResponse> =>
+    apiClient.post('/image-toolbar/optimize', options).then(r => r.data),
+
+  /**
+   * Regenerate image with new prompt
+   */
+  regenerate: (options: RegenerateOptions): Promise<ImageResponse> =>
+    apiClient.post('/image-toolbar/regenerate', options).then(r => r.data),
+
+  /**
+   * Get fullscreen preview URL
+   */
+  getFullscreenPreview: (imageUrl: string): Promise<ImageResponse> =>
+    apiClient.get('/image-toolbar/preview', { params: { image_url: imageUrl } }).then(r => r.data),
 }
