@@ -6,7 +6,7 @@
 
 ### 工作流编辑器
 
-![工作流编辑器](docs/screenshots/workflow-editor.png)
+![工作流编辑器](Docs/screenshots/workflow-editor.png)
 
 基于 ReactFlow 的可视化节点画布，截图展示了一个以「孙悟空」为角色的创作工作流：
 - 左侧两个 **图片节点** 展示角色参考图（猪头人身妖怪风格）
