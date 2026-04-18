@@ -178,6 +178,112 @@ function EmptyProperties() {
   )
 }
 
+// ── AI Canvas Intent Recognition ──────────────────────────────────────────────
+
+const NODE_KEYWORDS: Record<string, string> = {
+  '图片': 'libtv_image',
+  '图像': 'libtv_image',
+  '视频': 'libtv_video',
+  '文本': 'libtv_script',
+  '文字': 'libtv_script',
+  '剧本': 'libtv_script',
+  '脚本': 'libtv_script_gen',
+}
+
+const NODE_TYPE_DISPLAY: Record<string, string> = {
+  'libtv_image': '图片节点',
+  'libtv_video': '视频节点',
+  'libtv_script': '文本节点',
+  'libtv_script_gen': '脚本节点',
+}
+
+interface IntentContext {
+  nodes: NodeData[]
+  selectedNodeIds: string[]
+}
+
+interface IntentResult {
+  intent: 'ADD_NODE' | 'DELETE_SELECTED' | 'CLEAR_CANVAS' | 'LIST_NODES'
+  nodeType?: string
+  nodeLabel?: string
+  confirmText: string
+}
+
+function matchIntent(text: string, context: IntentContext): IntentResult | null {
+  const t = text.trim()
+
+  // ADD_NODE: 创建/添加/新建 + 节点类型关键词
+  const addPattern = /(?:创建|添加|新建|加一个|加个|生成).*?([图片图像视频文本文字剧本脚本])/
+  const addMatch = t.match(addPattern)
+  if (addMatch) {
+    const keyword = addMatch[1]
+    // Find matching node type
+    for (const [kw, nodeType] of Object.entries(NODE_KEYWORDS)) {
+      if (keyword === kw || t.includes(kw)) {
+        const label = NODE_TYPE_DISPLAY[nodeType] || nodeType
+        return {
+          intent: 'ADD_NODE',
+          nodeType,
+          nodeLabel: label,
+          confirmText: `已为你在画布中添加了「${label}」`,
+        }
+      }
+    }
+  }
+
+  // Also match: 帮我 + 创建/添加 + 节点类型
+  for (const [kw, nodeType] of Object.entries(NODE_KEYWORDS)) {
+    if ((t.includes('创建') || t.includes('添加') || t.includes('新建') || t.includes('加一个') || t.includes('加个')) && t.includes(kw)) {
+      const label = NODE_TYPE_DISPLAY[nodeType] || nodeType
+      return {
+        intent: 'ADD_NODE',
+        nodeType,
+        nodeLabel: label,
+        confirmText: `已为你在画布中添加了「${label}」`,
+      }
+    }
+  }
+
+  // DELETE_SELECTED: 删除/移除 + 选中/这个/当前
+  if (/删除|移除/.test(t) && /选中|这个|当前|刚才/.test(t)) {
+    if (context.selectedNodeIds.length === 0) {
+      return {
+        intent: 'DELETE_SELECTED',
+        confirmText: '当前没有选中的节点，请先在画布中点击选择一个节点。',
+      }
+    }
+    return {
+      intent: 'DELETE_SELECTED',
+      confirmText: `已删除选中的节点（共 ${context.selectedNodeIds.length} 个）`,
+    }
+  }
+
+  // CLEAR_CANVAS: 清空画布 / 全部删除
+  if (/清空画布|清除画布|删除所有|删除全部|全部删除/.test(t)) {
+    return {
+      intent: 'CLEAR_CANVAS',
+      confirmText: `已清空画布（删除了 ${context.nodes.length} 个节点）`,
+    }
+  }
+
+  // LIST_NODES: 列出/查看节点
+  if (/有哪些节点|列出节点|查看节点|节点列表|现在.*节点/.test(t)) {
+    if (context.nodes.length === 0) {
+      return {
+        intent: 'LIST_NODES',
+        confirmText: '画布当前没有任何节点。',
+      }
+    }
+    const nodeList = context.nodes.map(n => `• ${n.label || n.type}`).join('\n')
+    return {
+      intent: 'LIST_NODES',
+      confirmText: `画布中共有 ${context.nodes.length} 个节点：\n${nodeList}`,
+    }
+  }
+
+  return null
+}
+
 // ── AI Assistant Panel ─────────────────────────────────────────────────────────
 
 interface ChatMessage {
@@ -185,14 +291,17 @@ interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+  isAction?: boolean  // true = executed a canvas action
 }
 
 function AIAssistantPanel() {
+  const { nodes, selectedNodeIds, addNode, deleteNode } = useProjectStore()
+
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '0',
       role: 'assistant',
-      content: '你好！我是 ComicFlow AI 助手。我可以帮你优化剧本、设计角色、生成提示词，或回答任何创作问题。',
+      content: '你好！我是 ComicFlow AI 助手。我可以帮你优化剧本、设计角色、生成提示词，或直接操作画布（例如：「创建一个图片节点」）。',
       timestamp: new Date(),
     }
   ])
@@ -216,8 +325,45 @@ function AIAssistantPanel() {
     }
     setMessages(prev => [...prev, userMsg])
     setInput('')
-    setIsLoading(true)
 
+    // ── Intent matching (Phase 1: local canvas control) ──
+    const intentResult = matchIntent(text, { nodes, selectedNodeIds })
+    if (intentResult) {
+      let actionConfirmText = intentResult.confirmText
+
+      if (intentResult.intent === 'ADD_NODE' && intentResult.nodeType) {
+        const newNode: NodeData = {
+          id: `${intentResult.nodeType}_${Date.now()}`,
+          type: intentResult.nodeType as NodeData['type'],
+          label: intentResult.nodeLabel || intentResult.nodeType,
+          category: 'process',
+          position: {
+            x: 100 + (nodes.length % 5) * 220,
+            y: 100 + Math.floor(nodes.length / 5) * 160,
+          },
+          status: 'idle',
+          config: {},
+        }
+        addNode(newNode)
+      } else if (intentResult.intent === 'DELETE_SELECTED' && selectedNodeIds.length > 0) {
+        selectedNodeIds.forEach(id => deleteNode(id))
+      } else if (intentResult.intent === 'CLEAR_CANVAS') {
+        nodes.forEach(n => deleteNode(n.id))
+      }
+      // LIST_NODES: no action needed, confirmText already contains list
+
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: actionConfirmText,
+        timestamp: new Date(),
+        isAction: intentResult.intent !== 'LIST_NODES',
+      }])
+      return
+    }
+
+    // ── Normal AI chat ──
+    setIsLoading(true)
     try {
       const history = messages.slice(-8).map(m => ({ role: m.role, content: m.content }))
       const res = await aiApi.chat({
@@ -267,7 +413,23 @@ function AIAssistantPanel() {
                 ? 'bg-primary-500/20 text-white'
                 : 'bg-canvas-border/50 text-white/80'
             )}>
-              {msg.content}
+              <div style={{ whiteSpace: 'pre-line' }}>{msg.content}</div>
+              {msg.isAction && (
+                <div style={{
+                  marginTop: 6,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 10,
+                  color: '#4ade80',
+                  background: 'rgba(74,222,128,0.1)',
+                  borderRadius: 4,
+                  padding: '2px 6px',
+                }}>
+                  <span>✦</span>
+                  <span>操作已执行</span>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -300,7 +462,7 @@ function AIAssistantPanel() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-            placeholder="输入消息..."
+            placeholder="输入消息或指令（如：创建图片节点）"
             className="input-base flex-1 text-xs py-2"
           />
           <button
