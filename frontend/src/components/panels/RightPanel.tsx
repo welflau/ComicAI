@@ -1,8 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
 import { clsx } from 'clsx'
-import { Send, Bot, User, Settings, Activity, Save, FileText } from 'lucide-react'
+import { Send, Bot, User, Settings, Activity, Save, FileText, Trash2, ChevronRight } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useProjectStore } from '@/stores/projectStore'
 import { aiApi, projectsApi } from '@/api'
+import { addLog, useLogStore } from '@/stores/logStore'
+import type { LogLevel, LogCategory, LogEntry } from '@/stores/logStore'
 import type { NodeData, GenerationTask } from '@/types'
 import toast from 'react-hot-toast'
 
@@ -266,8 +270,8 @@ function matchIntent(text: string, context: IntentContext): IntentResult | null 
     }
   }
 
-  // LIST_NODES: 列出/查看节点
-  if (/有哪些节点|列出节点|查看节点|节点列表|现在.*节点/.test(t)) {
+  // LIST_NODES: 列出画布上当前的节点（排除"类型/功能/系统"等平台知识类问题）
+  if (/有哪些节点|列出节点|查看节点|节点列表|现在.*节点/.test(t) && !/类型|功能|介绍|说明|支持|系统|平台|可以用|可用/.test(t)) {
     if (context.nodes.length === 0) {
       return {
         intent: 'LIST_NODES',
@@ -286,13 +290,167 @@ function matchIntent(text: string, context: IntentContext): IntentResult | null 
 
 // ── AI Assistant Panel ─────────────────────────────────────────────────────────
 
+interface PendingAction {
+  intent: IntentResult['intent']
+  nodeType?: string
+  nodeLabel?: string
+  // snapshot at match time (for display only)
+  previewText: string       // e.g. "添加「图片节点」"
+  snapshotNodeCount: number // canvas size at match time
+  snapshotSelectedIds: string[]
+}
+
 interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
-  isAction?: boolean  // true = executed a canvas action
+  isAction?: boolean
+  // Confirmation flow
+  pendingAction?: PendingAction
+  actionStatus?: 'pending' | 'confirmed' | 'cancelled'
 }
+
+// ── Action preview lines per intent ──────────────────────────────────────────
+
+function getActionLines(action: PendingAction): { icon: string; text: string }[] {
+  switch (action.intent) {
+    case 'ADD_NODE':
+      return [{ icon: '+', text: `添加「${action.nodeLabel || action.nodeType}」` }]
+    case 'DELETE_SELECTED':
+      return action.snapshotSelectedIds.length > 0
+        ? [{ icon: '−', text: `删除选中节点（共 ${action.snapshotSelectedIds.length} 个）` }]
+        : [{ icon: '!', text: '当前没有选中节点' }]
+    case 'CLEAR_CANVAS':
+      return [{ icon: '⚠', text: `清空画布（删除全部 ${action.snapshotNodeCount} 个节点）` }]
+    default:
+      return [{ icon: '›', text: action.previewText }]
+  }
+}
+
+// ── Confirmation card component ───────────────────────────────────────────────
+
+function ConfirmCard({
+  action,
+  onConfirm,
+  onCancel,
+}: {
+  action: PendingAction
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  const lines = getActionLines(action)
+  const isDestructive = action.intent === 'CLEAR_CANVAS' || action.intent === 'DELETE_SELECTED'
+  const noOp = action.intent === 'DELETE_SELECTED' && action.snapshotSelectedIds.length === 0
+
+  return (
+    <div style={{
+      marginTop: 8,
+      border: isDestructive ? '1px solid rgba(248,113,113,0.25)' : '1px solid rgba(99,102,241,0.25)',
+      borderRadius: 8,
+      overflow: 'hidden',
+      fontSize: 11,
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '6px 10px',
+        background: isDestructive ? 'rgba(248,113,113,0.08)' : 'rgba(99,102,241,0.08)',
+        borderBottom: isDestructive ? '1px solid rgba(248,113,113,0.15)' : '1px solid rgba(99,102,241,0.15)',
+        color: isDestructive ? '#fca5a5' : '#a5b4fc',
+        fontWeight: 600,
+        letterSpacing: 0.3,
+      }}>
+        确认执行以下操作
+      </div>
+
+      {/* Action lines */}
+      <div style={{ padding: '8px 10px', background: 'rgba(0,0,0,0.2)' }}>
+        {lines.map((line, i) => (
+          <div key={i} style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 7,
+            marginBottom: i < lines.length - 1 ? 4 : 0,
+            color: '#c8c8c8',
+          }}>
+            <span style={{
+              width: 16,
+              height: 16,
+              borderRadius: 4,
+              background: isDestructive ? 'rgba(248,113,113,0.15)' : 'rgba(99,102,241,0.15)',
+              color: isDestructive ? '#f87171' : '#818cf8',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 11,
+              fontWeight: 700,
+              flexShrink: 0,
+            }}>
+              {line.icon}
+            </span>
+            <span>{line.text}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Buttons */}
+      {!noOp && (
+        <div style={{
+          display: 'flex',
+          gap: 6,
+          padding: '7px 10px',
+          borderTop: '1px solid rgba(255,255,255,0.05)',
+          background: 'rgba(0,0,0,0.15)',
+        }}>
+          <button
+            onClick={onConfirm}
+            style={{
+              flex: 1,
+              padding: '5px 0',
+              borderRadius: 6,
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 600,
+              background: isDestructive ? 'rgba(248,113,113,0.2)' : 'rgba(99,102,241,0.25)',
+              color: isDestructive ? '#fca5a5' : '#a5b4fc',
+              transition: 'background 0.1s',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = isDestructive ? 'rgba(248,113,113,0.35)' : 'rgba(99,102,241,0.4)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = isDestructive ? 'rgba(248,113,113,0.2)' : 'rgba(99,102,241,0.25)'
+            }}
+          >
+            ✓ 确认执行
+          </button>
+          <button
+            onClick={onCancel}
+            style={{
+              flex: 1,
+              padding: '5px 0',
+              borderRadius: 6,
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 600,
+              background: 'rgba(255,255,255,0.05)',
+              color: '#666',
+              transition: 'background 0.1s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#999' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = '#666' }}
+          >
+            ✕ 取消
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main panel ────────────────────────────────────────────────────────────────
 
 function AIAssistantPanel() {
   const { nodes, selectedNodeIds, addNode, deleteNode } = useProjectStore()
@@ -309,9 +467,63 @@ function AIAssistantPanel() {
   const [isLoading, setIsLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
+  // Keep a ref to current nodes/selectedNodeIds for use inside callbacks
+  const nodesRef = useRef(nodes)
+  const selectedRef = useRef(selectedNodeIds)
+  useEffect(() => { nodesRef.current = nodes }, [nodes])
+  useEffect(() => { selectedRef.current = selectedNodeIds }, [selectedNodeIds])
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // ── Execute a confirmed action ──────────────────────────────────────────────
+  const executeAction = (msgId: string, action: PendingAction) => {
+    const currentNodes = nodesRef.current
+    const currentSelected = selectedRef.current
+
+    if (action.intent === 'ADD_NODE' && action.nodeType) {
+      const newNode: NodeData = {
+        id: `${action.nodeType}_${Date.now()}`,
+        type: action.nodeType as NodeData['type'],
+        label: action.nodeLabel || action.nodeType,
+        category: 'process',
+        position: {
+          x: 100 + (currentNodes.length % 5) * 220,
+          y: 100 + Math.floor(currentNodes.length / 5) * 160,
+        },
+        status: 'idle',
+        config: {},
+      }
+      addNode(newNode)
+      addLog({ level: 'info', category: 'operation', message: `AI指令：添加节点「${action.nodeLabel || action.nodeType}」` })
+    } else if (action.intent === 'DELETE_SELECTED') {
+      currentSelected.forEach(id => deleteNode(id))
+      addLog({ level: 'info', category: 'operation', message: `AI指令：删除选中节点（共 ${currentSelected.length} 个）` })
+    } else if (action.intent === 'CLEAR_CANVAS') {
+      currentNodes.forEach(n => deleteNode(n.id))
+      addLog({ level: 'warn', category: 'operation', message: `AI指令：清空画布（删除 ${currentNodes.length} 个节点）` })
+    }
+
+    setMessages(prev => prev.map(m =>
+      m.id === msgId
+        ? { ...m, actionStatus: 'confirmed', pendingAction: undefined, isAction: true,
+            content: action.intent === 'ADD_NODE'
+              ? `已为你添加了「${action.nodeLabel}」`
+              : action.intent === 'DELETE_SELECTED'
+              ? `已删除选中节点（共 ${currentSelected.length} 个）`
+              : `已清空画布` }
+        : m
+    ))
+  }
+
+  const cancelAction = (msgId: string) => {
+    setMessages(prev => prev.map(m =>
+      m.id === msgId
+        ? { ...m, actionStatus: 'cancelled', pendingAction: undefined, content: '已取消操作。' }
+        : m
+    ))
+  }
 
   const sendMessage = async () => {
     const text = input.trim()
@@ -326,44 +538,57 @@ function AIAssistantPanel() {
     setMessages(prev => [...prev, userMsg])
     setInput('')
 
-    // ── Intent matching (Phase 1: local canvas control) ──
+    // ── Intent matching ──
     const intentResult = matchIntent(text, { nodes, selectedNodeIds })
     if (intentResult) {
-      let actionConfirmText = intentResult.confirmText
+      const msgId = (Date.now() + 1).toString()
 
-      if (intentResult.intent === 'ADD_NODE' && intentResult.nodeType) {
-        const newNode: NodeData = {
-          id: `${intentResult.nodeType}_${Date.now()}`,
-          type: intentResult.nodeType as NodeData['type'],
-          label: intentResult.nodeLabel || intentResult.nodeType,
-          category: 'process',
-          position: {
-            x: 100 + (nodes.length % 5) * 220,
-            y: 100 + Math.floor(nodes.length / 5) * 160,
-          },
-          status: 'idle',
-          config: {},
-        }
-        addNode(newNode)
-      } else if (intentResult.intent === 'DELETE_SELECTED' && selectedNodeIds.length > 0) {
-        selectedNodeIds.forEach(id => deleteNode(id))
-      } else if (intentResult.intent === 'CLEAR_CANVAS') {
-        nodes.forEach(n => deleteNode(n.id))
+      // LIST_NODES: no confirmation needed, just show
+      if (intentResult.intent === 'LIST_NODES') {
+        setMessages(prev => [...prev, {
+          id: msgId,
+          role: 'assistant',
+          content: intentResult.confirmText,
+          timestamp: new Date(),
+        }])
+        return
       }
-      // LIST_NODES: no action needed, confirmText already contains list
+
+      // DELETE_SELECTED with nothing selected: just show info
+      if (intentResult.intent === 'DELETE_SELECTED' && selectedNodeIds.length === 0) {
+        setMessages(prev => [...prev, {
+          id: msgId,
+          role: 'assistant',
+          content: intentResult.confirmText,
+          timestamp: new Date(),
+        }])
+        return
+      }
+
+      // All other intents: show confirmation card
+      const pendingAction: PendingAction = {
+        intent: intentResult.intent,
+        nodeType: intentResult.nodeType,
+        nodeLabel: intentResult.nodeLabel,
+        previewText: intentResult.confirmText,
+        snapshotNodeCount: nodes.length,
+        snapshotSelectedIds: [...selectedNodeIds],
+      }
 
       setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
+        id: msgId,
         role: 'assistant',
-        content: actionConfirmText,
+        content: '',
         timestamp: new Date(),
-        isAction: intentResult.intent !== 'LIST_NODES',
+        pendingAction,
+        actionStatus: 'pending',
       }])
       return
     }
 
     // ── Normal AI chat ──
     setIsLoading(true)
+    addLog({ level: 'info', category: 'ai', kind: 'prompt', message: '[AI助手] 发送消息', detail: text })
     try {
       const history = messages.slice(-8).map(m => ({ role: m.role, content: m.content }))
       const res = await aiApi.chat({
@@ -371,6 +596,7 @@ function AIAssistantPanel() {
         context_type: 'general',
         history,
       })
+      addLog({ level: 'info', category: 'ai', kind: 'response', message: '[AI助手] 收到回复', detail: res.reply })
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -378,6 +604,7 @@ function AIAssistantPanel() {
         timestamp: new Date(),
       }])
     } catch {
+      addLog({ level: 'error', category: 'ai', message: '[AI助手] 请求失败' })
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -408,13 +635,33 @@ function AIAssistantPanel() {
               }
             </div>
             <div className={clsx(
-              'max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed',
+              'max-w-[90%] rounded-xl px-3 py-2 text-xs leading-relaxed',
               msg.role === 'user'
                 ? 'bg-primary-500/20 text-white'
                 : 'bg-canvas-border/50 text-white/80'
             )}>
-              <div style={{ whiteSpace: 'pre-line' }}>{msg.content}</div>
-              {msg.isAction && (
+              {/* Main text */}
+              {msg.content && (
+                msg.role === 'assistant' ? (
+                  <div className="markdown-body">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <div style={{ whiteSpace: 'pre-line' }}>{msg.content}</div>
+                )
+              )}
+
+              {/* Confirmation card */}
+              {msg.pendingAction && msg.actionStatus === 'pending' && (
+                <ConfirmCard
+                  action={msg.pendingAction}
+                  onConfirm={() => executeAction(msg.id, msg.pendingAction!)}
+                  onCancel={() => cancelAction(msg.id)}
+                />
+              )}
+
+              {/* Post-action badge */}
+              {msg.isAction && msg.actionStatus === 'confirmed' && (
                 <div style={{
                   marginTop: 6,
                   display: 'inline-flex',
@@ -428,6 +675,24 @@ function AIAssistantPanel() {
                 }}>
                   <span>✦</span>
                   <span>操作已执行</span>
+                </div>
+              )}
+
+              {/* Cancelled badge */}
+              {msg.actionStatus === 'cancelled' && (
+                <div style={{
+                  marginTop: 6,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontSize: 10,
+                  color: '#9ca3af',
+                  background: 'rgba(156,163,175,0.1)',
+                  borderRadius: 4,
+                  padding: '2px 6px',
+                }}>
+                  <span>✕</span>
+                  <span>已取消</span>
                 </div>
               )}
             </div>
@@ -556,6 +821,317 @@ function RunLogPanel({ onOpenLog }: { onOpenLog?: () => void }) {
             </div>
           ))
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── Inline Log Panel (embedded in RightPanel tab) ─────────────────────────────
+
+const LOG_CATEGORY_TABS: { id: LogCategory | 'all'; label: string }[] = [
+  { id: 'all',       label: '全部' },
+  { id: 'operation', label: '操作' },
+  { id: 'ai',        label: 'AI'   },
+  { id: 'system',    label: '系统' },
+  { id: 'network',   label: '网络' },
+]
+
+const LOG_LEVEL_FILTERS: { id: LogLevel | 'all'; label: string }[] = [
+  { id: 'all',   label: '全部'  },
+  { id: 'info',  label: 'Info'  },
+  { id: 'warn',  label: 'Warn'  },
+  { id: 'error', label: 'Error' },
+  { id: 'debug', label: 'Debug' },
+]
+
+function logLevelColor(level: LogLevel): string {
+  switch (level) {
+    case 'info':  return '#60a5fa'
+    case 'warn':  return '#fbbf24'
+    case 'error': return '#f87171'
+    case 'debug': return '#a3a3a3'
+  }
+}
+
+function logLevelBg(level: LogLevel): string {
+  switch (level) {
+    case 'info':  return 'rgba(96,165,250,0.1)'
+    case 'warn':  return 'rgba(251,191,36,0.1)'
+    case 'error': return 'rgba(248,113,113,0.1)'
+    case 'debug': return 'rgba(163,163,163,0.08)'
+  }
+}
+
+function InlineLogRow({ entry }: { entry: LogEntry }) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <div
+      style={{
+        borderBottom: '1px solid #1a1a1a',
+        padding: '6px 10px',
+        cursor: entry.detail ? 'pointer' : 'default',
+        background: expanded ? logLevelBg(entry.level) : 'transparent',
+        transition: 'background 0.1s',
+      }}
+      onClick={() => entry.detail && setExpanded(v => !v)}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+        {/* Expand arrow */}
+        <div style={{ width: 12, flexShrink: 0, display: 'flex', alignItems: 'center', paddingTop: 2 }}>
+          {entry.detail && (
+            <ChevronRight
+              size={11}
+              color="#555"
+              style={{ transform: expanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}
+            />
+          )}
+        </div>
+
+        {/* Level badge */}
+        <span style={{
+          flexShrink: 0,
+          fontSize: 9,
+          fontWeight: 700,
+          fontFamily: 'monospace',
+          color: logLevelColor(entry.level),
+          background: logLevelBg(entry.level),
+          border: `1px solid ${logLevelColor(entry.level)}33`,
+          borderRadius: 3,
+          padding: '1px 4px',
+          minWidth: 34,
+          textAlign: 'center',
+          letterSpacing: 0.4,
+          marginTop: 1,
+        }}>
+          {entry.level.toUpperCase()}
+        </span>
+
+        {/* Message */}
+        <span style={{
+          flex: 1,
+          fontSize: 11,
+          color: entry.level === 'error' ? '#f87171' : entry.level === 'warn' ? '#fbbf24' : '#c8c8c8',
+          lineHeight: 1.5,
+          wordBreak: 'break-word',
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 5,
+          flexWrap: 'wrap',
+        }}>
+          {entry.message}
+          {entry.category === 'ai' && entry.detail && (
+            <span style={{
+              fontSize: 9,
+              fontWeight: 700,
+              fontFamily: 'monospace',
+              color: entry.kind === 'response' ? '#34d399' : '#a78bfa',
+              background: entry.kind === 'response' ? 'rgba(52,211,153,0.1)' : 'rgba(167,139,250,0.1)',
+              border: entry.kind === 'response' ? '1px solid rgba(52,211,153,0.3)' : '1px solid rgba(167,139,250,0.3)',
+              borderRadius: 3,
+              padding: '1px 4px',
+              letterSpacing: 0.4,
+              flexShrink: 0,
+            }}>
+              {entry.kind === 'response' ? 'RESPONSE' : 'PROMPT'}
+            </span>
+          )}
+        </span>
+
+        {/* Timestamp */}
+        <span style={{ flexShrink: 0, fontSize: 9, color: '#444', fontFamily: 'monospace', marginTop: 2 }}>
+          {entry.timestamp.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+        </span>
+      </div>
+
+      {/* Detail */}
+      {expanded && entry.detail && (
+        <div style={{
+          marginTop: 5,
+          marginLeft: 18,
+          background: '#0e0e0e',
+          border: entry.category === 'ai' ? '1px solid rgba(167,139,250,0.2)' : '1px solid #1e1e1e',
+          borderRadius: 5,
+          overflow: 'hidden',
+        }}>
+          {entry.category === 'ai' && (
+            <div style={{
+              padding: '2px 8px',
+              borderBottom: entry.kind === 'response' ? '1px solid rgba(52,211,153,0.15)' : '1px solid rgba(167,139,250,0.15)',
+              fontSize: 9,
+              fontWeight: 700,
+              fontFamily: 'monospace',
+              color: entry.kind === 'response' ? '#34d399' : '#a78bfa',
+              letterSpacing: 0.8,
+              background: entry.kind === 'response' ? 'rgba(52,211,153,0.06)' : 'rgba(167,139,250,0.06)',
+            }}>
+              {entry.kind === 'response' ? 'RESPONSE' : 'PROMPT'}
+            </div>
+          )}
+          <div style={{
+            padding: '5px 8px',
+            fontSize: 10,
+            color: '#888',
+            fontFamily: 'monospace',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            lineHeight: 1.6,
+          }}>
+            {entry.detail}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InlineLogPanel() {
+  const entries   = useLogStore(s => s.entries)
+  const clearLogs = useLogStore(s => s.clearLogs)
+
+  const [category, setCategory] = useState<LogCategory | 'all'>('all')
+  const [level,    setLevel]    = useState<LogLevel | 'all'>('all')
+
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [entries.length])
+
+  const filtered = entries.filter(e => {
+    const catOk = category === 'all' || e.category === category
+    const lvlOk = level    === 'all' || e.level    === level
+    return catOk && lvlOk
+  })
+
+  const errorCount = entries.filter(e => e.level === 'error').length
+  const warnCount  = entries.filter(e => e.level === 'warn').length
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#111' }}>
+
+      {/* Badges + clear button */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '6px 10px',
+        borderBottom: '1px solid #1a1a1a',
+        flexShrink: 0,
+      }}>
+        {errorCount > 0 && (
+          <span style={{
+            fontSize: 10, padding: '1px 6px', borderRadius: 10,
+            background: 'rgba(248,113,113,0.15)',
+            border: '1px solid rgba(248,113,113,0.3)',
+            color: '#f87171', fontWeight: 600,
+          }}>{errorCount} 错误</span>
+        )}
+        {warnCount > 0 && (
+          <span style={{
+            fontSize: 10, padding: '1px 6px', borderRadius: 10,
+            background: 'rgba(251,191,36,0.12)',
+            border: '1px solid rgba(251,191,36,0.25)',
+            color: '#fbbf24', fontWeight: 600,
+          }}>{warnCount} 警告</span>
+        )}
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={clearLogs}
+          title="清空日志"
+          style={{
+            width: 24, height: 24, background: 'none', border: 'none',
+            cursor: 'pointer', borderRadius: 5,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#555',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#222'; e.currentTarget.style.color = '#aaa' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#555' }}
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+
+      {/* Category tabs */}
+      <div style={{
+        display: 'flex', gap: 0,
+        padding: '0 6px',
+        borderBottom: '1px solid #1a1a1a',
+        flexShrink: 0,
+        overflowX: 'auto',
+      }}>
+        {LOG_CATEGORY_TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setCategory(tab.id)}
+            style={{
+              padding: '5px 8px 7px',
+              background: 'none', border: 'none',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: category === tab.id ? 600 : 400,
+              color: category === tab.id ? '#d0d0d0' : '#555',
+              borderBottom: category === tab.id ? '2px solid #60a5fa' : '2px solid transparent',
+              transition: 'color 0.12s',
+              whiteSpace: 'nowrap',
+            }}
+            onMouseEnter={e => { if (category !== tab.id) e.currentTarget.style.color = '#999' }}
+            onMouseLeave={e => { if (category !== tab.id) e.currentTarget.style.color = '#555' }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Level filter chips */}
+      <div style={{
+        display: 'flex', gap: 3,
+        padding: '5px 8px',
+        borderBottom: '1px solid #1a1a1a',
+        flexShrink: 0,
+        overflowX: 'auto',
+      }}>
+        {LOG_LEVEL_FILTERS.map(lf => (
+          <button
+            key={lf.id}
+            onClick={() => setLevel(lf.id)}
+            style={{
+              padding: '2px 8px',
+              borderRadius: 10,
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 10,
+              fontWeight: 500,
+              background: level === lf.id ? '#2a2a2a' : 'transparent',
+              color: level === lf.id
+                ? (lf.id === 'all' ? '#d0d0d0' : logLevelColor(lf.id as LogLevel))
+                : '#555',
+              transition: 'background 0.12s, color 0.12s',
+              whiteSpace: 'nowrap',
+            }}
+            onMouseEnter={e => { if (level !== lf.id) e.currentTarget.style.background = '#1e1e1e' }}
+            onMouseLeave={e => { if (level !== lf.id) e.currentTarget.style.background = 'transparent' }}
+          >
+            {lf.label}
+          </button>
+        ))}
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 10, color: '#333', alignSelf: 'center' }}>{filtered.length} 条</span>
+      </div>
+
+      {/* Log entries */}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {filtered.length === 0 ? (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            height: '100%', color: '#333', fontSize: 12,
+          }}>
+            暂无日志
+          </div>
+        ) : (
+          filtered.map(entry => (
+            <InlineLogRow key={entry.id} entry={entry} />
+          ))
+        )}
+        <div ref={bottomRef} />
       </div>
     </div>
   )
