@@ -105,8 +105,26 @@ export const projectsApi = {
 }
 
 // ─── AI Assistant ────────────────────────────────────────────────────────────
+
+/** A canvas action returned by the AI in structured output mode */
+export interface CanvasAction {
+  type: 'ADD_NODE' | 'ADD_WORKFLOW' | 'DELETE_SELECTED' | 'CLEAR_CANVAS'
+  // ADD_NODE
+  nodeType?: string
+  nodeLabel?: string
+  // ADD_WORKFLOW
+  nodes?: Array<{ nodeType: string; nodeLabel: string }>
+  edges?: Array<{ fromIdx: number; toIdx: number }>
+}
+
+export interface AIChatResponse {
+  reply: string
+  suggestions: string[]
+  actions: CanvasAction[]
+}
+
 export const aiApi = {
-  chat: (payload: { message: string; context_type?: string; context_data?: object; history?: { role: string; content: string }[] }) =>
+  chat: (payload: { message: string; context_type?: string; context_data?: object; history?: { role: string; content: string }[] }): Promise<AIChatResponse> =>
     apiClient.post('/ai/assistant', { message: payload.message, context_type: payload.context_type, context_data: payload.context_data, history: payload.history }).then(r => r.data),
 
   optimizePrompt: (prompt: string, style?: string, context?: string) =>

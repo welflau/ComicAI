@@ -28,6 +28,7 @@ class AssistantResponse(BaseModel):
     reply: str
     suggestions: list[str] = []
     generated_content: Optional[dict] = None
+    actions: list[dict] = []  # canvas actions returned by AI
 
 
 PLATFORM_SYSTEM_PROMPT = """
@@ -171,6 +172,74 @@ PLATFORM_SYSTEM_PROMPT = """
 - **中文优先** - 响应用户使用的语言
 
 **你是创意助手，不是强制执行者。鼓励用户探索、尝试、犯错和学习。每个创作者的风格和需求都不同，灵活地提供建议而不是单一答案。**
+
+---
+
+## 结构化输出（重要）
+
+**你必须始终以 JSON 格式回复**，格式如下：
+
+```json
+{
+  "reply": "给用户看的自然语言回复（支持 Markdown）",
+  "actions": []
+}
+```
+
+### actions 字段说明
+
+当用户请求操作画布时，在 `actions` 数组中填入操作指令。否则 `actions` 留空数组 `[]`。
+
+支持的 action 类型：
+
+#### ADD_NODE — 添加单个节点
+```json
+{
+  "type": "ADD_NODE",
+  "nodeType": "libtv_image",
+  "nodeLabel": "图片节点"
+}
+```
+nodeType 必须是以下 6 种之一：`libtv_script` | `libtv_image` | `libtv_video` | `auto_edit` | `tts` | `libtv_script_gen`
+
+#### ADD_WORKFLOW — 添加多节点工作流（自动连线）
+```json
+{
+  "type": "ADD_WORKFLOW",
+  "nodes": [
+    { "nodeType": "libtv_script", "nodeLabel": "文本" },
+    { "nodeType": "libtv_image", "nodeLabel": "图片" },
+    { "nodeType": "libtv_video", "nodeLabel": "视频" }
+  ],
+  "edges": [
+    { "fromIdx": 0, "toIdx": 1 },
+    { "fromIdx": 1, "toIdx": 2 }
+  ]
+}
+```
+
+#### DELETE_SELECTED — 删除当前选中的节点
+```json
+{ "type": "DELETE_SELECTED" }
+```
+
+#### CLEAR_CANVAS — 清空整个画布
+```json
+{ "type": "CLEAR_CANVAS" }
+```
+
+### 判断何时输出 actions
+
+- 用户说"帮我创建/添加 X 节点" → ADD_NODE
+- 用户说"帮我搭建 X 工作流" 或 "X 怎么做，帮我建一下" → ADD_WORKFLOW（建议完整链路）
+- 用户说"删除选中节点"/"删掉这个" → DELETE_SELECTED
+- 用户说"清空画布" → CLEAR_CANVAS
+- 纯咨询、建议、问答类问题 → actions 为 `[]`
+
+### 注意事项
+- reply 字段**必须是自然语言**，不要在 reply 里包含 JSON
+- 整个响应**只能是合法 JSON**，不要有 JSON 之外的任何文字
+- 不要用 ```json 代码块包裹，直接输出裸 JSON
 """.strip()
 
 
@@ -199,7 +268,6 @@ async def ai_assistant(
     # Build context
     user_message = request.message
     if request.context_data:
-        import json
         user_message = f"上下文数据：\n{json.dumps(request.context_data, ensure_ascii=False)}\n\n用户问题：{request.message}"
 
     # Build messages list with history
@@ -253,14 +321,29 @@ async def ai_assistant(
                 data = res.json()
             reply = data["content"][0]["text"]
 
+        # Parse structured JSON response { reply, actions }
+        import re
+        actions: list[dict] = []
+        try:
+            clean = reply.strip()
+            # Strip markdown code fences if present
+            if clean.startswith("```"):
+                clean = re.sub(r'^```[a-zA-Z]*\n?', '', clean)
+                clean = re.sub(r'\n?```$', '', clean.strip()).strip()
+            parsed = json.loads(clean)
+            reply = parsed.get("reply", reply)
+            actions = parsed.get("actions", [])
+        except (json.JSONDecodeError, AttributeError):
+            # AI didn't return valid JSON — treat full text as reply, no actions
+            pass
+
         # Extract suggestions if present
         suggestions = []
         if "建议" in reply or "suggestion" in reply.lower():
-            import re
             matches = re.findall(r'[•·-]\s*(.+)', reply)
             suggestions = matches[:5]
 
-        return AssistantResponse(reply=reply, suggestions=suggestions)
+        return AssistantResponse(reply=reply, suggestions=suggestions, actions=actions)
 
     except Exception as e:
         logger.error(f"AI assistant error: {e}")

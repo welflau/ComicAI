@@ -5,9 +5,10 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useProjectStore } from '@/stores/projectStore'
 import { aiApi, projectsApi } from '@/api'
+import type { CanvasAction } from '@/api'
 import { addLog, useLogStore } from '@/stores/logStore'
 import type { LogLevel, LogCategory, LogEntry } from '@/stores/logStore'
-import type { NodeData, GenerationTask } from '@/types'
+import type { NodeData, EdgeData, GenerationTask } from '@/types'
 import toast from 'react-hot-toast'
 
 // ── Properties Panel ──────────────────────────────────────────────────────────
@@ -207,14 +208,46 @@ interface IntentContext {
 }
 
 interface IntentResult {
-  intent: 'ADD_NODE' | 'DELETE_SELECTED' | 'CLEAR_CANVAS' | 'LIST_NODES'
+  intent: 'ADD_NODE' | 'ADD_WORKFLOW' | 'DELETE_SELECTED' | 'CLEAR_CANVAS' | 'LIST_NODES'
   nodeType?: string
   nodeLabel?: string
+  // ADD_WORKFLOW: multiple nodes + edges to create
+  workflowNodes?: Array<{ type: string; label: string }>
+  workflowEdges?: Array<{ fromIdx: number; toIdx: number }>  // index into workflowNodes
   confirmText: string
 }
 
 function matchIntent(text: string, context: IntentContext): IntentResult | null {
   const t = text.trim()
+
+  // ── ADD_WORKFLOW: 组合工作流（多节点+连线）──────────────────────────────────
+
+  // 图片反推提示词 / img2prompt 组合：图片节点 → 文本节点
+  if (/图片.*提示词|img2prompt|反推提示词|图生提示词|图片.*生成.*提示词|由图片.*提示/.test(t)) {
+    return {
+      intent: 'ADD_WORKFLOW',
+      workflowNodes: [
+        { type: 'libtv_image', label: '图片' },
+        { type: 'libtv_script', label: '文本' },
+      ],
+      workflowEdges: [{ fromIdx: 0, toIdx: 1 }],
+      confirmText: '添加「图片 → 文本」组合（图片反推提示词）',
+    }
+  }
+
+  // 图文转视频 组合：文本 → 图片 → 视频
+  if (/图文.*视频|文.*图.*视频|剧本.*视频|文字.*生成.*视频/.test(t)) {
+    return {
+      intent: 'ADD_WORKFLOW',
+      workflowNodes: [
+        { type: 'libtv_script', label: '文本' },
+        { type: 'libtv_image', label: '图片' },
+        { type: 'libtv_video', label: '视频' },
+      ],
+      workflowEdges: [{ fromIdx: 0, toIdx: 1 }, { fromIdx: 1, toIdx: 2 }],
+      confirmText: '添加「文本 → 图片 → 视频」工作流',
+    }
+  }
 
   // ADD_NODE: 创建/添加/新建 + 节点类型关键词
   const addPattern = /(?:创建|添加|新建|加一个|加个|生成).*?([图片图像视频文本文字剧本脚本])/
@@ -294,6 +327,8 @@ interface PendingAction {
   intent: IntentResult['intent']
   nodeType?: string
   nodeLabel?: string
+  workflowNodes?: Array<{ type: string; label: string }>
+  workflowEdges?: Array<{ fromIdx: number; toIdx: number }>
   // snapshot at match time (for display only)
   previewText: string       // e.g. "添加「图片节点」"
   snapshotNodeCount: number // canvas size at match time
@@ -317,6 +352,18 @@ function getActionLines(action: PendingAction): { icon: string; text: string }[]
   switch (action.intent) {
     case 'ADD_NODE':
       return [{ icon: '+', text: `添加「${action.nodeLabel || action.nodeType}」` }]
+    case 'ADD_WORKFLOW': {
+      if (!action.workflowNodes) return [{ icon: '+', text: action.previewText }]
+      const lines: { icon: string; text: string }[] = action.workflowNodes.map(n => ({
+        icon: '+', text: `添加「${n.label}」节点`,
+      }))
+      action.workflowEdges?.forEach(({ fromIdx, toIdx }) => {
+        const from = action.workflowNodes![fromIdx].label
+        const to = action.workflowNodes![toIdx].label
+        lines.push({ icon: '→', text: `连接「${from}」→「${to}」` })
+      })
+      return lines
+    }
     case 'DELETE_SELECTED':
       return action.snapshotSelectedIds.length > 0
         ? [{ icon: '−', text: `删除选中节点（共 ${action.snapshotSelectedIds.length} 个）` }]
@@ -405,13 +452,14 @@ function ConfirmCard({
           <button
             onClick={onConfirm}
             style={{
-              flex: 1,
-              padding: '5px 0',
+              flex: 3,
+              padding: '6px 0',
               borderRadius: 6,
               border: 'none',
               cursor: 'pointer',
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: 600,
+              whiteSpace: 'nowrap',
               background: isDestructive ? 'rgba(248,113,113,0.2)' : 'rgba(99,102,241,0.25)',
               color: isDestructive ? '#fca5a5' : '#a5b4fc',
               transition: 'background 0.1s',
@@ -428,13 +476,14 @@ function ConfirmCard({
           <button
             onClick={onCancel}
             style={{
-              flex: 1,
-              padding: '5px 0',
+              flex: 2,
+              padding: '6px 0',
               borderRadius: 6,
               border: 'none',
               cursor: 'pointer',
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: 600,
+              whiteSpace: 'nowrap',
               background: 'rgba(255,255,255,0.05)',
               color: '#666',
               transition: 'background 0.1s',
@@ -453,7 +502,7 @@ function ConfirmCard({
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 function AIAssistantPanel() {
-  const { nodes, selectedNodeIds, addNode, deleteNode } = useProjectStore()
+  const { nodes, selectedNodeIds, addNode, deleteNode, addEdge } = useProjectStore()
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -497,6 +546,42 @@ function AIAssistantPanel() {
       }
       addNode(newNode)
       addLog({ level: 'info', category: 'operation', message: `AI指令：添加节点「${action.nodeLabel || action.nodeType}」` })
+    } else if (action.intent === 'ADD_WORKFLOW' && action.workflowNodes) {
+      // Create multiple nodes with horizontal layout, then connect them
+      const baseX = 80 + (currentNodes.length % 3) * 100
+      const baseY = 100 + Math.floor(currentNodes.length / 3) * 180
+      const spacing = 260
+      const createdIds: string[] = []
+
+      action.workflowNodes.forEach((n, i) => {
+        const id = `${n.type}_${Date.now() + i}`
+        createdIds.push(id)
+        const newNode: NodeData = {
+          id,
+          type: n.type as NodeData['type'],
+          label: n.label,
+          category: 'process',
+          position: { x: baseX + i * spacing, y: baseY },
+          status: 'idle',
+          config: {},
+        }
+        addNode(newNode)
+      })
+
+      // Connect edges after all nodes are added
+      setTimeout(() => {
+        action.workflowEdges?.forEach(({ fromIdx, toIdx }) => {
+          const edge: EdgeData = {
+            id: `e_${createdIds[fromIdx]}_${createdIds[toIdx]}`,
+            source: createdIds[fromIdx],
+            target: createdIds[toIdx],
+          }
+          addEdge(edge)
+        })
+      }, 50)
+
+      const labels = action.workflowNodes.map(n => `「${n.label}」`).join(' → ')
+      addLog({ level: 'info', category: 'operation', message: `AI指令：添加工作流组合 ${labels}` })
     } else if (action.intent === 'DELETE_SELECTED') {
       currentSelected.forEach(id => deleteNode(id))
       addLog({ level: 'info', category: 'operation', message: `AI指令：删除选中节点（共 ${currentSelected.length} 个）` })
@@ -510,6 +595,8 @@ function AIAssistantPanel() {
         ? { ...m, actionStatus: 'confirmed', pendingAction: undefined, isAction: true,
             content: action.intent === 'ADD_NODE'
               ? `已为你添加了「${action.nodeLabel}」`
+              : action.intent === 'ADD_WORKFLOW'
+              ? `已添加 ${action.workflowNodes?.map(n => `「${n.label}」`).join(' → ')} 并连线`
               : action.intent === 'DELETE_SELECTED'
               ? `已删除选中节点（共 ${currentSelected.length} 个）`
               : `已清空画布` }
@@ -523,6 +610,49 @@ function AIAssistantPanel() {
         ? { ...m, actionStatus: 'cancelled', pendingAction: undefined, content: '已取消操作。' }
         : m
     ))
+  }
+
+  // ── Execute AI-returned actions (from structured output) ────────────────────
+  // Converts CanvasAction[] → PendingAction (same ConfirmCard flow as hardcoded intents)
+  const buildPendingActionFromAI = (action: CanvasAction): PendingAction | null => {
+    switch (action.type) {
+      case 'ADD_NODE':
+        if (!action.nodeType) return null
+        return {
+          intent: 'ADD_NODE',
+          nodeType: action.nodeType,
+          nodeLabel: action.nodeLabel || action.nodeType,
+          previewText: `添加「${action.nodeLabel || action.nodeType}」`,
+          snapshotNodeCount: nodesRef.current.length,
+          snapshotSelectedIds: [...selectedRef.current],
+        }
+      case 'ADD_WORKFLOW':
+        if (!action.nodes || action.nodes.length === 0) return null
+        return {
+          intent: 'ADD_WORKFLOW',
+          workflowNodes: action.nodes.map(n => ({ type: n.nodeType, label: n.nodeLabel || n.nodeType })),
+          workflowEdges: action.edges?.map(e => ({ fromIdx: e.fromIdx, toIdx: e.toIdx })),
+          previewText: action.nodes.map(n => `「${n.nodeLabel || n.nodeType}」`).join(' → '),
+          snapshotNodeCount: nodesRef.current.length,
+          snapshotSelectedIds: [...selectedRef.current],
+        }
+      case 'DELETE_SELECTED':
+        return {
+          intent: 'DELETE_SELECTED',
+          previewText: `删除选中节点（共 ${selectedRef.current.length} 个）`,
+          snapshotNodeCount: nodesRef.current.length,
+          snapshotSelectedIds: [...selectedRef.current],
+        }
+      case 'CLEAR_CANVAS':
+        return {
+          intent: 'CLEAR_CANVAS',
+          previewText: `清空画布（删除全部 ${nodesRef.current.length} 个节点）`,
+          snapshotNodeCount: nodesRef.current.length,
+          snapshotSelectedIds: [...selectedRef.current],
+        }
+      default:
+        return null
+    }
   }
 
   const sendMessage = async () => {
@@ -570,6 +700,8 @@ function AIAssistantPanel() {
         intent: intentResult.intent,
         nodeType: intentResult.nodeType,
         nodeLabel: intentResult.nodeLabel,
+        workflowNodes: intentResult.workflowNodes,
+        workflowEdges: intentResult.workflowEdges,
         previewText: intentResult.confirmText,
         snapshotNodeCount: nodes.length,
         snapshotSelectedIds: [...selectedNodeIds],
@@ -597,12 +729,31 @@ function AIAssistantPanel() {
         history,
       })
       addLog({ level: 'info', category: 'ai', kind: 'response', message: '[AI助手] 收到回复', detail: res.reply })
-      setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: res.reply,
-        timestamp: new Date(),
-      }])
+
+      // Check if AI returned canvas actions
+      const aiActions = res.actions || []
+      const pendingAction = aiActions.length > 0 ? buildPendingActionFromAI(aiActions[0]) : null
+
+      if (pendingAction) {
+        // AI wants to do a canvas operation — show ConfirmCard
+        const msgId = (Date.now() + 1).toString()
+        setMessages(prev => [...prev, {
+          id: msgId,
+          role: 'assistant',
+          content: res.reply,
+          timestamp: new Date(),
+          pendingAction,
+          actionStatus: 'pending',
+        }])
+      } else {
+        // Pure reply, no canvas action
+        setMessages(prev => [...prev, {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: res.reply,
+          timestamp: new Date(),
+        }])
+      }
     } catch {
       addLog({ level: 'error', category: 'ai', message: '[AI助手] 请求失败' })
       setMessages(prev => [...prev, {
