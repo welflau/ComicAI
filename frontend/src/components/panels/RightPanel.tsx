@@ -334,11 +334,29 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   auto_edit: '智能剪辑',
 }
 
-function RunLogPanel() {
+function RunLogPanel({ onOpenLog }: { onOpenLog?: () => void }) {
   const { tasks } = useProjectStore()
 
   return (
     <div className="flex flex-col h-full">
+      {/* Header row with "详细日志" button */}
+      <div className="flex items-center justify-between px-3 pt-2 pb-1 flex-shrink-0">
+        <span className="text-[11px] text-white/30 uppercase tracking-wider">任务记录</span>
+        {onOpenLog && (
+          <button
+            onClick={onOpenLog}
+            className="text-[11px] text-white/40 hover:text-white/80 transition-colors flex items-center gap-1"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="4 17 10 11 4 5"/>
+              <line x1="12" y1="19" x2="20" y2="19"/>
+            </svg>
+            详细日志
+          </button>
+        )}
+      </div>
+
+      {/* Task list */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {tasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-white/20">
@@ -383,63 +401,16 @@ function RunLogPanel() {
 
 // ── Right Panel (main export) ──────────────────────────────────────────────────
 
-type RightTab = 'properties' | 'ai' | 'log'
-
 export default function RightPanel() {
-  const [activeTab, setActiveTab] = useState<RightTab>('properties')
-  const { selectedNodeIds, tasks } = useProjectStore()
-
-  const runningCount = tasks.filter(t => t.status === 'running' || t.status === 'pending').length
-
-  const tabs: { id: RightTab; label: string; badge?: number }[] = [
-    { id: 'properties', label: '属性' },
-    { id: 'ai', label: 'AI 助手' },
-    { id: 'log', label: '运行日志', badge: runningCount || undefined },
-  ]
-
-  // Auto-switch to log tab when a task starts running
-  const prevRunningCount = useRef(0)
-  useEffect(() => {
-    if (runningCount > prevRunningCount.current) {
-      setActiveTab('log')
-    }
-    prevRunningCount.current = runningCount
-  }, [runningCount])
-
   return (
     <div className="h-full flex flex-col bg-canvas-surface border-l border-canvas-border">
-      {/* Tabs */}
-      <div className="flex border-b border-canvas-border flex-shrink-0">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={clsx(
-              'flex-1 py-2.5 text-xs font-medium transition-colors relative',
-              activeTab === tab.id
-                ? 'text-white border-b-2 border-primary-500'
-                : 'text-white/40 hover:text-white/70'
-            )}
-          >
-            {tab.label}
-            {tab.badge ? (
-              <span className="absolute top-1.5 right-2 w-4 h-4 rounded-full bg-yellow-400 text-black text-[9px] font-bold flex items-center justify-center">
-                {tab.badge}
-              </span>
-            ) : null}
-          </button>
-        ))}
+      {/* Header */}
+      <div className="flex items-center px-3 py-2.5 border-b border-canvas-border flex-shrink-0">
+        <span className="text-xs font-medium text-white/80">AI 助手</span>
       </div>
-
-      {/* Tab content */}
+      {/* Content */}
       <div className="flex-1 overflow-hidden">
-        {activeTab === 'properties' && (
-          selectedNodeIds.length > 0
-            ? <PropertiesPanel nodeId={selectedNodeIds[0]} />
-            : <EmptyProperties />
-        )}
-        {activeTab === 'ai' && <AIAssistantPanel />}
-        {activeTab === 'log' && <RunLogPanel />}
+        <AIAssistantPanel />
       </div>
     </div>
   )

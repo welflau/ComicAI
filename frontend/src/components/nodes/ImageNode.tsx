@@ -72,7 +72,20 @@ const TOOLBAR_GROUPS: Array<{
   },
 ]
 
-function ImageEditToolbar({ visible, imageUrl }: { visible: boolean; imageUrl?: string }) {
+interface ImageEditToolbarProps {
+  visible: boolean
+  imageUrl?: string
+  onMultiAngles?: () => void
+  onLighting?: () => void
+  onCropGrid9?: () => void
+  onUpscaleHD?: () => void
+  onSplitGrid?: () => void
+  onOptimize?: () => void
+  onRegenerate?: () => void
+  onFullscreenPreview?: () => void
+}
+
+function ImageEditToolbar({ visible, imageUrl, onMultiAngles, onLighting, onCropGrid9, onUpscaleHD, onSplitGrid, onOptimize, onRegenerate, onFullscreenPreview }: ImageEditToolbarProps) {
   async function handleDownload() {
     if (!imageUrl) return
     const { resolveImageUrl } = await import('@/stores/imageStore')
@@ -120,12 +133,12 @@ function ImageEditToolbar({ visible, imageUrl }: { visible: boolean; imageUrl?: 
               key={item.label}
               className="nodrag nopan"
               onClick={() => {
-                const handlerMap: Record<string, () => Promise<void>> = {
-                  '多角度': handleMultiAngles,
-                  '打光': handleLighting,
-                  '九宫格': handleCropGrid9,
-                  'HD 高清': handleUpscaleHD,
-                  '宫格切分': handleSplitGrid,
+                const handlerMap: Record<string, (() => void) | undefined> = {
+                  '多角度':  onMultiAngles,
+                  '打光':    onLighting,
+                  '九宫格':  onCropGrid9,
+                  'HD 高清': onUpscaleHD,
+                  '宫格切分': onSplitGrid,
                 }
                 const handler = handlerMap[item.label]
                 if (handler) handler()
@@ -162,10 +175,10 @@ function ImageEditToolbar({ visible, imageUrl }: { visible: boolean; imageUrl?: 
 
       {/* Right icon buttons */}
       {[
-        { Icon: Wand2,     title: '一键优化',  onClick: handleOptimize },
-        { Icon: RefreshCw, title: '重新生成',  onClick: handleRegenerate },
-        { Icon: Download,  title: '下载',      onClick: handleDownload },
-        { Icon: Fullscreen, title: '全屏预览', onClick: handleFullscreenPreview },
+        { Icon: Wand2,      title: '一键优化',  onClick: onOptimize },
+        { Icon: RefreshCw,  title: '重新生成',  onClick: onRegenerate },
+        { Icon: Download,   title: '下载',      onClick: handleDownload },
+        { Icon: Fullscreen, title: '全屏预览',  onClick: onFullscreenPreview },
       ].map(({ Icon, title, onClick }) => (
         <button
           key={title}
@@ -1011,7 +1024,18 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
 
       {/* Edit toolbar — floats above node when selected AND has image */}
       {hasImage && (
-        <ImageEditToolbar visible={!!selected && !dragging} imageUrl={data.imageUrl} />
+        <ImageEditToolbar
+          visible={!!selected && !dragging}
+          imageUrl={data.imageUrl}
+          onMultiAngles={handleMultiAngles}
+          onLighting={handleLighting}
+          onCropGrid9={handleCropGrid9}
+          onUpscaleHD={handleUpscaleHD}
+          onSplitGrid={handleSplitGrid}
+          onOptimize={handleOptimize}
+          onRegenerate={handleRegenerate}
+          onFullscreenPreview={handleFullscreenPreview}
+        />
       )}
 
       {/* Title */}
