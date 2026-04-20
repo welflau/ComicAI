@@ -981,12 +981,10 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
         category: 'output',
         position: { x: data.position.x - offsetX, y: data.position.y },
         config: {},
-        imageSource: 'uploaded',
         imageUrl: ref,
-        initialPanelExpanded: true,
       } as NodeData)
       addEdge({ id: `e-${newId}-${data.id}`, source: newId, target: data.id })
-      requestSelectNode(newId)
+      requestSelectNode(data.id)
       addLog({
         level: 'info',
         category: 'operation',
@@ -1220,7 +1218,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
                     <span style={{ fontSize: 12, color: '#555', marginBottom: 10, display: 'block' }}>尝试：</span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                       {[
-                        { Icon: Upload, label: '图生图', onClick: handleUploadClick },
+                        { Icon: Monitor, label: '图生图', onClick: handleImg2Img },
                         { Icon: null,   label: '图片高清', hd: true, onClick: () => {} },
                       ].map(({ Icon, label, hd, onClick }) => (
                         <button
