@@ -73,11 +73,12 @@ function toRFEdge(edge: EdgeData): Edge {
 }
 
 function WorkflowCanvasInner() {
-  const storeNodes     = useProjectStore(s => s.nodes)
-  const storeEdges     = useProjectStore(s => s.edges)
-  const updateWorkflow = useProjectStore(s => s.updateWorkflow)
-  const addNode        = useProjectStore(s => s.addNode)
-  const selectNodes    = useProjectStore(s => s.selectNodes)
+  const storeNodes          = useProjectStore(s => s.nodes)
+  const storeEdges          = useProjectStore(s => s.edges)
+  const updateWorkflow      = useProjectStore(s => s.updateWorkflow)
+  const addNode             = useProjectStore(s => s.addNode)
+  const selectNodes         = useProjectStore(s => s.selectNodes)
+  const pendingSelectNodeId = useProjectStore(s => s.pendingSelectNodeId)
 
   const isEmpty = storeNodes.length === 0
 
@@ -142,13 +143,18 @@ function WorkflowCanvasInner() {
     })
   }, [storeNodes, fitView, selectNodes])
 
-  // Sync store → ReactFlow, preserving selection state
+  // Sync store → ReactFlow, preserving selection state.
+  // When pendingSelectNodeId is set, select that node in the same pass.
   useEffect(() => {
     if (storeNodes !== prevStoreNodes.current) {
       prevStoreNodes.current = storeNodes
+      const pending = useProjectStore.getState().pendingSelectNodeId
       setNodes(nds => {
         const selMap = new Map(nds.map(n => [n.id, n.selected]))
-        return rfNodes.map(n => ({ ...n, selected: selMap.get(n.id) ?? false }))
+        return rfNodes.map(n => ({
+          ...n,
+          selected: pending ? n.id === pending : (selMap.get(n.id) ?? false),
+        }))
       })
     }
   }, [storeNodes, rfNodes])
@@ -159,6 +165,14 @@ function WorkflowCanvasInner() {
       setEdges(rfEdges)
     }
   }, [storeEdges, rfEdges])
+
+  // Handle requestSelectNode: pan to the node and clear the pending flag
+  useEffect(() => {
+    if (!pendingSelectNodeId) return
+    // Pan to the node (selection already applied in the nodes sync effect above)
+    fitView({ nodes: [{ id: pendingSelectNodeId }], padding: 0.35, duration: 350 })
+    useProjectStore.setState({ pendingSelectNodeId: null })
+  }, [pendingSelectNodeId, fitView])
 
   const saveWorkflow = useCallback((ns: Node[], es: Edge[]) => {
     updateWorkflow(

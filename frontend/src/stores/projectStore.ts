@@ -26,6 +26,8 @@ interface ProjectState {
   nodes: NodeData[]
   edges: EdgeData[]
   selectedNodeIds: string[]
+  /** When set, WorkflowCanvas will select+focus this node on next render and clear this field */
+  pendingSelectNodeId: string | null
   activeView: 'workflow' | 'storyboard' | 'timeline' | 'preview'
 
   // Collaboration
@@ -41,6 +43,8 @@ interface ProjectState {
   updateWorkflow: (nodes: NodeData[], edges: EdgeData[]) => Promise<void>
   setActiveView: (view: 'workflow' | 'storyboard' | 'timeline' | 'preview') => void
   selectNodes: (ids: string[]) => void
+  /** Request WorkflowCanvas to select + pan to a specific node */
+  requestSelectNode: (id: string) => void
   addNode: (node: NodeData) => void
   addEdge: (edge: EdgeData) => void
   updateNode: (id: string, updates: Partial<NodeData>) => void
@@ -70,6 +74,7 @@ export const useProjectStore = create<ProjectState>()(
     nodes: [],
     edges: [],
     selectedNodeIds: [],
+    pendingSelectNodeId: null,
     activeView: 'workflow',
     collabUsers: [],
     wsConnected: false,
@@ -190,6 +195,7 @@ export const useProjectStore = create<ProjectState>()(
 
     setActiveView: (view) => set({ activeView: view }),
     selectNodes: (ids) => set({ selectedNodeIds: ids }),
+    requestSelectNode: (id) => set({ pendingSelectNodeId: id, selectedNodeIds: [id] }),
 
     addNode: (node) => {
       set((state) => ({ nodes: [...state.nodes, node] }))

@@ -76,6 +76,7 @@ const TOOLBAR_GROUPS: Array<{
 interface ImageEditToolbarProps {
   visible: boolean
   imageUrl?: string
+  onImg2Img?: () => void
   onMultiAngles?: () => void
   onLighting?: () => void
   onCropGrid9?: () => void
@@ -86,7 +87,7 @@ interface ImageEditToolbarProps {
   onFullscreenPreview?: () => void
 }
 
-function ImageEditToolbar({ visible, imageUrl, onMultiAngles, onLighting, onCropGrid9, onUpscaleHD, onSplitGrid, onOptimize, onRegenerate, onFullscreenPreview }: ImageEditToolbarProps) {
+function ImageEditToolbar({ visible, imageUrl, onImg2Img, onMultiAngles, onLighting, onCropGrid9, onUpscaleHD, onSplitGrid, onOptimize, onRegenerate, onFullscreenPreview }: ImageEditToolbarProps) {
   async function handleDownload() {
     if (!imageUrl) return
     const { resolveImageUrl } = await import('@/stores/imageStore')
@@ -123,6 +124,27 @@ function ImageEditToolbar({ visible, imageUrl, onMultiAngles, onLighting, onCrop
         transition: 'opacity 150ms ease',
       }}
     >
+      {/* 图生图 button */}
+      <button
+        className="nodrag nopan"
+        onClick={onImg2Img}
+        title="图生图"
+        style={{
+          display: 'flex', alignItems: 'center', gap: 4,
+          background: 'none', border: 'none', cursor: 'pointer',
+          color: '#bbb', fontSize: 13, padding: '2px 6px', borderRadius: 6,
+          transition: 'color 0.12s', fontFamily: 'inherit',
+        }}
+        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#bbb' }}
+      >
+        <Monitor size={13} />
+        图生图
+      </button>
+
+      {/* Separator */}
+      <span style={{ width: 1, height: 14, background: '#2e2e2e', margin: '0 6px' }} />
+
       {/* Left groups */}
       {TOOLBAR_GROUPS.map((group, gi) => (
         <span key={gi} style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
@@ -523,8 +545,12 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   // Resolved display URL (blob URL from IndexedDB or plain URL)
   const [displayUrl,    setDisplayUrl]    = useState<string | null>(null)
   const prevImageUrlRef = useRef<string | undefined>(data.imageUrl)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const updateNode     = useProjectStore(s => s.updateNode)
+  const fileInputRef    = useRef<HTMLInputElement>(null)
+  const img2imgInputRef = useRef<HTMLInputElement>(null)
+  const updateNode      = useProjectStore(s => s.updateNode)
+  const addNode         = useProjectStore(s => s.addNode)
+  const addEdge         = useProjectStore(s => s.addEdge)
+  const requestSelectNode = useProjectStore(s => s.requestSelectNode)
   const currentProject = useProjectStore(s => s.currentProject)
   const allEdges       = useProjectStore(s => s.edges)
   const allNodes       = useProjectStore(s => s.nodes)
@@ -628,6 +654,46 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   function handleUploadClick() {
     fileInputRef.current?.click()
   }
+
+  /** Open file picker for img2img — user picks a reference image */
+  function handleImg2Img() {
+    img2imgInputRef.current?.click()
+  }
+
+  /** After user picks a reference image: save it, create upstream ImageNode, connect + select */
+  const handleImg2ImgFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+
+    const projectId = currentProject?.id ?? 'local'
+    const ref = await saveImage(projectId, file)
+
+    // Place the new node to the LEFT of this node
+    const offsetX = (data.renderedW ?? NODE_W) + 80
+    const newId = `libtv_image_${Date.now()}`
+    addNode({
+      id: newId,
+      type: 'libtv_image' as NodeData['type'],
+      label: '图片',
+      category: 'output',
+      position: { x: data.position.x - offsetX, y: data.position.y },
+      config: {},
+      imageSource: 'uploaded',
+      imageUrl: ref,
+      initialPanelExpanded: true,
+    } as NodeData)
+    addEdge({ id: `e-${newId}-${data.id}`, source: newId, target: data.id })
+    // Select the new node and pan to it
+    requestSelectNode(newId)
+
+    addLog({
+      level: 'info',
+      category: 'operation',
+      message: '图生图：已创建参考图片节点',
+      detail: `源节点: ${data.id} | 新节点: ${newId}`,
+    })
+  }, [currentProject, data.id, data.position, data.renderedW, addNode, addEdge, requestSelectNode])
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || generating) return
@@ -998,6 +1064,15 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
         onChange={handleFileChange}
       />
 
+      {/* Hidden file input for img2img reference image */}
+      <input
+        ref={img2imgInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handleImg2ImgFileChange}
+      />
+
       {/* Upload button — floats above node when selected AND no image */}
       {showSelected && !hasImageData && (
         <div style={{
@@ -1030,6 +1105,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
         <ImageEditToolbar
           visible={showSelected}
           imageUrl={data.imageUrl}
+          onImg2Img={handleImg2Img}
           onMultiAngles={handleMultiAngles}
           onLighting={handleLighting}
           onCropGrid9={handleCropGrid9}
