@@ -1128,7 +1128,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
               </div>
             ) : (
               <>
-                {/* Mountain placeholder icon — taller when quick-actions are hidden to keep node size consistent */}
+                {/* Mountain placeholder icon */}
                 <div
                   style={{
                     height: data.initialPanelExpanded ? PLACEHOLDER_H + 122 : PLACEHOLDER_H,
@@ -1144,8 +1144,8 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
                   </svg>
                 </div>
 
-                {/* Quick actions — only when no edges connected and no image content */}
-                {!hasImage && !hasAnyEdge && (
+                {/* Quick actions — hidden when selected and has a prompt */}
+                {!hasImage && !hasAnyEdge && !(selected && prompt.trim()) && (
                   <div style={{ padding: '14px 16px 16px' }}>
                     <span style={{ fontSize: 12, color: '#555', marginBottom: 10, display: 'block' }}>尝试：</span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

@@ -10,7 +10,8 @@ import { addLog, useLogStore } from '@/stores/logStore'
 import type { LogLevel, LogCategory, LogEntry } from '@/stores/logStore'
 import type { NodeData, EdgeData, GenerationTask } from '@/types'
 import toast from 'react-hot-toast'
-import { focusCanvasNode } from '@/stores/viewportCenter'
+import { focusCanvasNode, getViewportCenter } from '@/stores/viewportCenter'
+import { resolveImageToDataUrl } from '@/stores/imageStore'
 
 // ── Properties Panel ──────────────────────────────────────────────────────────
 
@@ -212,6 +213,7 @@ interface IntentResult {
   intent: 'ADD_NODE' | 'ADD_WORKFLOW' | 'DELETE_SELECTED' | 'CLEAR_CANVAS' | 'LIST_NODES'
   nodeType?: string
   nodeLabel?: string
+  nodePrompt?: string  // extracted description/prompt from user message
   // ADD_WORKFLOW: multiple nodes + edges to create
   workflowNodes?: Array<{ type: string; label: string }>
   workflowEdges?: Array<{ fromIdx: number; toIdx: number }>  // index into workflowNodes
@@ -220,6 +222,22 @@ interface IntentResult {
 
 function matchIntent(text: string, context: IntentContext): IntentResult | null {
   const t = text.trim()
+
+  // Helper: extract a content description after common action verbs and node-type keywords
+  // e.g. "创建一个图片节点，生成猪八戒" → "生成猪八戒"
+  //      "帮我加个图片，内容是沙漠日落" → "沙漠日落"
+  const extractPrompt = (raw: string): string | undefined => {
+    // Strip action prefix and node-type keyword, keep the rest as prompt
+    const stripped = raw
+      .replace(/^(帮我|请|我要|我想|能不能|可以|麻烦|帮|给我)?/, '')
+      .replace(/(?:创建|添加|新建|加一个|加个|生成|制作|做)/, '')
+      .replace(/一个|个|一张|张|一段|段/, '')
+      .replace(/(?:图片|图像|视频|文本|文字|剧本|脚本)(?:节点)?/, '')
+      .replace(/^[\s，,、：:的]+/, '')
+      .trim()
+    // Only use as prompt if has meaningful content (>= 2 chars, not just punctuation)
+    return stripped.length >= 2 ? stripped : undefined
+  }
 
   // ── ADD_WORKFLOW: 组合工作流（多节点+连线）──────────────────────────────────
 
@@ -259,11 +277,15 @@ function matchIntent(text: string, context: IntentContext): IntentResult | null 
     for (const [kw, nodeType] of Object.entries(NODE_KEYWORDS)) {
       if (keyword === kw || t.includes(kw)) {
         const label = NODE_TYPE_DISPLAY[nodeType] || nodeType
+        const nodePrompt = extractPrompt(t)
         return {
           intent: 'ADD_NODE',
           nodeType,
           nodeLabel: label,
-          confirmText: `已为你在画布中添加了「${label}」`,
+          nodePrompt,
+          confirmText: nodePrompt
+            ? `已为你添加了「${label}」，提示词：${nodePrompt}`
+            : `已为你在画布中添加了「${label}」`,
         }
       }
     }
@@ -273,11 +295,15 @@ function matchIntent(text: string, context: IntentContext): IntentResult | null 
   for (const [kw, nodeType] of Object.entries(NODE_KEYWORDS)) {
     if ((t.includes('创建') || t.includes('添加') || t.includes('新建') || t.includes('加一个') || t.includes('加个')) && t.includes(kw)) {
       const label = NODE_TYPE_DISPLAY[nodeType] || nodeType
+      const nodePrompt = extractPrompt(t)
       return {
         intent: 'ADD_NODE',
         nodeType,
         nodeLabel: label,
-        confirmText: `已为你在画布中添加了「${label}」`,
+        nodePrompt,
+        confirmText: nodePrompt
+          ? `已为你添加了「${label}」，提示词：${nodePrompt}`
+          : `已为你在画布中添加了「${label}」`,
       }
     }
   }
@@ -328,6 +354,7 @@ interface PendingAction {
   intent: IntentResult['intent']
   nodeType?: string
   nodeLabel?: string
+  nodePrompt?: string  // pre-filled prompt for image/video nodes
   workflowNodes?: Array<{ type: string; label: string }>
   workflowEdges?: Array<{ fromIdx: number; toIdx: number }>
   // snapshot at match time (for display only)
@@ -345,6 +372,9 @@ interface ChatMessage {
   // Confirmation flow
   pendingAction?: PendingAction
   actionStatus?: 'pending' | 'confirmed' | 'cancelled'
+  // Quick-reply suggestion (e.g. "直接说「帮我建一下」")
+  suggestionText?: string
+  suggestionStatus?: 'pending' | 'accepted' | 'dismissed'
 }
 
 // ── Action preview lines per intent ──────────────────────────────────────────
@@ -500,6 +530,97 @@ function ConfirmCard({
   )
 }
 
+// ── Suggestion detection helper ───────────────────────────────────────────────
+
+function extractSuggestion(reply: string): string | null {
+  // Only trigger if the reply ends with an invitation/question in the last ~120 chars
+  const tail = reply.slice(-120)
+  const looksLikeInvitation = /[？?]|直接说|你可以说|试试|帮我/.test(tail)
+  if (!looksLikeInvitation) return null
+
+  // Extract all 「quoted」 texts
+  const matches = [...reply.matchAll(/「([^」]+)」/g)]
+  if (matches.length === 0) return null
+
+  // Return the last quoted string (usually the suggestion phrase)
+  return matches[matches.length - 1][1]
+}
+
+// ── Quick-reply suggestion card ────────────────────────────────────────────────
+
+function SuggestionCard({
+  text,
+  onAccept,
+  onDismiss,
+}: {
+  text: string
+  onAccept: () => void
+  onDismiss: () => void
+}) {
+  return (
+    <div style={{
+      marginTop: 8,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      flexWrap: 'wrap',
+    }}>
+      <button
+        onClick={onAccept}
+        style={{
+          padding: '5px 12px',
+          borderRadius: 20,
+          border: '1px solid rgba(99,102,241,0.35)',
+          background: 'rgba(99,102,241,0.12)',
+          color: '#a5b4fc',
+          fontSize: 12,
+          cursor: 'pointer',
+          fontWeight: 500,
+          transition: 'background 0.12s, border-color 0.12s',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 5,
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.background = 'rgba(99,102,241,0.25)'
+          e.currentTarget.style.borderColor = 'rgba(99,102,241,0.55)'
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.background = 'rgba(99,102,241,0.12)'
+          e.currentTarget.style.borderColor = 'rgba(99,102,241,0.35)'
+        }}
+      >
+        <span style={{ fontSize: 11, lineHeight: 1 }}>↩</span>
+        {text}
+      </button>
+      <button
+        onClick={onDismiss}
+        title="关闭"
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: '50%',
+          border: 'none',
+          background: 'none',
+          color: '#444',
+          cursor: 'pointer',
+          fontSize: 12,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'color 0.12s',
+          padding: 0,
+          lineHeight: 1,
+        }}
+        onMouseEnter={e => { e.currentTarget.style.color = '#888' }}
+        onMouseLeave={e => { e.currentTarget.style.color = '#444' }}
+      >
+        ✕
+      </button>
+    </div>
+  )
+}
+
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 function AIAssistantPanel() {
@@ -562,25 +683,45 @@ function AIAssistantPanel() {
     const currentSelected = selectedRef.current
 
     if (action.intent === 'ADD_NODE' && action.nodeType) {
+      const center = getViewportCenter()
+      const newNodeId = `${action.nodeType}_${Date.now()}`
       const newNode: NodeData = {
-        id: `${action.nodeType}_${Date.now()}`,
+        id: newNodeId,
         type: action.nodeType as NodeData['type'],
         label: action.nodeLabel || action.nodeType,
         category: 'process',
         position: {
-          x: 100 + (currentNodes.length % 5) * 220,
-          y: 100 + Math.floor(currentNodes.length / 5) * 160,
+          x: center.x - 110 + (Math.random() - 0.5) * 40,
+          y: center.y - 80 + (Math.random() - 0.5) * 40,
         },
         status: 'idle',
         config: {},
+        // Pre-fill prompt if extracted from user message
+        ...(action.nodePrompt ? {
+          imagePrompt: action.nodePrompt,
+          initialPanelExpanded: true,
+        } : {}),
       }
       addNode(newNode)
+      // If there's exactly one selected node, auto-connect it to the new node
+      if (currentSelected.length === 1) {
+        setTimeout(() => {
+          const edge: EdgeData = {
+            id: `e_${currentSelected[0]}_${newNodeId}`,
+            source: currentSelected[0],
+            target: newNodeId,
+          }
+          addEdge(edge)
+        }, 50)
+      }
+      setTimeout(() => focusCanvasNode(newNodeId), 100)
       addLog({ level: 'info', category: 'operation', message: `AI指令：添加节点「${action.nodeLabel || action.nodeType}」` })
     } else if (action.intent === 'ADD_WORKFLOW' && action.workflowNodes) {
-      // Create multiple nodes with horizontal layout, then connect them
-      const baseX = 80 + (currentNodes.length % 3) * 100
-      const baseY = 100 + Math.floor(currentNodes.length / 3) * 180
-      const spacing = 260
+      // Create multiple nodes centered on viewport, connected horizontally
+      const center = getViewportCenter()
+      const totalWidth = (action.workflowNodes.length - 1) * 260
+      const baseX = center.x - totalWidth / 2
+      const baseY = center.y - 40
       const createdIds: string[] = []
 
       action.workflowNodes.forEach((n, i) => {
@@ -591,14 +732,14 @@ function AIAssistantPanel() {
           type: n.type as NodeData['type'],
           label: n.label,
           category: 'process',
-          position: { x: baseX + i * spacing, y: baseY },
+          position: { x: baseX + i * 260, y: baseY },
           status: 'idle',
           config: {},
         }
         addNode(newNode)
       })
 
-      // Connect edges after all nodes are added
+      // Connect edges after all nodes are added, then focus first node
       setTimeout(() => {
         action.workflowEdges?.forEach(({ fromIdx, toIdx }) => {
           const edge: EdgeData = {
@@ -608,7 +749,8 @@ function AIAssistantPanel() {
           }
           addEdge(edge)
         })
-      }, 50)
+        if (createdIds.length > 0) focusCanvasNode(createdIds[0])
+      }, 100)
 
       const labels = action.workflowNodes.map(n => `「${n.label}」`).join(' → ')
       addLog({ level: 'info', category: 'operation', message: `AI指令：添加工作流组合 ${labels}` })
@@ -652,6 +794,7 @@ function AIAssistantPanel() {
           intent: 'ADD_NODE',
           nodeType: action.nodeType,
           nodeLabel: action.nodeLabel || action.nodeType,
+          nodePrompt: action.nodePrompt,
           previewText: `添加「${action.nodeLabel || action.nodeType}」`,
           snapshotNodeCount: nodesRef.current.length,
           snapshotSelectedIds: [...selectedRef.current],
@@ -685,8 +828,7 @@ function AIAssistantPanel() {
     }
   }
 
-  const sendMessage = async () => {
-    const text = input.trim()
+  const sendMessageWithText = async (text: string) => {
     if (!text || isLoading) return
 
     const userMsg: ChatMessage = {
@@ -696,7 +838,6 @@ function AIAssistantPanel() {
       timestamp: new Date(),
     }
     setMessages(prev => [...prev, userMsg])
-    setInput('')
 
     // ── Intent matching ──
     const intentResult = matchIntent(text, { nodes, selectedNodeIds })
@@ -730,6 +871,7 @@ function AIAssistantPanel() {
         intent: intentResult.intent,
         nodeType: intentResult.nodeType,
         nodeLabel: intentResult.nodeLabel,
+        nodePrompt: intentResult.nodePrompt,
         workflowNodes: intentResult.workflowNodes,
         workflowEdges: intentResult.workflowEdges,
         previewText: intentResult.confirmText,
@@ -767,17 +909,44 @@ function AIAssistantPanel() {
             : {},
         })),
       }
+
+      // Resolve selected ImageNode's image for vision — pick any selected libtv_image with imageUrl
+      let imageDataUrl: string | null = null
+      const selectedNodes = nodesRef.current.filter(n => selectedRef.current.includes(n.id))
+      const selectedImageNode = selectedNodes.find(
+        n => n.type === 'libtv_image' && !!n.imageUrl && n.imageUrl !== 'default://placeholder'
+      )
+      if (!selectedImageNode) {
+        // Fallback: if no selected image node, try the first image node in the canvas
+        // only when user's message seems to be about an image
+        const anyImageNode = nodesRef.current.find(
+          n => n.type === 'libtv_image' && !!n.imageUrl && n.imageUrl !== 'default://placeholder'
+        )
+        if (anyImageNode?.imageUrl && /图片|图像|分析|看|识别|理解|describe|analyze|what.*image|image.*what/i.test(text)) {
+          imageDataUrl = await resolveImageToDataUrl(anyImageNode.imageUrl)
+        }
+      } else if (selectedImageNode.imageUrl) {
+        imageDataUrl = await resolveImageToDataUrl(selectedImageNode.imageUrl)
+      }
+
+      if (imageDataUrl) {
+        addLog({ level: 'info', category: 'ai', message: '[AI助手] 已附加图片到消息' })
+      }
+
       const res = await aiApi.chat({
         message: text,
         context_type: 'general',
         context_data: canvasContext,
         history,
+        image_data_url: imageDataUrl,
       })
       addLog({ level: 'info', category: 'ai', kind: 'response', message: '[AI助手] 收到回复', detail: res.reply })
 
       // Check if AI returned canvas actions
       const aiActions = res.actions || []
       const pendingAction = aiActions.length > 0 ? buildPendingActionFromAI(aiActions[0]) : null
+
+      const suggestionText = extractSuggestion(res.reply)
 
       if (pendingAction) {
         // AI wants to do a canvas operation — show ConfirmCard
@@ -789,6 +958,7 @@ function AIAssistantPanel() {
           timestamp: new Date(),
           pendingAction,
           actionStatus: 'pending',
+          ...(suggestionText ? { suggestionText, suggestionStatus: 'pending' as const } : {}),
         }])
       } else {
         // Pure reply, no canvas action
@@ -797,6 +967,7 @@ function AIAssistantPanel() {
           role: 'assistant',
           content: res.reply,
           timestamp: new Date(),
+          ...(suggestionText ? { suggestionText, suggestionStatus: 'pending' as const } : {}),
         }])
       }
     } catch {
@@ -810,6 +981,26 @@ function AIAssistantPanel() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const sendMessage = () => {
+    const text = input.trim()
+    if (!text) return
+    setInput('')
+    sendMessageWithText(text)
+  }
+
+  const acceptSuggestion = (msgId: string, suggestionText: string) => {
+    setMessages(prev => prev.map(m =>
+      m.id === msgId ? { ...m, suggestionStatus: 'accepted' } : m
+    ))
+    sendMessageWithText(suggestionText)
+  }
+
+  const dismissSuggestion = (msgId: string) => {
+    setMessages(prev => prev.map(m =>
+      m.id === msgId ? { ...m, suggestionStatus: 'dismissed' } : m
+    ))
   }
 
   return (
@@ -938,6 +1129,15 @@ function AIAssistantPanel() {
                   <span>✕</span>
                   <span>已取消</span>
                 </div>
+              )}
+
+              {/* Quick-reply suggestion card */}
+              {msg.role === 'assistant' && msg.suggestionText && msg.suggestionStatus === 'pending' && (
+                <SuggestionCard
+                  text={msg.suggestionText}
+                  onAccept={() => acceptSuggestion(msg.id, msg.suggestionText!)}
+                  onDismiss={() => dismissSuggestion(msg.id)}
+                />
               )}
             </div>
           </div>

@@ -63,7 +63,10 @@ export const useLogStore = create<LogState>()(
       name: 'comicai-logs',
       // 最多保留 500 条，避免 localStorage 无限膨胀
       partialize: (state) => ({
-        entries: state.entries.slice(-500),
+        // AI prompt/response 条目仅在当前会话有意义，不持久化到 localStorage
+        entries: state.entries
+          .filter(e => !(e.category === 'ai' && (e.kind === 'prompt' || e.kind === 'response')))
+          .slice(-500),
       }),
       // timestamp 序列化为字符串，反序列化时还原成 Date 对象
       storage: {

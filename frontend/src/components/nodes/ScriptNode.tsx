@@ -638,6 +638,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
     // Give shimmer a moment to appear, then start streaming
     // Also resolve the source image to a data URL (for AI vision) during this delay
     const imageRefSnapshot = sourceImageRef
+    addLog({ level: 'debug', category: 'ai', message: `[ScriptNode] 生成启动时图片引用`, detail: `imageRefSnapshot: ${imageRefSnapshot ?? '无'} | sourceImageRef state: ${sourceImageRef ?? '无'}` })
     setTimeout(async () => {
       if (ctrl.signal.aborted) return
       setShimmer(false)
@@ -648,6 +649,8 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         imageDataUrl = await resolveImageToDataUrl(imageRefSnapshot)
         if (imageDataUrl) {
           addLog({ level: 'info', category: 'ai', message: '已附加上游图片', detail: imageRefSnapshot })
+        } else {
+          addLog({ level: 'warn', category: 'ai', message: '[ScriptNode] 图片引用解析失败(返回null)', detail: `ref: ${imageRefSnapshot}` })
         }
       }
 
