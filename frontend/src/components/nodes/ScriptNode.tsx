@@ -15,6 +15,7 @@ import NodeAddMenu from './shared/NodeAddMenu'
 import { streamAI } from '@/api'
 import { addLog } from '@/stores/logStore'
 import { resolveImageUrl, resolveImageToDataUrl, DEFAULT_IMAGE_URL } from '@/stores/imageStore'
+import placeholderImageUrl from '@/assets/placeholder-image.webp'
 
 export interface ScriptNodeData {
   id: string
@@ -506,6 +507,8 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const [isHovered, setIsHovered] = useState(false)
   const [menuOpen, setMenuOpen]         = useState(false)
   const [targetMenuOpen, setTargetMenuOpen] = useState(false)
+  const [isImg2PromptMode, setIsImg2PromptMode] = useState(false)
+  const [warningMsg, setWarningMsg]     = useState('')
 
   const taRef    = useRef<HTMLTextAreaElement>(null)
   const editTaRef = useRef<HTMLTextAreaElement>(null)   // textarea for content edit mode
@@ -622,10 +625,6 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
       : userPrompt
 
     addLog({ level: 'info', category: 'ai', message: `开始生成脚本`, detail: userPrompt })
-    if (sourceTextContent) {
-      addLog({ level: 'info', category: 'ai', message: '已附加上游文本', detail: sourceTextContent.slice(0, 80) + (sourceTextContent.length > 80 ? '…' : '') })
-    }
-    addLog({ level: 'info', category: 'operation', message: `脚本生成: 开始`, detail: `节点ID: ${data.id}` })
 
     // Simulate progress ticking up to ~85% during shimmer/stream, then jump to 100 on done
     let progressVal = 0
@@ -637,8 +636,37 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
 
     // Give shimmer a moment to appear, then start streaming
     // Also resolve the source image to a data URL (for AI vision) during this delay
+    // Compute real image ref (exclude placeholder/default URLs)
     const imageRefSnapshot = sourceImageRef
-    addLog({ level: 'debug', category: 'ai', message: `[ScriptNode] 生成启动时图片引用`, detail: `imageRefSnapshot: ${imageRefSnapshot ?? '无'} | sourceImageRef state: ${sourceImageRef ?? '无'}` })
+      // Fallback: if sourceImageRef is still empty (e.g. effect hasn't run yet),
+      // read imageUrl directly from allNodes at call time
+      ?? (() => {
+        const incomingEdges = allEdges.filter(e => e.target === data.id)
+        return incomingEdges
+          .map(e => allNodes.find(n => n.id === e.source))
+          .filter((n): n is NonNullable<typeof n> => !!n)
+          .filter(n => n.type === 'libtv_image' && !!n.imageUrl)
+          .map(n => n.imageUrl as string)
+          .find(u => u && u !== 'placeholder' && !u.startsWith('default://'))
+      })()
+
+    // If in img2prompt mode but upstream ImageNode has no real image yet, abort and warn
+    if (isImg2PromptMode && !imageRefSnapshot) {
+      const hasUpstreamImageNode = allEdges.filter(e => e.target === data.id)
+        .map(e => allNodes.find(n => n.id === e.source))
+        .some(n => n?.type === 'libtv_image')
+      if (hasUpstreamImageNode) {
+        clearInterval(progressInterval)
+        setMode('idle')
+        setGenProgress(0)
+        setShimmer(false)
+        addLog({ level: 'warn', category: 'ai', message: '图片反推：请先在图片节点上传图片' })
+        // Show a brief warning message in the node
+        setWarningMsg('⚠️ 请先在左侧图片节点上传图片，再点击生成。')
+        setTimeout(() => setWarningMsg(''), 3000)
+        return
+      }
+    }
     setTimeout(async () => {
       if (ctrl.signal.aborted) return
       setShimmer(false)
@@ -678,6 +706,10 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         prompt: finalPrompt,
         imageDataUrl,
         contextType: 'script',
+        // img2prompt: bypass PLATFORM_BASE_PROMPT canvas context so AI outputs plain text, not JSON
+        systemOverride: isImg2PromptMode
+          ? '你是专业的图像描述师。根据提供的图片，直接输出中文图像提示词，包括：主体描述、环境背景、光影效果、镜头语言、风格关键词。直接输出文本，不使用JSON格式，不要解释，不要前言。'
+          : undefined,
         signal: ctrl.signal,
         onChunk: c => setStream(prev => prev + c),
         onDone: (stats) => {
@@ -689,6 +721,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
             return prev
           })
           setMode('content')
+          setIsImg2PromptMode(false)
           const detail = stats
             ? `生成 ${stats.chars} 字符，耗时 ${(stats.elapsed / 1000).toFixed(1)}s`
             : undefined
@@ -704,7 +737,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         runMock()
       })
     }, 400)
-  }, [prompt, data.id, sourceImageRef, sourceTextContent, updateNode])
+  }, [prompt, data.id, sourceImageRef, sourceTextContent, updateNode, allEdges, allNodes, isImg2PromptMode])
 
   const stopGenerate = useCallback(() => {
     abortRef.current?.abort()
@@ -756,15 +789,16 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         position: { x: data.position.x - 480, y: data.position.y },
         config: {},
         imageSource: 'uploaded',
-        imageUrl: DEFAULT_IMAGE_URL,
+        imageUrl: placeholderImageUrl,
       } as NodeData)
       addEdge({ id: `e-${imgNodeId}-${data.id}`, source: imgNodeId, target: data.id })
-      setPrompt('根据图片生成结构化中文提示词，包括主体描述、环境、光影、镜头语言、风格关键词。')
+      setPrompt('根据图片描述主体、环境、光影、镜头语言、风格关键词。')
+      setIsImg2PromptMode(true)
       addLog({ level: 'info', category: 'operation', message: `添加图片节点（图片反推提示词）`, detail: `目标节点ID: ${data.id}` })
       return
     }
     startGenerate()
-  }, [startGenerate, addNode, addEdge, setPrompt, data.id, data.position])
+  }, [startGenerate, addNode, addEdge, setPrompt, data.id, data.position, setIsImg2PromptMode])
 
   return (
     <div
@@ -837,6 +871,15 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
 
           <CollapsibleSection expanded={isExpanded}>
             <ZoomInvariantPanel naturalWidth={NODE_W}>
+              {warningMsg && (
+                <div style={{
+                  padding: '6px 10px', marginBottom: 6,
+                  background: 'rgba(255,180,0,0.12)', border: '1px solid rgba(255,180,0,0.3)',
+                  borderRadius: 7, fontSize: 12, color: '#ffc107', lineHeight: 1.5,
+                }}>
+                  {warningMsg}
+                </div>
+              )}
               <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} sourceThumbnailUrl={thumbnailUrl} />
             </ZoomInvariantPanel>
           </CollapsibleSection>
