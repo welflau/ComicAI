@@ -546,7 +546,8 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const [displayUrl,    setDisplayUrl]    = useState<string | null>(null)
   const prevImageUrlRef = useRef<string | undefined>(data.imageUrl)
   const fileInputRef    = useRef<HTMLInputElement>(null)
-  const img2imgInputRef = useRef<HTMLInputElement>(null)
+  /** 'upload' = replace current image, 'img2img' = create upstream node */
+  const fileInputModeRef = useRef<'upload' | 'img2img'>('upload')
   const updateNode      = useProjectStore(s => s.updateNode)
   const addNode         = useProjectStore(s => s.addNode)
   const addEdge         = useProjectStore(s => s.addEdge)
@@ -652,48 +653,17 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const handleY    = TITLE_H + imageAreaH / 2
 
   function handleUploadClick() {
+    fileInputModeRef.current = 'upload'
     fileInputRef.current?.click()
   }
 
   /** Open file picker for img2img — user picks a reference image */
   function handleImg2Img() {
-    img2imgInputRef.current?.click()
+    fileInputModeRef.current = 'img2img'
+    fileInputRef.current?.click()
   }
 
-  /** After user picks a reference image: save it, create upstream ImageNode, connect + select */
-  const handleImg2ImgFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    e.target.value = ''
-
-    const projectId = currentProject?.id ?? 'local'
-    const ref = await saveImage(projectId, file)
-
-    // Place the new node to the LEFT of this node
-    const offsetX = (data.renderedW ?? NODE_W) + 80
-    const newId = `libtv_image_${Date.now()}`
-    addNode({
-      id: newId,
-      type: 'libtv_image' as NodeData['type'],
-      label: '图片',
-      category: 'output',
-      position: { x: data.position.x - offsetX, y: data.position.y },
-      config: {},
-      imageSource: 'uploaded',
-      imageUrl: ref,
-      initialPanelExpanded: true,
-    } as NodeData)
-    addEdge({ id: `e-${newId}-${data.id}`, source: newId, target: data.id })
-    // Select the new node and pan to it
-    requestSelectNode(newId)
-
-    addLog({
-      level: 'info',
-      category: 'operation',
-      message: '图生图：已创建参考图片节点',
-      detail: `源节点: ${data.id} | 新节点: ${newId}`,
-    })
-  }, [currentProject, data.id, data.position, data.renderedW, addNode, addEdge, requestSelectNode])
+  /** After user picks a reference image: handled inside handleFileChange (mode='img2img') */
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim() || generating) return
@@ -994,21 +964,51 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    setImgRenderedH(null)
-    setImgRenderedW(null)
-    setWidthReady(false)
-    setImgBroken(false)
     e.target.value = ''
 
-    addLog({
-      level: 'info',
-      category: 'operation',
-      message: `上传图片: ${nodeLabel}`,
-      detail: `节点ID: ${data.id} | 文件: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`,
-    })
-    const projectId = currentProject?.id ?? 'local'
-    const ref = await saveImage(projectId, file)
-    updateNode(data.id, { imageUrl: ref, imageSource: 'uploaded' })
+    const mode = fileInputModeRef.current
+
+    if (mode === 'img2img') {
+      // Create upstream reference ImageNode with the selected image
+      const projectId = currentProject?.id ?? 'local'
+      const ref = await saveImage(projectId, file)
+      const offsetX = (data.renderedW ?? NODE_W) + 80
+      const newId = `libtv_image_${Date.now()}`
+      addNode({
+        id: newId,
+        type: 'libtv_image' as NodeData['type'],
+        label: '图片',
+        category: 'output',
+        position: { x: data.position.x - offsetX, y: data.position.y },
+        config: {},
+        imageSource: 'uploaded',
+        imageUrl: ref,
+        initialPanelExpanded: true,
+      } as NodeData)
+      addEdge({ id: `e-${newId}-${data.id}`, source: newId, target: data.id })
+      requestSelectNode(newId)
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: '图生图：已创建参考图片节点',
+        detail: `源节点: ${data.id} | 新节点: ${newId}`,
+      })
+    } else {
+      // Normal upload: replace current image
+      setImgRenderedH(null)
+      setImgRenderedW(null)
+      setWidthReady(false)
+      setImgBroken(false)
+      addLog({
+        level: 'info',
+        category: 'operation',
+        message: `上传图片: ${nodeLabel}`,
+        detail: `节点ID: ${data.id} | 文件: ${file.name} (${(file.size / 1024).toFixed(0)} KB)`,
+      })
+      const projectId = currentProject?.id ?? 'local'
+      const ref = await saveImage(projectId, file)
+      updateNode(data.id, { imageUrl: ref, imageSource: 'uploaded' })
+    }
   }
 
   function handleImgLoad(e: React.SyntheticEvent<HTMLImageElement>) {
@@ -1055,22 +1055,13 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Hidden file input */}
+      {/* Hidden file input — shared for upload and img2img (mode set via fileInputModeRef) */}
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*"
         style={{ display: 'none' }}
         onChange={handleFileChange}
-      />
-
-      {/* Hidden file input for img2img reference image */}
-      <input
-        ref={img2imgInputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: 'none' }}
-        onChange={handleImg2ImgFileChange}
       />
 
       {/* Upload button — floats above node when selected AND no image */}
