@@ -28,7 +28,7 @@ import CanvasContextMenu from '@/components/canvas/CanvasContextMenu'
 import NodeContextMenu from '@/components/canvas/NodeContextMenu'
 import { useProjectStore } from '@/stores/projectStore'
 import { MultiSelectionToolbar } from '@/components/canvas/MultiSelectionToolbar'
-import { registerViewportCenter } from '@/stores/viewportCenter'
+import { registerViewportCenter, registerFocusNode } from '@/stores/viewportCenter'
 import type { NodeData, EdgeData } from '@/types'
 import { addLog } from '@/stores/logStore'
 
@@ -76,6 +76,7 @@ function WorkflowCanvasInner() {
   const storeEdges     = useProjectStore(s => s.edges)
   const updateWorkflow = useProjectStore(s => s.updateWorkflow)
   const addNode        = useProjectStore(s => s.addNode)
+  const selectNodes    = useProjectStore(s => s.selectNodes)
 
   const isEmpty = storeNodes.length === 0
 
@@ -125,6 +126,20 @@ function WorkflowCanvasInner() {
       }
     })
   }, [getViewport])
+
+  // Register focusNode so AI panel can pan to a specific node by id
+  useEffect(() => {
+    registerFocusNode((nodeId: string) => {
+      const target = storeNodes.find(n => n.id === nodeId)
+      if (!target) return
+      selectNodes([nodeId])
+      fitView({
+        nodes: [{ id: nodeId }],
+        padding: 0.4,
+        duration: 400,
+      })
+    })
+  }, [storeNodes, fitView, selectNodes])
 
   // Sync store → ReactFlow, preserving selection state
   useEffect(() => {

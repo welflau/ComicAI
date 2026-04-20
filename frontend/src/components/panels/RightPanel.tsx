@@ -10,6 +10,7 @@ import { addLog, useLogStore } from '@/stores/logStore'
 import type { LogLevel, LogCategory, LogEntry } from '@/stores/logStore'
 import type { NodeData, EdgeData, GenerationTask } from '@/types'
 import toast from 'react-hot-toast'
+import { focusCanvasNode } from '@/stores/viewportCenter'
 
 // ── Properties Panel ──────────────────────────────────────────────────────────
 
@@ -502,16 +503,27 @@ function ConfirmCard({
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 function AIAssistantPanel() {
-  const { nodes, selectedNodeIds, addNode, deleteNode, addEdge } = useProjectStore()
+  const { nodes, selectedNodeIds, addNode, deleteNode, addEdge, currentProject } = useProjectStore()
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: '0',
-      role: 'assistant',
-      content: '你好！我是 ComicFlow AI 助手。我可以帮你优化剧本、设计角色、生成提示词，或直接操作画布（例如：「创建一个图片节点」）。',
-      timestamp: new Date(),
-    }
-  ])
+  const STORAGE_KEY = `ai_chat_messages_${currentProject?.id ?? 'default'}`
+
+  const WELCOME_MSG: ChatMessage = {
+    id: '0',
+    role: 'assistant',
+    content: '你好！我是 ComicFlow AI 助手。我可以帮你优化剧本、设计角色、生成提示词，或直接操作画布（例如：「创建一个图片节点」）。',
+    timestamp: new Date(),
+  }
+
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved) as ChatMessage[]
+        return parsed.map(m => ({ ...m, timestamp: new Date(m.timestamp) }))
+      }
+    } catch {}
+    return [WELCOME_MSG]
+  })
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -521,6 +533,24 @@ function AIAssistantPanel() {
   const selectedRef = useRef(selectedNodeIds)
   useEffect(() => { nodesRef.current = nodes }, [nodes])
   useEffect(() => { selectedRef.current = selectedNodeIds }, [selectedNodeIds])
+
+  // Persist messages to localStorage
+  useEffect(() => {
+    try {
+      // Only save last 50 messages, strip pendingAction to keep it lightweight
+      const toSave = messages.slice(-50).map(m => ({
+        ...m,
+        pendingAction: undefined,
+        actionStatus: m.actionStatus === 'pending' ? 'cancelled' : m.actionStatus,
+      }))
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
+    } catch {}
+  }, [messages, STORAGE_KEY])
+
+  const clearMessages = () => {
+    localStorage.removeItem(STORAGE_KEY)
+    setMessages([WELCOME_MSG])
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -730,6 +760,11 @@ function AIAssistantPanel() {
           id: n.id,
           type: n.type,
           label: n.label,
+          isEmpty: !n.config || Object.keys(n.config).length === 0,
+          content: n.config ? Object.entries(n.config)
+            .filter(([, v]) => v !== null && v !== undefined && v !== '')
+            .reduce((acc, [k, v]) => ({ ...acc, [k]: typeof v === 'string' && v.length > 100 ? v.slice(0, 100) + '…' : v }), {})
+            : {},
         })),
       }
       const res = await aiApi.chat({
@@ -779,6 +814,28 @@ function AIAssistantPanel() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Chat toolbar */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+        padding: '4px 8px', borderBottom: '1px solid #1a1a1a', flexShrink: 0,
+      }}>
+        <button
+          onClick={clearMessages}
+          title="清空对话记录"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '3px 8px', borderRadius: 5, border: 'none',
+            background: 'none', cursor: 'pointer',
+            color: '#555', fontSize: 11,
+            transition: 'background 0.12s, color 0.12s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#222'; e.currentTarget.style.color = '#aaa' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#555' }}
+        >
+          <Trash2 size={11} />
+          <span>清空</span>
+        </button>
+      </div>
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.map(msg => (
@@ -805,7 +862,33 @@ function AIAssistantPanel() {
               {msg.content && (
                 msg.role === 'assistant' ? (
                   <div className="markdown-body">
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        code({ children, ...props }) {
+                          const text = String(children).trim()
+                          const isNodeId = nodesRef.current.some(n => n.id === text)
+                          if (isNodeId) {
+                            return (
+                              <code
+                                {...props}
+                                style={{ cursor: 'pointer', textDecoration: 'underline dotted', color: '#60a5fa' }}
+                                title="点击定位到该节点"
+                                onClick={() => focusCanvasNode(text)}
+                              >{children}</code>
+                            )
+                          }
+                          return <code {...props}>{children}</code>
+                        }
+                      }}
+                    >{(() => {
+                      // Pre-process: wrap bare node IDs (not already in backticks) with backticks
+                      const nodeIds = nodesRef.current.map(n => n.id)
+                      if (nodeIds.length === 0) return msg.content
+                      const escaped = nodeIds.map(id => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+                      const pattern = new RegExp(`(?<![\`\\w])(${escaped.join('|')})(?![\`\\w])`, 'g')
+                      return msg.content.replace(pattern, '`$1`')
+                    })()}</ReactMarkdown>
                   </div>
                 ) : (
                   <div style={{ whiteSpace: 'pre-line' }}>{msg.content}</div>

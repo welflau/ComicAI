@@ -240,6 +240,7 @@ nodeType 必须是以下 6 种之一：`libtv_script` | `libtv_image` | `libtv_v
 - reply 字段**必须是自然语言**，不要在 reply 里包含 JSON
 - 整个响应**只能是合法 JSON**，不要有 JSON 之外的任何文字
 - 不要用 ```json 代码块包裹，直接输出裸 JSON
+- 提及具体节点 ID 时，**用反引号包裹**，例如 `libtv_image_123456`，方便用户点击定位
 """.strip()
 
 
@@ -273,10 +274,20 @@ async def ai_assistant(
         nodes = ctx.get("nodes", [])
         selected_count = ctx.get("selectedCount", 0)
         if nodes:
-            node_list = "\n".join(f"  - [{n.get('type','')}] {n.get('label', n.get('id',''))}" for n in nodes)
+            node_lines = []
+            for n in nodes:
+                line = f"  - [{n.get('type','')}] {n.get('label', n.get('id',''))}  id={n.get('id','')}"
+                content = n.get('content', {})
+                if content:
+                    content_str = "，".join(f"{k}={v}" for k, v in content.items())
+                    line += f"  内容：{content_str}"
+                elif n.get('isEmpty', True):
+                    line += "  (空节点)"
+                node_lines.append(line)
+            node_list = "\n".join(node_lines)
             canvas_desc = f"当前画布共 {node_count} 个节点，选中 {selected_count} 个：\n{node_list}"
         else:
-            canvas_desc = f"当前画布为空（0个节点）"
+            canvas_desc = "当前画布为空（0个节点）"
         user_message = f"【画布状态】{canvas_desc}\n\n【用户消息】{request.message}"
 
     # Build messages list with history
