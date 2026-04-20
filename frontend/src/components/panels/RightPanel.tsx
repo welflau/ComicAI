@@ -723,9 +723,19 @@ function AIAssistantPanel() {
     addLog({ level: 'info', category: 'ai', kind: 'prompt', message: '[AI助手] 发送消息', detail: text })
     try {
       const history = messages.slice(-8).map(m => ({ role: m.role, content: m.content }))
+      const canvasContext = {
+        nodeCount: nodesRef.current.length,
+        selectedCount: selectedRef.current.length,
+        nodes: nodesRef.current.map(n => ({
+          id: n.id,
+          type: n.type,
+          label: n.label,
+        })),
+      }
       const res = await aiApi.chat({
         message: text,
         context_type: 'general',
+        context_data: canvasContext,
         history,
       })
       addLog({ level: 'info', category: 'ai', kind: 'response', message: '[AI助手] 收到回复', detail: res.reply })

@@ -268,7 +268,16 @@ async def ai_assistant(
     # Build context
     user_message = request.message
     if request.context_data:
-        user_message = f"上下文数据：\n{json.dumps(request.context_data, ensure_ascii=False)}\n\n用户问题：{request.message}"
+        ctx = request.context_data
+        node_count = ctx.get("nodeCount", 0)
+        nodes = ctx.get("nodes", [])
+        selected_count = ctx.get("selectedCount", 0)
+        if nodes:
+            node_list = "\n".join(f"  - [{n.get('type','')}] {n.get('label', n.get('id',''))}" for n in nodes)
+            canvas_desc = f"当前画布共 {node_count} 个节点，选中 {selected_count} 个：\n{node_list}"
+        else:
+            canvas_desc = f"当前画布为空（0个节点）"
+        user_message = f"【画布状态】{canvas_desc}\n\n【用户消息】{request.message}"
 
     # Build messages list with history
     history_messages = []
