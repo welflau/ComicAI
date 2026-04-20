@@ -10,6 +10,7 @@ import {
 import CollapsibleSection from './shared/CollapsibleSection'
 import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
 import NodeAddMenu from './shared/NodeAddMenu'
+import { useIsMultiSelected } from './shared/useIsMultiSelected'
 import { useProjectStore } from '../../stores/projectStore'
 import { saveImage, resolveImageUrl, DEFAULT_IMAGE_URL } from '../../stores/imageStore'
 import { lightaiGenerateImage, streamAI, imageToolbarApi } from '../../api'
@@ -539,6 +540,8 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const hasImageData   = !!data.imageUrl && data.imageUrl !== DEFAULT_IMAGE_URL && !imgBroken
   const isUploadedOnly = data.imageSource === 'uploaded'
   const hasAnyEdge = allEdges.some(e => e.target === data.id || e.source === data.id)
+  const isMultiSelected = useIsMultiSelected()
+  const showSelected   = !!selected && !dragging && !isMultiSelected
   const handlesVisible = isHovered || (!!selected && !dragging)
   const nodeLabel      = data.label || '图片'
 
@@ -996,7 +999,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
       />
 
       {/* Upload button — floats above node when selected AND no image */}
-      {selected && !dragging && !hasImageData && (
+      {showSelected && !hasImageData && (
         <div style={{
           position: 'absolute', top: -38, left: '50%',
           transform: 'translateX(-50%)', zIndex: 10,
@@ -1025,7 +1028,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
       {/* Edit toolbar — floats above node when selected AND has image */}
       {hasImage && (
         <ImageEditToolbar
-          visible={!!selected && !dragging}
+          visible={showSelected}
           imageUrl={data.imageUrl}
           onMultiAngles={handleMultiAngles}
           onLighting={handleLighting}
@@ -1050,13 +1053,13 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
       {/* Card */}
       <div style={{
         background: '#1a1a1a',
-        border: (selected && !dragging)
+        border: showSelected
           ? '1.5px solid #707070'
           : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #2a2a2a',
         borderRadius: 14,
         overflow: 'hidden',
         transition: 'border-color 150ms ease, box-shadow 150ms ease',
-        boxShadow: (selected && !dragging)
+        boxShadow: showSelected
           ? '0 0 0 2px rgba(255,255,255,0.04), 0 4px 20px rgba(0,0,0,0.5)'
           : '0 2px 12px rgba(0,0,0,0.4)',
       }}>
@@ -1196,7 +1199,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
 
       {/* Prompt panel — expands below when selected (both with and without image), hidden for upload-only nodes */}
       {!isUploadedOnly && (
-        <CollapsibleSection expanded={(!!selected && !dragging) || hadInitialExpand}>
+        <CollapsibleSection expanded={showSelected || hadInitialExpand}>
           <ZoomInvariantPanel naturalWidth={NODE_W} nodeWidth={nodeW}>
             <ImagePromptPanel
               value={prompt}

@@ -28,6 +28,7 @@ import CanvasContextMenu from '@/components/canvas/CanvasContextMenu'
 import NodeContextMenu from '@/components/canvas/NodeContextMenu'
 import { useProjectStore } from '@/stores/projectStore'
 import { MultiSelectionToolbar } from '@/components/canvas/MultiSelectionToolbar'
+import { SelectionBoundingBox } from '@/components/canvas/SelectionBoundingBox'
 import { registerViewportCenter, registerFocusNode } from '@/stores/viewportCenter'
 import type { NodeData, EdgeData } from '@/types'
 import { addLog } from '@/stores/logStore'
@@ -513,6 +514,9 @@ function WorkflowCanvasInner() {
           </div>
         </Panel>
       </ReactFlow>
+
+      {/* Selection bounding box — dashed rect wrapping all selected nodes */}
+      <SelectionBoundingBox selectedNodes={selectedNodes} />
 
       {selectedNodes.length > 0 && (
         <MultiSelectionToolbar

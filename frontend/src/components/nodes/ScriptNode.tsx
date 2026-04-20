@@ -12,6 +12,7 @@ import type { NodeData, EdgeData } from '@/types'
 import CollapsibleSection from './shared/CollapsibleSection'
 import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
 import NodeAddMenu from './shared/NodeAddMenu'
+import { useIsMultiSelected } from './shared/useIsMultiSelected'
 import { streamAI } from '@/api'
 import { addLog } from '@/stores/logStore'
 import { resolveImageUrl, resolveImageToDataUrl, DEFAULT_IMAGE_URL } from '@/stores/imageStore'
@@ -519,6 +520,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const updateNode = useProjectStore(s => s.updateNode)
   const allEdges = useProjectStore(s => s.edges)
   const allNodes = useProjectStore(s => s.nodes)
+  const isMultiSelected = useIsMultiSelected()
 
   // Quick actions visible when no incoming edges (text nodes are chain starters)
   const hasIncomingEdge = allEdges.some(e => e.target === data.id)
@@ -578,8 +580,11 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
     }
   }, [sourceImageRef])
 
-  // Expanded when selected (but NOT while dragging) OR in an "active" mode
-  const isExpanded = (selected && !dragging) || mode === 'write' || mode === 'generating'
+  // Expanded when selected (but NOT while dragging, NOT when multi-selecting) OR in an "active" mode
+  const isExpanded = (selected && !dragging && !isMultiSelected) || mode === 'write' || mode === 'generating'
+
+  // Individual selected styling suppressed during multi-select (bounding box takes over)
+  const showSelected = !!selected && !dragging && !isMultiSelected
 
   // Handles visible when hovered or selected (or in active modes)
   const handlesVisible = isHovered || (selected && !dragging) || mode === 'generating'
@@ -828,9 +833,9 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
         <>
           <div style={{
             background: '#1e1e1e',
-            border: (selected && !dragging) ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #2e2e2e',
+            border: showSelected ? '1.5px solid #707070' : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #2e2e2e',
             borderRadius: 14,
-            boxShadow: (selected && !dragging) ? '0 0 0 2px rgba(255,255,255,0.06)' : '0 2px 12px rgba(0,0,0,0.4)',
+            boxShadow: showSelected ? '0 0 0 2px rgba(255,255,255,0.06)' : '0 2px 12px rgba(0,0,0,0.4)',
             overflow: 'hidden',
             transition: 'border-color 150ms ease, box-shadow 150ms ease',
           }}>
@@ -897,7 +902,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
       {mode === 'write' && (
         <>
           {/* Download button — floats above when selected AND has text */}
-          {selected && !dragging && text.trim().length > 0 && (
+          {showSelected && text.trim().length > 0 && (
             <div style={{
               position: 'absolute', top: -52, left: '50%',
               transform: 'translateX(-50%)', zIndex: 10,
@@ -934,7 +939,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
               background: '#161616',
               border: focused
                 ? '1.5px solid #555'
-                : (selected && !dragging) ? '1.5px solid #484848'
+                : showSelected ? '1.5px solid #484848'
                 : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #2a2a2a',
               borderRadius: 14,
               minHeight: WRITE_CARD_MIN_H,
@@ -1189,7 +1194,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
           )}
 
           {/* Download button — floats above when selected AND has text AND not editing */}
-          {!editing && selected && !dragging && text.trim().length > 0 && (
+          {!editing && showSelected && text.trim().length > 0 && (
             <div style={{
               position: 'absolute', top: -52, left: '50%',
               transform: 'translateX(-50%)', zIndex: 10,
@@ -1229,7 +1234,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
               background: '#1a1a1a',
               border: editing
                 ? '1.5px solid #555'
-                : (selected && !dragging) ? '1.5px solid #707070'
+                : showSelected ? '1.5px solid #707070'
                 : isHovered ? '1.5px solid #3a3a3a' : '1.5px solid #333',
               borderRadius: 14,
               minHeight: CONTENT_CARD_MIN_H,
