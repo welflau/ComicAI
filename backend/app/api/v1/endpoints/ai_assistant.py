@@ -31,7 +31,7 @@ class AssistantResponse(BaseModel):
     actions: list[dict] = []  # canvas actions returned by AI
 
 
-PLATFORM_SYSTEM_PROMPT = """
+PLATFORM_BASE_PROMPT = """
 # ComicFlow AI 智能助手 System Prompt
 
 你是 ComicFlow Canvas 平台的智能创作助手。ComicFlow 是一个革命性的 AI 漫剧创作平台，集成了无限智能画布、节点工作流编辑器和全链路 AI 自动化能力。
@@ -172,6 +172,10 @@ PLATFORM_SYSTEM_PROMPT = """
 - **中文优先** - 响应用户使用的语言
 
 **你是创意助手，不是强制执行者。鼓励用户探索、尝试、犯错和学习。每个创作者的风格和需求都不同，灵活地提供建议而不是单一答案。**
+""".strip()
+
+# Full system prompt for AI Assistant chat (adds JSON output requirement)
+_JSON_OUTPUT_SECTION = """
 
 ---
 
@@ -242,6 +246,9 @@ nodeType 必须是以下 6 种之一：`libtv_script` | `libtv_image` | `libtv_v
 - 不要用 ```json 代码块包裹，直接输出裸 JSON
 - 提及具体节点 ID 时，**用反引号包裹**，例如 `libtv_image_123456`，方便用户点击定位
 """.strip()
+
+# Combine for the AI chat assistant (JSON output required)
+PLATFORM_SYSTEM_PROMPT = PLATFORM_BASE_PROMPT + "\n\n" + _JSON_OUTPUT_SECTION
 
 
 SYSTEM_PROMPTS = {
@@ -418,19 +425,19 @@ class StreamRequest(BaseModel):
 
 STREAM_SYSTEM_PROMPTS = {
     "script": (
-        PLATFORM_SYSTEM_PROMPT + "\n\n## 当前任务：脚本生成\n"
+        PLATFORM_BASE_PROMPT + "\n\n## 当前任务：脚本生成\n"
         "根据用户的要求，直接输出完整的故事脚本内容。"
         "不需要解释，不需要前言，直接用中文写出脚本正文。"
         "文笔流畅，富有画面感，场景描写细腻。"
     ),
     "storyboard": (
-        PLATFORM_SYSTEM_PROMPT + "\n\n## 当前任务：分镜生成\n"
+        PLATFORM_BASE_PROMPT + "\n\n## 当前任务：分镜生成\n"
         "根据提供的剧本或描述，直接输出分镜脚本。"
         "格式：按镜头编号，每个镜头包含景别、画面描述、对话/旁白（如有）。"
         "直接输出内容，不需要额外解释。"
     ),
     "general": (
-        PLATFORM_SYSTEM_PROMPT + "\n\n直接根据用户要求输出内容。"
+        PLATFORM_BASE_PROMPT + "\n\n直接根据用户要求输出内容。"
     ),
 }
 
