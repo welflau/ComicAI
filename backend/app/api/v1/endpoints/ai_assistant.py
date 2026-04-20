@@ -22,6 +22,7 @@ class AssistantRequest(BaseModel):
     context_data: Optional[dict] = None
     project_id: Optional[str] = None
     history: Optional[list[dict]] = None  # [{"role": "user"|"assistant", "content": "..."}]
+    image_data_url: Optional[str] = None  # base64 data URL or http(s) URL for vision
 
 
 class AssistantResponse(BaseModel):
@@ -263,12 +264,21 @@ SYSTEM_PROMPTS = {
 @router.post("/assistant", response_model=AssistantResponse)
 async def ai_assistant(
     request: AssistantRequest,
+    http_request: Request,
     current_user: User = Depends(get_current_user)
 ):
-    if not settings.OPENAI_API_KEY and not settings.ANTHROPIC_API_KEY:
+    # Read client-supplied keys from headers (frontend settings)
+    client_anthropic_key  = http_request.headers.get("X-Anthropic-Key") or None
+    client_anthropic_base = http_request.headers.get("X-Anthropic-Base") or None
+    client_openai_key     = http_request.headers.get("X-OpenAI-Key") or None
+
+    eff_anthropic_key = client_anthropic_key or settings.ANTHROPIC_API_KEY
+    eff_openai_key    = client_openai_key    or settings.OPENAI_API_KEY
+
+    if not eff_anthropic_key and not eff_openai_key:
         raise HTTPException(
             status_code=503,
-            detail="AI service not configured. Please set OPENAI_API_KEY or ANTHROPIC_API_KEY."
+            detail="AI service not configured. Please set API keys in system settings."
         )
 
     system_prompt = SYSTEM_PROMPTS.get(request.context_type, SYSTEM_PROMPTS["general"])
@@ -307,9 +317,9 @@ async def ai_assistant(
                 history_messages.append({"role": role, "content": content})
 
     try:
-        if settings.OPENAI_API_KEY:
+        if eff_openai_key:
             import openai
-            client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+            client = openai.AsyncOpenAI(api_key=eff_openai_key)
             messages = [{"role": "system", "content": system_prompt}]
             messages.extend(history_messages)
             messages.append({"role": "user", "content": user_message})
@@ -324,18 +334,36 @@ async def ai_assistant(
         else:
             # Use httpx directly to support custom proxy endpoints
             import httpx
-            api_key = settings.ANTHROPIC_API_KEY
-            base_url = (settings.ANTHROPIC_BASE_URL or "https://api.anthropic.com").rstrip("/")
-            # If base_url already ends with /anthropic, append /v1/messages directly
+            base_url = (client_anthropic_base or settings.ANTHROPIC_BASE_URL or "https://api.anthropic.com").rstrip("/")
+            if base_url and not base_url.startswith("http"):
+                base_url = "https://api.anthropic.com"
             endpoint = f"{base_url}/v1/messages"
             headers = {
-                "x-api-key": api_key,
+                "x-api-key": eff_anthropic_key,
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             }
             # Build Anthropic messages (no system role in messages array)
             anthropic_messages = list(history_messages)
-            anthropic_messages.append({"role": "user", "content": user_message})
+            # Build user content: image + text if image provided
+            if request.image_data_url:
+                img_url = request.image_data_url
+                if img_url.startswith("data:"):
+                    media_type = img_url.split(";")[0].split(":")[1]
+                    image_data = img_url.split(",")[1]
+                    image_block = {
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": media_type, "data": image_data},
+                    }
+                else:
+                    image_block = {
+                        "type": "image",
+                        "source": {"type": "url", "url": img_url},
+                    }
+                user_content = [image_block, {"type": "text", "text": user_message}]
+            else:
+                user_content = user_message
+            anthropic_messages.append({"role": "user", "content": user_content})
             payload = {
                 "model": settings.ANTHROPIC_MODEL,
                 "system": system_prompt,

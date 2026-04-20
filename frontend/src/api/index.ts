@@ -124,8 +124,22 @@ export interface AIChatResponse {
 }
 
 export const aiApi = {
-  chat: (payload: { message: string; context_type?: string; context_data?: object; history?: { role: string; content: string }[] }): Promise<AIChatResponse> =>
-    apiClient.post('/ai/assistant', { message: payload.message, context_type: payload.context_type, context_data: payload.context_data, history: payload.history }).then(r => r.data),
+  chat: async (payload: { message: string; context_type?: string; context_data?: object; history?: { role: string; content: string }[]; image_data_url?: string | null }): Promise<AIChatResponse> => {
+    const { getServiceSettings } = await import('@/stores/settingsStore')
+    const anthropicSettings = getServiceSettings('anthropic')
+    const openaiSettings    = getServiceSettings('openai')
+    const extraHeaders: Record<string, string> = {}
+    if (anthropicSettings.apiKey) extraHeaders['X-Anthropic-Key'] = anthropicSettings.apiKey
+    if (anthropicSettings.baseUrl?.startsWith('http')) extraHeaders['X-Anthropic-Base'] = anthropicSettings.baseUrl
+    if (openaiSettings.apiKey) extraHeaders['X-OpenAI-Key'] = openaiSettings.apiKey
+    return apiClient.post('/ai/assistant', {
+      message: payload.message,
+      context_type: payload.context_type,
+      context_data: payload.context_data,
+      history: payload.history,
+      image_data_url: payload.image_data_url || undefined,
+    }, { headers: extraHeaders }).then(r => r.data)
+  },
 
   optimizePrompt: (prompt: string, style?: string, context?: string) =>
     apiClient.post('/ai/optimize-prompt', { prompt, style, context }).then(r => r.data),
