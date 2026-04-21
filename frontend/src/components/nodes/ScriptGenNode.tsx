@@ -1354,7 +1354,12 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
     return texts.join('\n\n').trim()
   })
 
-  const [mode, setMode]           = useState<Mode>(data.initialMode ?? 'idle')
+  // Restore persisted state from node config (survives page refresh)
+  const persistedShots      = (data.config?.shots      ?? []) as ShotRow[]
+  const persistedSceneTitle = (data.config?.sceneTitle ?? '') as string
+  const persistedMode       = (data.config?.mode       ?? data.initialMode ?? 'idle') as Mode
+
+  const [mode, setMode]           = useState<Mode>(persistedMode)
   const [text, setText]           = useState(data.content ?? '')
   const [streamText, setStream]   = useState('')
   const [showShimmer, setShimmer] = useState(false)
@@ -1363,8 +1368,8 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
   const [showQuickActions, setShowQuickActions] = useState(true)
   const [menuOpen, setMenuOpen]         = useState(false)
   const [targetMenuOpen, setTargetMenuOpen] = useState(false)
-  const [shots, setShots]         = useState<ShotRow[]>([])
-  const [sceneTitle, setSceneTitle] = useState('')
+  const [shots, setShots]         = useState<ShotRow[]>(persistedShots)
+  const [sceneTitle, setSceneTitle] = useState(persistedSceneTitle)
   const [warning, setWarning]     = useState<string | null>(null)
   const [viewMode, setViewMode]   = useState<ViewMode>('creative')
   const [showFullscreen, setShowFullscreen] = useState(false)
@@ -1374,8 +1379,21 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
   const streamRef  = useRef<string>('')   // authoritative accumulator — immune to StrictMode double-invoke
   const nodeLabel  = data.title || data.label || '分镜脚本'
 
-  const addNode = useProjectStore(s => s.addNode)
-  const addEdge = useProjectStore(s => s.addEdge)
+  const addNode    = useProjectStore(s => s.addNode)
+  const addEdge    = useProjectStore(s => s.addEdge)
+  const updateNode = useProjectStore(s => s.updateNode)
+
+  // Helper: persist shots + mode into node config so refresh restores them
+  const persistResult = useCallback((savedShots: ShotRow[], savedTitle: string) => {
+    updateNode(data.id, {
+      config: {
+        ...data.config,
+        shots: savedShots,
+        sceneTitle: savedTitle,
+        mode: 'content',
+      },
+    })
+  }, [data.id, data.config, updateNode])
 
   const showWarning = useCallback((msg: string) => {
     setWarning(msg)
@@ -1464,6 +1482,7 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
         addLog({ level: 'warn', category: 'ai', message: '分镜生成: 使用模拟内容', detail: `原因: ${reason}` })
         setShots(MOCK_SHOTS)
         setSceneTitle(MOCK_SCENE_TITLE)
+        persistResult(MOCK_SHOTS, MOCK_SCENE_TITLE)
         setMode('content')
       }
 
@@ -1484,6 +1503,7 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
             setText(raw)
             // Use nodeLabel as scene title (no mock title)
             setSceneTitle(nodeLabel)
+            persistResult(parsed, nodeLabel)
             addLog({
               level: 'info', category: 'ai', kind: 'response',
               message: `分镜脚本生成完成 — ${parsed.length} 个镜头，${stats ? `${stats.chars} 字符，耗时 ${(stats.elapsed / 1000).toFixed(1)}s` : ''}`,
@@ -1497,6 +1517,7 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
             })
             setShots(MOCK_SHOTS)
             setSceneTitle(MOCK_SCENE_TITLE)
+            persistResult(MOCK_SHOTS, MOCK_SCENE_TITLE)
           }
           setMode('content')
         },
@@ -1510,7 +1531,7 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
         runMock(String(err))
       })
     }, 400)
-  }, [prompt, upstreamContent, showWarning])
+  }, [prompt, upstreamContent, showWarning, persistResult, nodeLabel])
 
   const stopGenerate = useCallback(() => {
     abortRef.current?.abort()
