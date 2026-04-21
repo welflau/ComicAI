@@ -383,7 +383,8 @@ function StoryboardTable({ shots, sceneTitle }: { shots: ShotRow[]; sceneTitle: 
 
 /* ── Fullscreen storyboard modal ─────────────────────────────── */
 
-type FullscreenTab = 'basic' | 'supplement'
+type FullscreenView = 'creative' | 'script'
+type ScriptSubTab   = 'basic' | 'supplement'
 
 function StoryboardFullscreenModal({
   shots, sceneTitle, onClose,
@@ -392,7 +393,10 @@ function StoryboardFullscreenModal({
   sceneTitle: string
   onClose: () => void
 }) {
-  const [tab, setTab] = useState<FullscreenTab>('basic')
+  const [view, setView]         = useState<FullscreenView>('creative')
+  const [subTab, setSubTab]     = useState<ScriptSubTab>('basic')
+  const [viewDropOpen, setViewDropOpen] = useState(false)
+  const viewDropRef = useRef<HTMLDivElement>(null)
 
   // Close on Escape
   useEffect(() => {
@@ -400,6 +404,16 @@ function StoryboardFullscreenModal({
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [onClose])
+
+  // Close view dropdown on outside click
+  useEffect(() => {
+    if (!viewDropOpen) return
+    const handler = (e: MouseEvent) => {
+      if (viewDropRef.current && !viewDropRef.current.contains(e.target as Node)) setViewDropOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [viewDropOpen])
 
   const handleDownload = () => {
     const rows = shots.map(s =>
@@ -414,7 +428,6 @@ function StoryboardFullscreenModal({
   }
 
   const handleExport = () => {
-    // Build CSV
     const header = ['序号', '时长(s)', '画面描述', '角色', '角色描述', '景别'].join(',')
     const rows = shots.map(s =>
       [s.sequence, s.duration,
@@ -432,54 +445,66 @@ function StoryboardFullscreenModal({
     URL.revokeObjectURL(url)
   }
 
-  // ── Basic tab columns: 序号/画面描述/角色名/角色描述/场景(地点+时间+光线)/镜头(景别+运镜+时长)/分镜图/提示词/导演备注
+  /* ── Script view table columns ───────────────────────────── */
   const basicCols = [
-    { label: '序号',    width: 50  },
-    { label: '画面描述', width: 320 },
+    { label: '序号',    width: 54  },
+    { label: '画面描述', width: 300 },
     { label: '角色',    width: 90  },
-    { label: '角色描述', width: 200 },
-    { label: '场景地点', width: 120 },
-    { label: '时间',    width: 80  },
-    { label: '光线',    width: 80  },
-    { label: '景别',    width: 80  },
+    { label: '角色描述', width: 190 },
+    { label: '场景地点', width: 110 },
+    { label: '时间',    width: 70  },
+    { label: '光线',    width: 70  },
+    { label: '景别',    width: 90  },
     { label: '运镜',    width: 80  },
-    { label: '时长(s)', width: 70  },
-    { label: '分镜图',  width: 80  },
+    { label: '时长(s)', width: 66  },
+    { label: '分镜图',  width: 72  },
   ]
-
-  // ── Supplement tab columns: 序号/提示词生成/导演备注
   const suppCols = [
-    { label: '序号',    width: 50  },
-    { label: '画面描述', width: 320 },
-    { label: '提示词生成', width: 380 },
-    { label: '导演备注', width: 300 },
+    { label: '序号',      width: 54  },
+    { label: '画面描述',   width: 300 },
+    { label: '提示词生成', width: 360 },
+    { label: '导演备注',   width: 280 },
   ]
+  const activeCols = subTab === 'basic' ? basicCols : suppCols
 
-  const totalBasicW  = basicCols.reduce((s, c) => s + c.width, 0)
-  const totalSuppW   = suppCols.reduce((s, c) => s + c.width, 0)
+  /* ── Shared cell style ───────────────────────────────────── */
+  const tdBase: React.CSSProperties = {
+    padding: '10px 12px', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top',
+  }
 
-  const tabBtn = (id: FullscreenTab, label: string) => (
+  /* ── Sub-tab button ──────────────────────────────────────── */
+  const subTabBtn = (id: ScriptSubTab, label: string) => (
     <button
       key={id}
-      onClick={() => setTab(id)}
+      onClick={() => setSubTab(id)}
       style={{
         background: 'none', border: 'none', cursor: 'pointer',
-        padding: '8px 16px', fontSize: 13, fontWeight: 500,
-        color: tab === id ? '#e0e0e0' : '#666',
-        borderBottom: tab === id ? '2px solid #3a6ff7' : '2px solid transparent',
+        padding: '0 16px', height: '100%', fontSize: 12, fontWeight: 500,
+        color: subTab === id ? '#e0e0e0' : '#555',
+        borderBottom: subTab === id ? '2px solid #3a6ff7' : '2px solid transparent',
         transition: 'color 0.15s, border-color 0.15s',
         whiteSpace: 'nowrap',
       }}
-      onMouseEnter={e => { if (tab !== id) e.currentTarget.style.color = '#999' }}
-      onMouseLeave={e => { if (tab !== id) e.currentTarget.style.color = '#666' }}
+      onMouseEnter={e => { if (subTab !== id) e.currentTarget.style.color = '#888' }}
+      onMouseLeave={e => { if (subTab !== id) e.currentTarget.style.color = '#555' }}
     >{label}</button>
   )
+
+  /* ── View label map ──────────────────────────────────────── */
+  const VIEW_LABELS: Record<FullscreenView, string> = {
+    creative: '创意视图',
+    script:   '脚本视图',
+  }
+  const VIEW_ICONS: Record<FullscreenView, React.ReactNode> = {
+    creative: <LayoutGrid size={12} />,
+    script:   <List size={12} />,
+  }
 
   const modal = (
     <div
       style={{
         position: 'fixed', inset: 0, zIndex: 99999,
-        background: 'rgba(0,0,0,0.82)',
+        background: 'rgba(0,0,0,0.88)',
         display: 'flex', alignItems: 'stretch',
         fontFamily: 'Inter, system-ui, sans-serif',
       }}
@@ -488,109 +513,265 @@ function StoryboardFullscreenModal({
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column',
         background: '#141414',
-        margin: 32,
-        borderRadius: 16,
-        border: '1px solid #2e2e2e',
-        boxShadow: '0 24px 80px rgba(0,0,0,0.8)',
+        margin: 24,
+        borderRadius: 14,
+        border: '1px solid #2a2a2a',
+        boxShadow: '0 32px 96px rgba(0,0,0,0.85)',
         overflow: 'hidden',
       }}>
 
-        {/* ── Top bar ── */}
+        {/* ── Top bar ─────────────────────────────────────── */}
         <div style={{
           display: 'flex', alignItems: 'center',
-          padding: '0 20px',
+          padding: '0 16px 0 20px',
           borderBottom: '1px solid #222',
           background: '#181818',
           flexShrink: 0,
-          gap: 8,
-          height: 52,
+          height: 50,
+          gap: 10,
         }}>
           {/* Title */}
-          <ScrollText size={15} color="#666" />
-          <span style={{ fontSize: 14, fontWeight: 600, color: '#e0e0e0', marginRight: 8 }}>
+          <ScrollText size={14} color="#555" />
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#e0e0e0' }}>
             {sceneTitle || '分镜脚本'}
           </span>
-
-          {/* Tabs */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-            {tabBtn('basic',      '分镜基础')}
-            {tabBtn('supplement', '分镜补充')}
-          </div>
 
           <div style={{ flex: 1 }} />
 
           {/* Toolbar */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              onClick={handleDownload}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: '#1e1e1e', border: '1px solid #333',
-                borderRadius: 8, cursor: 'pointer', padding: '6px 14px',
-                color: '#aaa', fontSize: 12,
-                transition: 'background 0.12s, color 0.12s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#282828'; e.currentTarget.style.color = '#e0e0e0' }}
-              onMouseLeave={e => { e.currentTarget.style.background = '#1e1e1e'; e.currentTarget.style.color = '#aaa' }}
-            >
-              <Download size={13} />
-              下载
-            </button>
-            <button
-              onClick={handleExport}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 6,
-                background: '#1e1e1e', border: '1px solid #333',
-                borderRadius: 8, cursor: 'pointer', padding: '6px 14px',
-                color: '#aaa', fontSize: 12,
-                transition: 'background 0.12s, color 0.12s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#282828'; e.currentTarget.style.color = '#e0e0e0' }}
-              onMouseLeave={e => { e.currentTarget.style.background = '#1e1e1e'; e.currentTarget.style.color = '#aaa' }}
-            >
-              <FileDown size={13} />
-              导出 CSV
-            </button>
+          <button
+            onClick={handleDownload}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: '#1e1e1e', border: '1px solid #2e2e2e',
+              borderRadius: 7, cursor: 'pointer', padding: '5px 12px',
+              color: '#888', fontSize: 12,
+              transition: 'background 0.12s, color 0.12s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#272727'; e.currentTarget.style.color = '#ccc' }}
+            onMouseLeave={e => { e.currentTarget.style.background = '#1e1e1e'; e.currentTarget.style.color = '#888' }}
+          >
+            <Download size={12} />
+            下载
+          </button>
+          <button
+            onClick={handleExport}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: '#1e1e1e', border: '1px solid #2e2e2e',
+              borderRadius: 7, cursor: 'pointer', padding: '5px 12px',
+              color: '#888', fontSize: 12,
+              transition: 'background 0.12s, color 0.12s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#272727'; e.currentTarget.style.color = '#ccc' }}
+            onMouseLeave={e => { e.currentTarget.style.background = '#1e1e1e'; e.currentTarget.style.color = '#888' }}
+          >
+            <FileDown size={12} />
+            导出 CSV
+          </button>
 
-            {/* Divider */}
-            <div style={{ width: 1, height: 20, background: '#2e2e2e', margin: '0 4px' }} />
+          <div style={{ width: 1, height: 18, background: '#2e2e2e' }} />
 
-            {/* Close */}
+          {/* View dropdown */}
+          <div ref={viewDropRef} style={{ position: 'relative' }}>
             <button
-              onClick={onClose}
+              onClick={() => setViewDropOpen(v => !v)}
               style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                width: 32, height: 32, borderRadius: 8,
-                background: 'none', border: 'none', cursor: 'pointer', color: '#666',
-                transition: 'background 0.12s, color 0.12s',
+                display: 'flex', alignItems: 'center', gap: 5,
+                background: viewDropOpen ? '#252525' : '#1e1e1e',
+                border: '1px solid #2e2e2e',
+                borderRadius: 7, cursor: 'pointer', padding: '5px 12px',
+                color: '#ccc', fontSize: 12,
+                transition: 'background 0.12s',
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#2a1a1a'; e.currentTarget.style.color = '#f87171' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#666' }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#252525' }}
+              onMouseLeave={e => { e.currentTarget.style.background = viewDropOpen ? '#252525' : '#1e1e1e' }}
             >
-              <X size={16} />
+              {VIEW_ICONS[view]}
+              <span>{VIEW_LABELS[view]}</span>
+              <ChevronDown size={11} style={{ transform: viewDropOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
             </button>
+            {viewDropOpen && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+                background: '#1a1a1a', border: '1px solid #2e2e2e',
+                borderRadius: 9, minWidth: 130,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                overflow: 'hidden', zIndex: 10, padding: '4px 0',
+              }}>
+                {(['script', 'creative'] as FullscreenView[]).map(v => (
+                  <button
+                    key={v}
+                    onClick={() => { setView(v); setViewDropOpen(false) }}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                      padding: '7px 12px', background: view === v ? '#252525' : 'none',
+                      border: 'none', cursor: 'pointer',
+                      color: view === v ? '#e0e0e0' : '#888', fontSize: 12,
+                      textAlign: 'left', transition: 'background 0.1s',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#252525' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = view === v ? '#252525' : 'none' }}
+                  >
+                    {view === v ? <Check size={11} color="#4ade80" /> : <span style={{ width: 11 }} />}
+                    {VIEW_ICONS[v]}
+                    <span>{VIEW_LABELS[v]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+
+          {/* Close */}
+          <button
+            onClick={onClose}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 30, height: 30, borderRadius: 7,
+              background: 'none', border: 'none', cursor: 'pointer', color: '#555',
+              transition: 'background 0.12s, color 0.12s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#2a1a1a'; e.currentTarget.style.color = '#f87171' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#555' }}
+          >
+            <X size={16} />
+          </button>
         </div>
 
-        {/* ── Table area ── */}
-        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', minHeight: 0 }}>
-          {tab === 'basic' ? (
+        {/* ── Script sub-tab bar (only in script view) ──────── */}
+        {view === 'script' && (
+          <div style={{
+            display: 'flex', alignItems: 'stretch',
+            height: 36, background: '#161616',
+            borderBottom: '1px solid #222',
+            padding: '0 20px', flexShrink: 0,
+          }}>
+            {subTabBtn('basic',      '分镜基础')}
+            {subTabBtn('supplement', '分镜补充')}
+          </div>
+        )}
+
+        {/* ── Content area ──────────────────────────────────── */}
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: view === 'script' ? 'auto' : 'hidden', minHeight: 0 }}>
+
+          {/* ━━ Creative grid ━━ */}
+          {view === 'creative' && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+              gap: 12,
+              padding: '20px 24px',
+            }}>
+              {shots.map(shot => (
+                <div
+                  key={shot.id}
+                  style={{
+                    background: '#191919',
+                    border: '1px solid #242424',
+                    borderRadius: 10,
+                    overflow: 'hidden',
+                    display: 'flex', flexDirection: 'column',
+                    transition: 'border-color 0.15s, box-shadow 0.15s',
+                    cursor: 'default',
+                  }}
+                  onMouseEnter={e => {
+                    const el = e.currentTarget as HTMLDivElement
+                    el.style.borderColor = '#363636'
+                    el.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5)'
+                  }}
+                  onMouseLeave={e => {
+                    const el = e.currentTarget as HTMLDivElement
+                    el.style.borderColor = '#242424'
+                    el.style.boxShadow = 'none'
+                  }}
+                >
+                  {/* Header: seq + duration */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '7px 10px 5px',
+                  }}>
+                    <span style={{
+                      width: 20, height: 20, borderRadius: 5,
+                      background: '#282828', color: '#bbb',
+                      fontSize: 10, fontWeight: 700,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    }}>{shot.sequence}</span>
+                    <span style={{ fontSize: 10, color: '#555' }}>{shot.duration}s</span>
+                  </div>
+
+                  {/* Image placeholder */}
+                  <div style={{
+                    height: 108, background: '#1d1d1d',
+                    display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center',
+                    gap: 5, borderTop: '1px solid #212121', borderBottom: '1px solid #212121',
+                    cursor: 'pointer',
+                    transition: 'background 0.12s',
+                  }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = '#222' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = '#1d1d1d' }}
+                  >
+                    <ImageIcon size={20} color="#2e2e2e" />
+                    <span style={{ fontSize: 9, color: '#333' }}>暂无图片</span>
+                  </div>
+
+                  {/* Description */}
+                  <div style={{ padding: '7px 10px 5px', fontSize: 11, color: '#aaa', lineHeight: 1.55, flex: 1 }}>
+                    {shot.description}
+                  </div>
+
+                  {/* Tags row */}
+                  <div style={{ padding: '4px 10px 8px', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {shot.shotType && (
+                      <span style={{
+                        fontSize: 9, background: '#202020', border: '1px solid #2c2c2c',
+                        borderRadius: 4, padding: '2px 6px', color: '#666',
+                        whiteSpace: 'pre', lineHeight: 1.3,
+                      }}>
+                        {shot.shotType.replace(/\n/g, ' ')}
+                      </span>
+                    )}
+                    {shot.character1 && (
+                      <span style={{
+                        fontSize: 9, background: '#1e1e2a', border: '1px solid #2a2a3a',
+                        borderRadius: 4, padding: '2px 6px', color: '#6680aa',
+                      }}>
+                        {shot.character1}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Scene footer */}
+                  <div style={{
+                    padding: '4px 10px 7px',
+                    fontSize: 9, color: '#3a3a3a',
+                    borderTop: '1px solid #1e1e1e',
+                  }}>
+                    场景 {shot.sequence}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ━━ Script table ━━ */}
+          {view === 'script' && (
             <table style={{
               borderCollapse: 'collapse',
-              minWidth: totalBasicW,
+              minWidth: activeCols.reduce((s, c) => s + c.width, 0),
               width: '100%',
               tableLayout: 'fixed',
             }}>
               <colgroup>
-                {basicCols.map((c, i) => <col key={i} style={{ width: c.width }} />)}
+                {activeCols.map((c, i) => <col key={i} style={{ width: c.width }} />)}
               </colgroup>
               <thead>
                 <tr style={{ background: '#1a1a1a', position: 'sticky', top: 0, zIndex: 1 }}>
-                  {basicCols.map(c => (
+                  {activeCols.map(c => (
                     <th key={c.label} style={{
                       padding: '10px 12px', textAlign: 'left',
                       fontSize: 11, color: '#555', fontWeight: 600,
-                      borderBottom: '1px solid #2a2a2a',
+                      borderBottom: '1px solid #252525',
                       whiteSpace: 'nowrap', letterSpacing: '0.02em',
                     }}>{c.label}</th>
                   ))}
@@ -599,171 +780,115 @@ function StoryboardFullscreenModal({
               <tbody>
                 {shots.length === 0 ? (
                   <tr>
-                    <td colSpan={basicCols.length} style={{
-                      textAlign: 'center', padding: '40px 0',
+                    <td colSpan={activeCols.length} style={{
+                      textAlign: 'center', padding: '60px 0',
                       fontSize: 13, color: '#444',
                     }}>暂无分镜数据</td>
                   </tr>
-                ) : shots.map((shot, idx) => (
-                  <tr
-                    key={shot.id}
-                    style={{ background: idx % 2 === 0 ? '#161616' : '#181818' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = '#1e2030' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = idx % 2 === 0 ? '#161616' : '#181818' }}
-                  >
-                    {/* 序号 */}
-                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#888', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        width: 22, height: 22, borderRadius: 6,
-                        background: '#252525', color: '#aaa', fontSize: 11, fontWeight: 600,
-                      }}>{shot.sequence}</span>
-                    </td>
-                    {/* 画面描述 */}
-                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#ccc', lineHeight: 1.6, borderBottom: '1px solid #1e1e1e', verticalAlign: 'top', wordBreak: 'break-all' }}>
-                      {shot.description}
-                    </td>
-                    {/* 角色 */}
-                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#aaa', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
-                      {shot.character1 || <span style={{ color: '#3a3a3a' }}>—</span>}
-                    </td>
-                    {/* 角色描述 */}
-                    <td style={{ padding: '10px 12px', fontSize: 11, color: '#777', lineHeight: 1.5, borderBottom: '1px solid #1e1e1e', verticalAlign: 'top', wordBreak: 'break-all' }}>
-                      {shot.character1Detail || <span style={{ color: '#3a3a3a' }}>—</span>}
-                    </td>
-                    {/* 场景地点 */}
-                    <td style={{ padding: '10px 12px', fontSize: 11, color: '#666', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
-                      <span style={{ color: '#3a3a3a' }}>—</span>
-                    </td>
-                    {/* 时间 */}
-                    <td style={{ padding: '10px 12px', fontSize: 11, color: '#666', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
-                      <span style={{ color: '#3a3a3a' }}>—</span>
-                    </td>
-                    {/* 光线 */}
-                    <td style={{ padding: '10px 12px', fontSize: 11, color: '#666', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
-                      <span style={{ color: '#3a3a3a' }}>—</span>
-                    </td>
-                    {/* 景别 */}
-                    <td style={{ padding: '10px 12px', fontSize: 11, color: '#888', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top', whiteSpace: 'pre-line' }}>
-                      {shot.shotType || <span style={{ color: '#3a3a3a' }}>—</span>}
-                    </td>
-                    {/* 运镜 */}
-                    <td style={{ padding: '10px 12px', fontSize: 11, color: '#666', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
-                      <span style={{ color: '#3a3a3a' }}>—</span>
-                    </td>
-                    {/* 时长 */}
-                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#888', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
-                      {shot.duration}s
-                    </td>
-                    {/* 分镜图 */}
-                    <td style={{ padding: '10px 12px', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
-                      <div style={{
-                        width: 48, height: 32, background: '#1a1a1a',
-                        border: '1px solid #2a2a2a', borderRadius: 4,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        cursor: 'pointer',
-                      }}>
-                        <ImageIcon size={14} color="#333" />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            /* ── Supplement tab ── */
-            <table style={{
-              borderCollapse: 'collapse',
-              minWidth: totalSuppW,
-              width: '100%',
-              tableLayout: 'fixed',
-            }}>
-              <colgroup>
-                {suppCols.map((c, i) => <col key={i} style={{ width: c.width }} />)}
-              </colgroup>
-              <thead>
-                <tr style={{ background: '#1a1a1a', position: 'sticky', top: 0, zIndex: 1 }}>
-                  {suppCols.map(c => (
-                    <th key={c.label} style={{
-                      padding: '10px 12px', textAlign: 'left',
-                      fontSize: 11, color: '#555', fontWeight: 600,
-                      borderBottom: '1px solid #2a2a2a',
-                      whiteSpace: 'nowrap', letterSpacing: '0.02em',
-                    }}>{c.label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {shots.length === 0 ? (
-                  <tr>
-                    <td colSpan={suppCols.length} style={{
-                      textAlign: 'center', padding: '40px 0',
-                      fontSize: 13, color: '#444',
-                    }}>暂无分镜数据</td>
-                  </tr>
-                ) : shots.map((shot, idx) => (
-                  <tr
-                    key={shot.id}
-                    style={{ background: idx % 2 === 0 ? '#161616' : '#181818' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = '#1e2030' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = idx % 2 === 0 ? '#161616' : '#181818' }}
-                  >
-                    {/* 序号 */}
-                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#888', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        width: 22, height: 22, borderRadius: 6,
-                        background: '#252525', color: '#aaa', fontSize: 11, fontWeight: 600,
-                      }}>{shot.sequence}</span>
-                    </td>
-                    {/* 画面描述 */}
-                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#ccc', lineHeight: 1.6, borderBottom: '1px solid #1e1e1e', verticalAlign: 'top', wordBreak: 'break-all' }}>
-                      {shot.description}
-                    </td>
-                    {/* 提示词生成 */}
-                    <td style={{ padding: '10px 12px', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
-                      <div style={{
-                        minHeight: 32, background: '#1a1a1a',
-                        border: '1px dashed #2a2a2a', borderRadius: 6,
-                        padding: '6px 10px',
-                        fontSize: 11, color: '#555', lineHeight: 1.5,
-                        cursor: 'pointer',
-                        transition: 'border-color 0.12s, background 0.12s',
-                      }}
-                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#3a6ff7'; e.currentTarget.style.background = '#1a1e2a' }}
-                        onMouseLeave={e => { e.currentTarget.style.borderColor = '#2a2a2a'; e.currentTarget.style.background = '#1a1a1a' }}
-                      >
-                        点击生成 Midjourney / SD 提示词…
-                      </div>
-                    </td>
-                    {/* 导演备注 */}
-                    <td style={{ padding: '10px 12px', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
-                      <div style={{
-                        minHeight: 32, background: '#1a1a1a',
-                        border: '1px dashed #2a2a2a', borderRadius: 6,
-                        padding: '6px 10px',
-                        fontSize: 11, color: '#555', lineHeight: 1.5,
-                        cursor: 'text',
-                      }}>
-                        <span style={{ color: '#3a3a3a' }}>添加备注…</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                ) : shots.map((shot, idx) => {
+                  const rowBg = idx % 2 === 0 ? '#161616' : '#181818'
+                  return (
+                    <tr
+                      key={shot.id}
+                      style={{ background: rowBg }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = '#1c1e2c' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = rowBg }}
+                    >
+                      {/* 序号 */}
+                      <td style={{ ...tdBase, fontSize: 12, color: '#888' }}>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          width: 22, height: 22, borderRadius: 6,
+                          background: '#222', color: '#aaa', fontSize: 11, fontWeight: 700,
+                        }}>{shot.sequence}</span>
+                      </td>
+
+                      {subTab === 'basic' ? <>
+                        {/* 画面描述 */}
+                        <td style={{ ...tdBase, fontSize: 12, color: '#ccc', lineHeight: 1.65, wordBreak: 'break-all' }}>
+                          {shot.description}
+                        </td>
+                        {/* 角色 */}
+                        <td style={{ ...tdBase, fontSize: 12, color: '#aaa' }}>
+                          {shot.character1 || <span style={{ color: '#333' }}>—</span>}
+                        </td>
+                        {/* 角色描述 */}
+                        <td style={{ ...tdBase, fontSize: 11, color: '#666', lineHeight: 1.5, wordBreak: 'break-all' }}>
+                          {shot.character1Detail || <span style={{ color: '#333' }}>—</span>}
+                        </td>
+                        {/* 场景地点 */}
+                        <td style={{ ...tdBase, fontSize: 11, color: '#444' }}><span style={{ color: '#333' }}>—</span></td>
+                        {/* 时间 */}
+                        <td style={{ ...tdBase, fontSize: 11, color: '#444' }}><span style={{ color: '#333' }}>—</span></td>
+                        {/* 光线 */}
+                        <td style={{ ...tdBase, fontSize: 11, color: '#444' }}><span style={{ color: '#333' }}>—</span></td>
+                        {/* 景别 */}
+                        <td style={{ ...tdBase, fontSize: 11, color: '#888', whiteSpace: 'pre-line' }}>
+                          {shot.shotType || <span style={{ color: '#333' }}>—</span>}
+                        </td>
+                        {/* 运镜 */}
+                        <td style={{ ...tdBase, fontSize: 11, color: '#444' }}><span style={{ color: '#333' }}>—</span></td>
+                        {/* 时长 */}
+                        <td style={{ ...tdBase, fontSize: 12, color: '#777' }}>{shot.duration}s</td>
+                        {/* 分镜图 */}
+                        <td style={tdBase}>
+                          <div style={{
+                            width: 44, height: 30, background: '#1c1c1c',
+                            border: '1px solid #272727', borderRadius: 4,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            cursor: 'pointer',
+                          }}>
+                            <ImageIcon size={13} color="#2e2e2e" />
+                          </div>
+                        </td>
+                      </> : <>
+                        {/* 画面描述 */}
+                        <td style={{ ...tdBase, fontSize: 12, color: '#ccc', lineHeight: 1.65, wordBreak: 'break-all' }}>
+                          {shot.description}
+                        </td>
+                        {/* 提示词生成 */}
+                        <td style={tdBase}>
+                          <div style={{
+                            minHeight: 34, background: '#191919',
+                            border: '1px dashed #2a2a2a', borderRadius: 6,
+                            padding: '7px 10px', fontSize: 11, color: '#444', lineHeight: 1.5,
+                            cursor: 'pointer', transition: 'border-color 0.12s, background 0.12s',
+                          }}
+                            onMouseEnter={e => { e.currentTarget.style.borderColor = '#3a6ff7'; e.currentTarget.style.background = '#1a1e2a' }}
+                            onMouseLeave={e => { e.currentTarget.style.borderColor = '#2a2a2a'; e.currentTarget.style.background = '#191919' }}
+                          >
+                            点击生成 Midjourney / SD 提示词…
+                          </div>
+                        </td>
+                        {/* 导演备注 */}
+                        <td style={tdBase}>
+                          <div style={{
+                            minHeight: 34, background: '#191919',
+                            border: '1px dashed #282828', borderRadius: 6,
+                            padding: '7px 10px', fontSize: 11, color: '#444', lineHeight: 1.5,
+                            cursor: 'text',
+                          }}>
+                            <span style={{ color: '#333' }}>添加备注…</span>
+                          </div>
+                        </td>
+                      </>}
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           )}
         </div>
 
-        {/* ── Footer ── */}
+        {/* ── Footer ────────────────────────────────────────── */}
         <div style={{
-          borderTop: '1px solid #222',
-          padding: '8px 20px',
+          borderTop: '1px solid #1e1e1e',
+          padding: '7px 20px',
           display: 'flex', alignItems: 'center',
           background: '#181818', flexShrink: 0,
         }}>
-          <span style={{ fontSize: 11, color: '#444' }}>
-            共 {shots.length} 个镜头
+          <span style={{ fontSize: 11, color: '#3a3a3a' }}>
+            共 <span style={{ color: '#555' }}>{shots.length}</span> 个镜头
           </span>
         </div>
       </div>
