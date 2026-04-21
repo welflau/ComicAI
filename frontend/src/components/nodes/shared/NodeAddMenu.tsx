@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { AlignJustify, Image as ImageIcon, Video, Combine, Music, TableProperties, Upload, LayoutGrid } from 'lucide-react'
+import { AlignJustify, Image as ImageIcon, Video, Combine, Music, TableProperties } from 'lucide-react'
 import { useProjectStore } from '@/stores/projectStore'
 import { addLog } from '@/stores/logStore'
+import AddNodePanel from '@/components/canvas/AddNodePanel'
 import type { NodeData } from '@/types'
 
 /* ── Menu item definitions ─────────────────────────────────────── */
@@ -87,7 +88,7 @@ const ENABLED_ITEMS: Record<NodeTypeKey, MenuItemId[]> = {
   libtv_storyboard: ['image', 'video', 'script'],
   libtv_image:      ['text', 'image', 'video', 'script'],
   libtv_video:      ['text', 'image', 'video'],
-  default:          ['text', 'image', 'video'],
+  default:          ['text', 'image', 'video', 'video_compose', 'audio', 'script'],
 }
 
 /* ── Props ─────────────────────────────────────────────────────── */
@@ -95,9 +96,9 @@ const ENABLED_ITEMS: Record<NodeTypeKey, MenuItemId[]> = {
 interface Props {
   /** The type key used to look up which items are enabled */
   nodeType: NodeTypeKey
-  /** Source node id — used to create the edge. Optional when standalone=true */
+  /** Source node id — used to create the edge. Not needed in standalone mode. */
   sourceNodeId?: string
-  /** Source node position — used to place the new node. Optional when standalone=true */
+  /** Source node position — used to place the new node. Not needed in standalone mode. */
   sourcePosition?: { x: number; y: number }
   /** Width of the source node — used for positioning */
   sourceNodeWidth?: number
@@ -114,6 +115,7 @@ interface Props {
   /**
    * When set, renders the menu at fixed screen coordinates instead of
    * absolute positioning relative to a node handle. Used by canvas context menu.
+   * In this mode AddNodePanel is rendered (same as the + button), no source edge.
    */
   fixedPosition?: { x: number; y: number }
   /**
@@ -142,7 +144,7 @@ export default function NodeAddMenu({
   const addEdge = useProjectStore(s => s.addEdge)
 
   const enabledSet = new Set(ENABLED_ITEMS[nodeType] ?? ENABLED_ITEMS.default)
-  const NEW_NODE_W = 260 // estimated width of a newly created node
+  const NEW_NODE_W = 260
 
   // Close on outside click
   useEffect(() => {
@@ -151,7 +153,6 @@ export default function NodeAddMenu({
         onClose()
       }
     }
-    // Use capture so we catch before ReactFlow stops propagation
     document.addEventListener('mousedown', handler, true)
     return () => document.removeEventListener('mousedown', handler, true)
   }, [onClose])
@@ -165,59 +166,66 @@ export default function NodeAddMenu({
     return () => document.removeEventListener('keydown', handler)
   }, [onClose])
 
+  // ── Standalone mode: reuse AddNodePanel (same as the + button) ──
+  if (fixedPosition) {
+    return (
+      <div
+        ref={ref}
+        onMouseDown={e => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
+        style={{
+          position: 'fixed',
+          top: fixedPosition.y,
+          left: fixedPosition.x,
+          zIndex: 9999,
+          background: '#1c1c1c',
+          border: '1px solid #2a2a2a',
+          borderRadius: 12,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+          padding: '8px 0 12px',
+          width: 220,
+          fontFamily: 'Inter, system-ui, sans-serif',
+        }}
+      >
+        <AddNodePanel spawnPosition={spawnPosition} onClose={onClose} />
+      </div>
+    )
+  }
+
+  // ── Node-handle mode: compact inline menu with edge creation ────
   const handleSelect = (item: MenuItem) => {
     if (!enabledSet.has(item.id)) return
     const newId = `${item.targetType}_${Date.now()}`
+    const newX = direction === 'right'
+      ? sourcePosition!.x + sourceNodeWidth + 80
+      : sourcePosition!.x - NEW_NODE_W - 80
 
-    // Standalone mode: place at spawnPosition, no edge
-    const isStandalone = !!spawnPosition && !sourceNodeId
-    let newX: number
-    let newY: number
-    if (isStandalone) {
-      newX = spawnPosition.x
-      newY = spawnPosition.y
-    } else {
-      newX = direction === 'right'
-        ? (sourcePosition!.x + sourceNodeWidth + 80)
-        : (sourcePosition!.x - NEW_NODE_W - 80)
-      newY = sourcePosition!.y
-    }
-
-    // When creating a text node from an image source, pre-fill image context
     const extraConfig: Record<string, unknown> = {}
     let initialPrompt: string | undefined
     let hideQuickActions: boolean | undefined
     let initialPanelExpanded: boolean | undefined
     if (item.targetType === 'libtv_script') {
-      // Text nodes created from the + menu never show the quick-action list —
-      // the prompt panel is always visible instead.
       hideQuickActions = true
       if (sourceImageUrl) {
         extraConfig.sourceImageUrl = sourceImageUrl
         initialPrompt = '根据图片生成提示词'
       }
     }
-    if (item.targetType === 'libtv_image') {
-      // Image nodes created from the + menu start with the prompt panel expanded
-      initialPanelExpanded = true
-    }
-    if (item.targetType === 'libtv_video') {
-      // Video nodes created from the + menu start with the prompt panel expanded
-      initialPanelExpanded = true
-    }
+    if (item.targetType === 'libtv_image') initialPanelExpanded = true
+    if (item.targetType === 'libtv_video') initialPanelExpanded = true
 
     addNode({
       id: newId,
       type: item.targetType,
       label: item.targetLabel,
       category: item.targetCategory,
-      position: { x: newX, y: newY },
+      position: { x: newX, y: sourcePosition!.y },
       config: extraConfig,
       ...(initialPrompt ? { initialPrompt } : {}),
       ...(hideQuickActions ? { hideQuickActions } : {}),
       ...(initialPanelExpanded ? { initialPanelExpanded } : {}),
     })
-    if (!isStandalone && sourceNodeId) {
+    if (sourceNodeId) {
       if (direction === 'right') {
         addEdge({ id: `e-${sourceNodeId}-${newId}`, source: sourceNodeId, target: newId })
       } else {
@@ -228,9 +236,7 @@ export default function NodeAddMenu({
       level: 'info',
       category: 'operation',
       message: `添加节点: ${item.targetLabel}`,
-      detail: isStandalone
-        ? `类型: ${item.targetType} | 画布独立创建`
-        : `类型: ${item.targetType} | 从节点 ${sourceNodeId} 出发 (方向: ${direction === 'right' ? '右' : '左'})`,
+      detail: `类型: ${item.targetType} | 从节点 ${sourceNodeId} 出发 (方向: ${direction === 'right' ? '右' : '左'})`,
     })
     onClose()
   }
@@ -242,17 +248,12 @@ export default function NodeAddMenu({
       onMouseDown={e => e.stopPropagation()}
       onClick={e => e.stopPropagation()}
       style={{
-        // Fixed-position mode (from canvas context menu) vs absolute (from node handle)
-        ...(fixedPosition
-          ? { position: 'fixed', top: fixedPosition.y, left: fixedPosition.x }
-          : {
-              position: 'absolute',
-              ...(direction === 'right'
-                ? { left: '100%', marginLeft: 14 }
-                : { right: '100%', marginRight: 14 }),
-              top: '50%',
-              transform: 'translateY(-50%)',
-            }),
+        position: 'absolute',
+        ...(direction === 'right'
+          ? { left: '100%', marginLeft: 14 }
+          : { right: '100%', marginRight: 14 }),
+        top: '50%',
+        transform: 'translateY(-50%)',
         zIndex: 9999,
         background: '#1a1a1a',
         border: '1px solid #2e2e2e',
@@ -272,7 +273,7 @@ export default function NodeAddMenu({
         borderBottom: '1px solid #252525',
         marginBottom: 4,
       }}>
-        {fixedPosition ? '添加节点' : (direction === 'left' ? '添加前置节点' : '引用该节点生成')}
+        {direction === 'left' ? '添加前置节点' : '引用该节点生成'}
       </div>
 
       {MENU_ITEMS.map(item => {
@@ -319,41 +320,6 @@ export default function NodeAddMenu({
           </div>
         )
       })}
-
-      {/* 添加资源 — only shown in standalone (fixedPosition) mode */}
-      {fixedPosition && (
-        <>
-          <div style={{ height: 1, background: '#252525', margin: '4px 0' }} />
-          <div style={{
-            padding: '6px 14px 4px',
-            fontSize: 11,
-            color: '#555',
-            fontWeight: 500,
-          }}>
-            添加资源
-          </div>
-          {[
-            { icon: <Upload size={14} />, label: '上传' },
-            { icon: <LayoutGrid size={14} />, label: '从图库选择' },
-          ].map(({ icon, label }) => (
-            <div
-              key={label}
-              onClick={onClose}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '7px 14px',
-                cursor: 'pointer', color: '#ccc', fontSize: 13,
-                transition: 'background 0.1s', userSelect: 'none',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#252525' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
-            >
-              <span style={{ color: '#888', flexShrink: 0 }}>{icon}</span>
-              <span style={{ flex: 1 }}>{label}</span>
-            </div>
-          ))}
-        </>
-      )}
     </div>
   )
 }
