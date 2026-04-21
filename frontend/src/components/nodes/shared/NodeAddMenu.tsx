@@ -95,10 +95,10 @@ const ENABLED_ITEMS: Record<NodeTypeKey, MenuItemId[]> = {
 interface Props {
   /** The type key used to look up which items are enabled */
   nodeType: NodeTypeKey
-  /** Source node id — used to create the edge */
-  sourceNodeId: string
-  /** Source node position — used to place the new node */
-  sourcePosition: { x: number; y: number }
+  /** Source node id — used to create the edge. Optional when standalone=true */
+  sourceNodeId?: string
+  /** Source node position — used to place the new node. Optional when standalone=true */
+  sourcePosition?: { x: number; y: number }
   /** Width of the source node — used for positioning */
   sourceNodeWidth?: number
   /**
@@ -111,6 +111,16 @@ interface Props {
    * Used to pre-fill the new script node's prompt with a thumbnail reference.
    */
   sourceImageUrl?: string
+  /**
+   * When set, renders the menu at fixed screen coordinates instead of
+   * absolute positioning relative to a node handle. Used by canvas context menu.
+   */
+  fixedPosition?: { x: number; y: number }
+  /**
+   * Canvas-space position where the new node should be placed.
+   * Required when fixedPosition is set (standalone mode, no source node).
+   */
+  spawnPosition?: { x: number; y: number }
   onClose: () => void
 }
 
@@ -123,6 +133,8 @@ export default function NodeAddMenu({
   sourceNodeWidth = 200,
   direction = 'right',
   sourceImageUrl,
+  fixedPosition,
+  spawnPosition,
   onClose,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null)
@@ -156,9 +168,20 @@ export default function NodeAddMenu({
   const handleSelect = (item: MenuItem) => {
     if (!enabledSet.has(item.id)) return
     const newId = `${item.targetType}_${Date.now()}`
-    const newX = direction === 'right'
-      ? sourcePosition.x + sourceNodeWidth + 80
-      : sourcePosition.x - NEW_NODE_W - 80
+
+    // Standalone mode: place at spawnPosition, no edge
+    const isStandalone = !!spawnPosition && !sourceNodeId
+    let newX: number
+    let newY: number
+    if (isStandalone) {
+      newX = spawnPosition.x
+      newY = spawnPosition.y
+    } else {
+      newX = direction === 'right'
+        ? (sourcePosition!.x + sourceNodeWidth + 80)
+        : (sourcePosition!.x - NEW_NODE_W - 80)
+      newY = sourcePosition!.y
+    }
 
     // When creating a text node from an image source, pre-fill image context
     const extraConfig: Record<string, unknown> = {}
@@ -188,22 +211,26 @@ export default function NodeAddMenu({
       type: item.targetType,
       label: item.targetLabel,
       category: item.targetCategory,
-      position: { x: newX, y: sourcePosition.y },
+      position: { x: newX, y: newY },
       config: extraConfig,
       ...(initialPrompt ? { initialPrompt } : {}),
       ...(hideQuickActions ? { hideQuickActions } : {}),
       ...(initialPanelExpanded ? { initialPanelExpanded } : {}),
     })
-    if (direction === 'right') {
-      addEdge({ id: `e-${sourceNodeId}-${newId}`, source: sourceNodeId, target: newId })
-    } else {
-      addEdge({ id: `e-${newId}-${sourceNodeId}`, source: newId, target: sourceNodeId })
+    if (!isStandalone && sourceNodeId) {
+      if (direction === 'right') {
+        addEdge({ id: `e-${sourceNodeId}-${newId}`, source: sourceNodeId, target: newId })
+      } else {
+        addEdge({ id: `e-${newId}-${sourceNodeId}`, source: newId, target: sourceNodeId })
+      }
     }
     addLog({
       level: 'info',
       category: 'operation',
       message: `添加节点: ${item.targetLabel}`,
-      detail: `类型: ${item.targetType} | 从节点 ${sourceNodeId} 出发 (方向: ${direction === 'right' ? '右' : '左'})`,
+      detail: isStandalone
+        ? `类型: ${item.targetType} | 画布独立创建`
+        : `类型: ${item.targetType} | 从节点 ${sourceNodeId} 出发 (方向: ${direction === 'right' ? '右' : '左'})`,
     })
     onClose()
   }
@@ -215,13 +242,17 @@ export default function NodeAddMenu({
       onMouseDown={e => e.stopPropagation()}
       onClick={e => e.stopPropagation()}
       style={{
-        position: 'absolute',
-        // Position the menu to the correct side of the handle, centered vertically
-        ...(direction === 'right'
-          ? { left: '100%', marginLeft: 14 }
-          : { right: '100%', marginRight: 14 }),
-        top: '50%',
-        transform: 'translateY(-50%)',
+        // Fixed-position mode (from canvas context menu) vs absolute (from node handle)
+        ...(fixedPosition
+          ? { position: 'fixed', top: fixedPosition.y, left: fixedPosition.x }
+          : {
+              position: 'absolute',
+              ...(direction === 'right'
+                ? { left: '100%', marginLeft: 14 }
+                : { right: '100%', marginRight: 14 }),
+              top: '50%',
+              transform: 'translateY(-50%)',
+            }),
         zIndex: 9999,
         background: '#1a1a1a',
         border: '1px solid #2e2e2e',
@@ -241,7 +272,7 @@ export default function NodeAddMenu({
         borderBottom: '1px solid #252525',
         marginBottom: 4,
       }}>
-        {direction === 'left' ? '添加前置节点' : '引用该节点生成'}
+        {fixedPosition ? '添加节点' : (direction === 'left' ? '添加前置节点' : '引用该节点生成')}
       </div>
 
       {MENU_ITEMS.map(item => {

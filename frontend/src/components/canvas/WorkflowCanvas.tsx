@@ -26,6 +26,7 @@ import AnimatedFlowEdge from '@/components/canvas/AnimatedFlowEdge'
 import TemplatePicker from '@/components/canvas/TemplatePicker'
 import CanvasContextMenu from '@/components/canvas/CanvasContextMenu'
 import NodeContextMenu from '@/components/canvas/NodeContextMenu'
+import NodeAddMenu from '@/components/nodes/shared/NodeAddMenu'
 import { useProjectStore } from '@/stores/projectStore'
 import { MultiSelectionToolbar } from '@/components/canvas/MultiSelectionToolbar'
 import { SelectionBoundingBox } from '@/components/canvas/SelectionBoundingBox'
@@ -83,6 +84,7 @@ function WorkflowCanvasInner() {
   const isEmpty = storeNodes.length === 0
 
   const [paneMenu, setPaneMenu]   = useState<{ x: number; y: number; flowX: number; flowY: number } | null>(null)
+  const [paneNodeAddOpen, setPaneNodeAddOpen] = useState(false)
   const [nodeMenu, setNodeMenu]   = useState<{ x: number; y: number; nodeId: string } | null>(null)
   const [clipboard, setClipboard] = useState<Node | null>(null)
   const [minimapVisible, setMinimapVisible] = useState(true)
@@ -274,20 +276,11 @@ function WorkflowCanvasInner() {
     setNodeMenu({ x: e.clientX, y: e.clientY, nodeId: node.id })
   }, [])
 
-  // Add node at pane position
+  // Open NodeAddMenu at pane position (closes the context menu, shows node picker)
   const handleAddNode = useCallback(() => {
     if (!paneMenu) return
-    addNode({
-      id: `libtv_script_${Date.now()}`,
-      type: 'libtv_script' as NodeData['type'],
-      label: '剧本',
-      category: 'input',
-      position: { x: paneMenu.flowX, y: paneMenu.flowY },
-      config: {},
-      title: '',
-      content: '',
-    } as NodeData)
-  }, [paneMenu, addNode])
+    setPaneNodeAddOpen(true)
+  }, [paneMenu])
 
   // Node menu actions
   const handleCopy = useCallback(() => {
@@ -545,8 +538,17 @@ function WorkflowCanvasInner() {
         <CanvasContextMenu
           x={paneMenu.x}
           y={paneMenu.y}
-          onClose={() => setPaneMenu(null)}
+          onClose={() => { setPaneMenu(null); setPaneNodeAddOpen(false) }}
           onAddNode={handleAddNode}
+        />
+      )}
+
+      {paneMenu && paneNodeAddOpen && (
+        <NodeAddMenu
+          nodeType="default"
+          fixedPosition={{ x: paneMenu.x + 210, y: paneMenu.y }}
+          spawnPosition={{ x: paneMenu.flowX, y: paneMenu.flowY }}
+          onClose={() => { setPaneNodeAddOpen(false); setPaneMenu(null) }}
         />
       )}
 

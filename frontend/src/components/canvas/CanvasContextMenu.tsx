@@ -59,7 +59,7 @@ export default function CanvasContextMenu({ x, y, onClose, onAddNode }: CanvasCo
       icon: <PlusSquare size={13} />,
       label: '添加节点',
       dividerAfter: true,
-      onClick: () => { onAddNode(); onClose() },
+      onClick: () => { onAddNode() },
     },
     {
       icon: <Undo2 size={13} />,
