@@ -459,10 +459,18 @@ STREAM_SYSTEM_PROMPTS = {
         "文笔流畅，富有画面感，场景描写细腻。"
     ),
     "storyboard": (
-        PLATFORM_BASE_PROMPT + "\n\n## 当前任务：分镜生成\n"
-        "根据提供的剧本或描述，直接输出分镜脚本。"
-        "格式：按镜头编号，每个镜头包含景别、画面描述、对话/旁白（如有）。"
-        "直接输出内容，不需要额外解释。"
+        PLATFORM_BASE_PROMPT + "\n\n## 当前任务：分镜脚本生成\n"
+        "根据提供的剧本或描述，生成分镜脚本，必须以 JSON 数组格式输出，不得添加任何 markdown、解释文字或前言。\n"
+        "直接输出一个合法的 JSON 数组，每个元素包含以下字段：\n"
+        "  sequence (整数，镜头序号)\n"
+        "  duration (浮点数，建议时长秒，如 3.5)\n"
+        "  description (字符串，画面描述，细腻、富有画面感)\n"
+        "  character1 (字符串，主要角色名，无则空字符串)\n"
+        "  character1Detail (字符串，角色外貌/服装描述，无则空字符串)\n"
+        "  shotType (字符串，景别，如「远景」「中景」「近景」「特写」「极近景」)\n"
+        "输出示例（仅格式参考）：\n"
+        '[{"sequence":1,"duration":3.5,"description":"...","character1":"","character1Detail":"","shotType":"远景"}]\n'
+        "只输出 JSON 数组本身，不要 ```json 代码块，不要任何其他文字。"
     ),
     "general": (
         PLATFORM_BASE_PROMPT + "\n\n直接根据用户要求输出内容。"

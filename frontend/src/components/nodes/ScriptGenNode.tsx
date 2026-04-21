@@ -4,6 +4,7 @@ import {
   ScrollText, RotateCcw, Square,
   ChevronDown, Languages, Zap, ArrowUp, CheckCircle2,
   AlignJustify, PlaySquare, User, Download, Maximize2, Film, TableProperties,
+  Image as ImageIcon, Check, LayoutGrid, List,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useProjectStore } from '@/stores/projectStore'
@@ -44,7 +45,7 @@ const NODE_W             = 520
 const TITLE_H            = 28
 const IDLE_PREVIEW_H     = 150
 const GEN_CARD_MIN_H     = 300
-const CONTENT_CARD_MIN_H = 220
+const CONTENT_CARD_MIN_H = 384
 
 /* ── Quick actions ───────────────────────────────────────────── */
 
@@ -100,26 +101,148 @@ const MOCK_SHOTS: ShotRow[] = [
 
 const MOCK_SCENE_TITLE = '红岸基地：第一声啼鸣'
 
+/* ── Map raw object to ShotRow ───────────────────────────────────── */
+
+function toShotRow(item: Record<string, unknown>, i: number): ShotRow {
+  return {
+    id: i + 1,
+    sequence: Number(item.sequence ?? i + 1),
+    duration: Number(item.duration ?? 3.5),
+    description: String(item.description ?? ''),
+    character1: String(item.character1 ?? ''),
+    character1Detail: String(
+      item.character1Detail ?? item.characterDetail1 ?? item.characterlDetail ?? ''
+    ),
+    shotType: String(item.shotType ?? item.shot_type ?? ''),
+  }
+}
+
+/* ── Lenient field extractor (last-resort, no JSON.parse needed) ─── */
+
+/**
+ * Walk forward from `start` collecting characters until the first
+ * unescaped double-quote, return the collected string + the position
+ * of the closing quote.
+ */
+function readStringValue(text: string, start: number): { value: string; end: number } {
+  let value = ''
+  let i = start
+  while (i < text.length) {
+    const ch = text[i]
+    if (ch === '\\' && i + 1 < text.length) {
+      const next = text[i + 1]
+      // Keep common escape sequences; strip the backslash for others
+      if (next === '"') { value += '"'; i += 2; continue }
+      if (next === '\\') { value += '\\'; i += 2; continue }
+      if (next === 'n') { value += '\n'; i += 2; continue }
+      if (next === 't') { value += '\t'; i += 2; continue }
+      value += next; i += 2; continue
+    }
+    if (ch === '"') return { value, end: i }
+    value += ch
+    i++
+  }
+  return { value, end: i }
+}
+
+function extractStr(chunk: string, ...fields: string[]): string {
+  for (const field of fields) {
+    // Match: "field"\s*:\s*"<value>"
+    const re = new RegExp(`"${field}"\\s*:\\s*"`)
+    const m = re.exec(chunk)
+    if (m) {
+      const { value } = readStringValue(chunk, m.index + m[0].length)
+      if (value) return value
+    }
+  }
+  return ''
+}
+
+function extractNum(chunk: string, field: string, fallback: number): number {
+  const m = new RegExp(`"${field}"\\s*:\\s*([\\d.]+)`).exec(chunk)
+  return m ? parseFloat(m[1]) : fallback
+}
+
+/**
+ * Last-resort parser: find each shot by locating "sequence": N markers,
+ * then extract fields individually — works even if the overall JSON
+ * structure is broken (unescaped quotes, trailing commas, etc.)
+ */
+function parseShotsLenient(text: string): ShotRow[] | null {
+  const seqRe = /"sequence"\s*:\s*(\d+)/g
+  const markers: Array<{ index: number; seq: number }> = []
+  let sm: RegExpExecArray | null
+  while ((sm = seqRe.exec(text)) !== null) {
+    markers.push({ index: sm.index, seq: parseInt(sm[1]) })
+  }
+  if (markers.length === 0) return null
+
+  const shots: ShotRow[] = markers.map(({ index, seq }, i) => {
+    const end = i + 1 < markers.length ? markers[i + 1].index : text.length
+    const chunk = text.slice(index, end)
+    return {
+      id: i + 1,
+      sequence: seq,
+      duration: extractNum(chunk, 'duration', 3.5),
+      description: extractStr(chunk, 'description'),
+      character1: extractStr(chunk, 'character1'),
+      character1Detail: extractStr(chunk, 'character1Detail', 'characterDetail1'),
+      shotType: extractStr(chunk, 'shotType', 'shot_type'),
+    }
+  })
+  return shots.length > 0 ? shots : null
+}
+
 /* ── Parse AI JSON response into ShotRow[] ───────────────────── */
 
-function parseShots(raw: string): ShotRow[] | null {
-  try {
-    const match = raw.match(/\[[\s\S]*\]/)
-    if (!match) return null
-    const arr = JSON.parse(match[0])
-    if (!Array.isArray(arr) || arr.length === 0) return null
-    return arr.map((item: Record<string, unknown>, i: number) => ({
-      id: i + 1,
-      sequence: Number(item.sequence ?? i + 1),
-      duration: Number(item.duration ?? 3.5),
-      description: String(item.description ?? ''),
-      character1: String(item.character1 ?? ''),
-      character1Detail: String(item.character1Detail ?? ''),
-      shotType: String(item.shotType ?? item.shot_type ?? ''),
-    }))
-  } catch {
-    return null
+function parseShots(raw: string): { shots: ShotRow[] | null; error: string } {
+  const errors: string[] = []
+
+  // 1. Strip ``` code fences
+  const stripped = raw
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/, '')
+    .trim()
+
+  // Find the first balanced [...] block
+  const arrayStart = stripped.indexOf('[')
+  let jsonStr = stripped
+  if (arrayStart !== -1) {
+    let depth = 0, arrayEnd = -1
+    for (let i = arrayStart; i < stripped.length; i++) {
+      if (stripped[i] === '[') depth++
+      else if (stripped[i] === ']') { depth--; if (depth === 0) { arrayEnd = i; break } }
+    }
+    if (arrayEnd !== -1) jsonStr = stripped.slice(arrayStart, arrayEnd + 1)
   }
+
+  // 2. Try direct JSON.parse
+  try {
+    const v = JSON.parse(jsonStr)
+    if (Array.isArray(v) && v.length > 0)
+      return { shots: v.map((item, i) => toShotRow(item as Record<string, unknown>, i)), error: '' }
+    errors.push(`JSON.parse 成功但结果不是非空数组 (type=${typeof v})`)
+  } catch (e) {
+    errors.push(`JSON.parse 失败: ${String(e)}`)
+  }
+
+  // 3. Try removing trailing commas, then parse
+  try {
+    const fixed = jsonStr.replace(/,\s*([\]}])/g, '$1')
+    const v = JSON.parse(fixed)
+    if (Array.isArray(v) && v.length > 0)
+      return { shots: v.map((item, i) => toShotRow(item as Record<string, unknown>, i)), error: '' }
+  } catch (e) {
+    errors.push(`去除尾随逗号后仍失败: ${String(e)}`)
+  }
+
+  // 4. Lenient field-by-field extraction (immune to JSON syntax errors)
+  const lenient = parseShotsLenient(stripped)
+  if (lenient && lenient.length > 0)
+    return { shots: lenient, error: '' }
+  errors.push('逐字段提取也未能找到镜头数据')
+
+  return { shots: null, error: errors.join('\n') }
 }
 
 /* ── Shimmer ─────────────────────────────────────────────────── */
@@ -250,6 +373,184 @@ function StoryboardTable({ shots, sceneTitle }: { shots: ShotRow[]; sceneTitle: 
           </div>
           <div style={{ fontSize: 9, color: '#555', lineHeight: 1.4, whiteSpace: 'pre-line' }}>
             {shot.shotType || ''}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ── View mode type ──────────────────────────────────────────── */
+
+type ViewMode = 'creative' | 'script'
+
+/* ── View dropdown ───────────────────────────────────────────── */
+
+function ViewDropdown({ value, onChange }: { value: ViewMode; onChange: (v: ViewMode) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const options: { id: ViewMode; label: string; icon: React.ReactNode }[] = [
+    { id: 'script',   label: '脚本视图', icon: <List size={11} /> },
+    { id: 'creative', label: '创意视图', icon: <LayoutGrid size={11} /> },
+  ]
+  const current = options.find(o => o.id === value)!
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        className="nodrag nopan"
+        onClick={() => setOpen(v => !v)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 5,
+          background: open ? '#2a2a2a' : 'none', border: '1px solid #333',
+          borderRadius: 6, cursor: 'pointer', padding: '3px 8px',
+          color: '#aaa', fontSize: 11,
+          transition: 'background 0.12s',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = '#252525' }}
+        onMouseLeave={e => { e.currentTarget.style.background = open ? '#2a2a2a' : 'none' }}
+      >
+        {current.icon}
+        <span>{current.label}</span>
+        <ChevronDown size={10} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+      </button>
+
+      {open && (
+        <div
+          className="nodrag nopan"
+          style={{
+            position: 'absolute', top: 'calc(100% + 4px)', right: 0,
+            background: '#1a1a1a', border: '1px solid #2e2e2e',
+            borderRadius: 8, minWidth: 120,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+            overflow: 'hidden', zIndex: 9999,
+            padding: '4px 0',
+          }}
+        >
+          {options.map(opt => (
+            <button
+              key={opt.id}
+              className="nodrag nopan"
+              onClick={() => { onChange(opt.id); setOpen(false) }}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                padding: '6px 12px', background: 'none', border: 'none',
+                cursor: 'pointer', color: value === opt.id ? '#e0e0e0' : '#888',
+                fontSize: 12, textAlign: 'left',
+                transition: 'background 0.1s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#252525' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'none' }}
+            >
+              {value === opt.id
+                ? <Check size={11} color="#4ade80" />
+                : <span style={{ width: 11 }} />
+              }
+              {opt.icon}
+              <span>{opt.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Creative grid (card-per-shot view) ──────────────────────── */
+
+function CreativeGrid({ shots }: { shots: ShotRow[] }) {
+  const CARD_W = 156
+
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: `repeat(3, ${CARD_W}px)`,
+      gap: 10,
+      padding: '12px 14px',
+    }}>
+      {shots.map(shot => (
+        <div
+          key={shot.id}
+          style={{
+            background: '#161616',
+            border: '1px solid #2a2a2a',
+            borderRadius: 8,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {/* Number + duration row */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '5px 8px',
+          }}>
+            <span style={{
+              width: 18, height: 18, borderRadius: 4,
+              background: '#252525', color: '#aaa',
+              fontSize: 10, fontWeight: 600,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>{shot.sequence}</span>
+            <span style={{ fontSize: 10, color: '#555' }}>{shot.duration}s</span>
+          </div>
+
+          {/* Image placeholder */}
+          <div style={{
+            height: 90, background: '#1a1a1a',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            gap: 4, borderTop: '1px solid #222', borderBottom: '1px solid #222',
+            cursor: 'pointer',
+          }}>
+            <ImageIcon size={18} color="#333" />
+            <span style={{ fontSize: 9, color: '#3a3a3a' }}>暂无图片</span>
+          </div>
+
+          {/* Description */}
+          <div style={{ padding: '6px 8px 4px', fontSize: 10, color: '#aaa', lineHeight: 1.5, flex: 1 }}>
+            {shot.description}
+          </div>
+
+          {/* Shot type + character */}
+          {(shot.shotType || shot.character1) && (
+            <div style={{
+              padding: '3px 8px 6px',
+              fontSize: 9, color: '#555',
+              display: 'flex', gap: 4, flexWrap: 'wrap',
+            }}>
+              {shot.shotType && (
+                <span style={{
+                  background: '#1e1e1e', border: '1px solid #2a2a2a',
+                  borderRadius: 3, padding: '1px 5px',
+                  whiteSpace: 'pre', lineHeight: 1.3,
+                }}>
+                  {shot.shotType.replace(/\n/g, ' ')}
+                </span>
+              )}
+              {shot.character1 && (
+                <span style={{ color: '#666' }}>{shot.character1}</span>
+              )}
+            </div>
+          )}
+
+          {/* Scene label */}
+          <div style={{
+            padding: '3px 8px 6px',
+            fontSize: 9, color: '#444',
+            borderTop: '1px solid #1e1e1e',
+          }}>
+            场景 {shot.sequence}
           </div>
         </div>
       ))}
@@ -545,11 +846,13 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
   const [menuOpen, setMenuOpen]         = useState(false)
   const [targetMenuOpen, setTargetMenuOpen] = useState(false)
   const [shots, setShots]         = useState<ShotRow[]>([])
-  const [sceneTitle, setSceneTitle] = useState(MOCK_SCENE_TITLE)
+  const [sceneTitle, setSceneTitle] = useState('')
   const [warning, setWarning]     = useState<string | null>(null)
+  const [viewMode, setViewMode]   = useState<ViewMode>('creative')
 
   const abortRef   = useRef<AbortController | null>(null)
   const warnTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const streamRef  = useRef<string>('')   // authoritative accumulator — immune to StrictMode double-invoke
   const nodeLabel  = data.title || data.label || '分镜脚本'
 
   const addNode = useProjectStore(s => s.addNode)
@@ -611,14 +914,16 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
+    streamRef.current = ''   // reset accumulator
     setMode('generating')
     setStream('')
     setShimmer(true)
 
     // Build the full prompt sent to AI
+    const JSON_INSTRUCTION = '只输出一个合法的 JSON 数组，不要 markdown 代码块，不要任何解释文字。每个元素包含：sequence(整数), duration(浮点秒), description(画面描述), character1(角色名，无则空), character1Detail(角色描述，无则空), shotType(景别如"远景"/"中景"/"近景"/"特写")。'
     const fullPrompt = upstreamContent
-      ? `以下是剧本内容：\n\n${upstreamContent}${userPrompt ? `\n\n用户要求：${userPrompt}` : '\n\n请根据以上剧本内容生成详细的分镜脚本，以JSON数组格式返回，每个分镜包含字段：sequence(序号), duration(时长秒), description(画面描述), character1(角色1名), character1Detail(角色1描述), shotType(景别，如"特写"/"中景"/"近景"等)。'}`
-      : `${userPrompt}\n\n请生成详细的分镜脚本，以JSON数组格式返回，每个分镜包含字段：sequence(序号), duration(时长秒), description(画面描述), character1(角色1名), character1Detail(角色1描述), shotType(景别)。`
+      ? `以下是剧本内容：\n\n${upstreamContent}\n\n${userPrompt ? `用户要求：${userPrompt}\n\n` : ''}请根据以上剧本内容生成详细的分镜脚本。${JSON_INSTRUCTION}`
+      : `${userPrompt}\n\n请生成详细的分镜脚本。${JSON_INSTRUCTION}`
 
     // ── Log: full AI prompt ──
     addLog({
@@ -647,29 +952,33 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
         prompt: fullPrompt,
         contextType: 'storyboard',
         signal: ctrl.signal,
-        onChunk: c => setStream(prev => prev + c),
+        onChunk: c => {
+          streamRef.current += c
+          setStream(prev => prev + c)
+        },
         onDone: (stats) => {
-          setStream(prev => {
-            const parsed = parseShots(prev)
-            if (parsed && parsed.length > 0) {
-              setShots(parsed)
-              addLog({
-                level: 'info', category: 'ai', kind: 'response',
-                message: `分镜脚本生成完成 — ${parsed.length} 个镜头，${stats ? `${stats.chars} 字符，耗时 ${(stats.elapsed / 1000).toFixed(1)}s` : ''}`,
-                detail: prev.length > 400 ? prev.slice(0, 400) + `\n…（共 ${prev.length} 字符）` : prev,
-              })
-            } else {
-              addLog({
-                level: 'warn', category: 'ai', kind: 'response',
-                message: `分镜解析失败，使用模拟数据`,
-                detail: `AI 原始输出 (${prev.length} 字符):\n${prev.slice(0, 400)}${prev.length > 400 ? '…' : ''}`,
-              })
-              setShots(MOCK_SHOTS)
-              setSceneTitle(MOCK_SCENE_TITLE)
-            }
-            setText(prev)
-            return prev
-          })
+          // Read from ref (not state) — avoids React StrictMode double-invoke of state updaters
+          const raw = streamRef.current
+          const { shots: parsed, error: parseError } = parseShots(raw)
+          if (parsed && parsed.length > 0) {
+            setShots(parsed)
+            setText(raw)
+            // Use nodeLabel as scene title (no mock title)
+            setSceneTitle(nodeLabel)
+            addLog({
+              level: 'info', category: 'ai', kind: 'response',
+              message: `分镜脚本生成完成 — ${parsed.length} 个镜头，${stats ? `${stats.chars} 字符，耗时 ${(stats.elapsed / 1000).toFixed(1)}s` : ''}`,
+              detail: raw.length > 400 ? raw.slice(0, 400) + `\n…（共 ${raw.length} 字符）` : raw,
+            })
+          } else {
+            addLog({
+              level: 'warn', category: 'ai', kind: 'response',
+              message: `分镜解析失败，使用模拟数据`,
+              detail: `解析错误:\n${parseError}\n\nAI 原始输出 (${raw.length} 字符):\n${raw.slice(0, 600)}${raw.length > 600 ? '…' : ''}`,
+            })
+            setShots(MOCK_SHOTS)
+            setSceneTitle(MOCK_SCENE_TITLE)
+          }
           setMode('content')
         },
         onError: (err) => {
@@ -1038,24 +1347,21 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
                 <span style={{ fontSize: 11, color: '#ccc', fontWeight: 500 }}>{sceneTitle}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ display: 'flex', background: '#111', borderRadius: 4, padding: 2, gap: 1 }}>
-                  <button
-                    className="nodrag nopan"
-                    style={{
-                      padding: '2px 8px', borderRadius: 3, border: 'none',
-                      cursor: 'pointer', fontSize: 10,
-                      background: '#333', color: '#fff',
-                    }}
-                  >
-                    脚本视图
-                  </button>
-                </div>
+                <ViewDropdown value={viewMode} onChange={setViewMode} />
                 <Maximize2 size={12} color="#666" style={{ cursor: 'pointer' }} />
               </div>
             </div>
 
-            {/* Table */}
-            <StoryboardTable shots={shots} sceneTitle={sceneTitle} />
+            {/* Table / grid — fixed height scrollable area */}
+            <div
+              className="nodrag nopan nowheel"
+              style={{ height: 340, overflowY: 'auto', overflowX: 'hidden' }}
+            >
+              {viewMode === 'script'
+                ? <StoryboardTable shots={shots} sceneTitle={sceneTitle} />
+                : <CreativeGrid shots={shots} />
+              }
+            </div>
           </div>
 
           {/* Prompt panel */}
