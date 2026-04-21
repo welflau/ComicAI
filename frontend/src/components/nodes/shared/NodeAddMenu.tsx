@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { AlignJustify, Image as ImageIcon, Video, Combine, Music, TableProperties } from 'lucide-react'
+import { AlignJustify, Image as ImageIcon, Video, Combine, Music, TableProperties, Upload, LayoutGrid } from 'lucide-react'
 import { useProjectStore } from '@/stores/projectStore'
 import { addLog } from '@/stores/logStore'
 import type { NodeData } from '@/types'
@@ -319,6 +319,41 @@ export default function NodeAddMenu({
           </div>
         )
       })}
+
+      {/* 添加资源 — only shown in standalone (fixedPosition) mode */}
+      {fixedPosition && (
+        <>
+          <div style={{ height: 1, background: '#252525', margin: '4px 0' }} />
+          <div style={{
+            padding: '6px 14px 4px',
+            fontSize: 11,
+            color: '#555',
+            fontWeight: 500,
+          }}>
+            添加资源
+          </div>
+          {[
+            { icon: <Upload size={14} />, label: '上传' },
+            { icon: <LayoutGrid size={14} />, label: '从图库选择' },
+          ].map(({ icon, label }) => (
+            <div
+              key={label}
+              onClick={onClose}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '7px 14px',
+                cursor: 'pointer', color: '#ccc', fontSize: 13,
+                transition: 'background 0.1s', userSelect: 'none',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#252525' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+            >
+              <span style={{ color: '#888', flexShrink: 0 }}>{icon}</span>
+              <span style={{ flex: 1 }}>{label}</span>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   )
 }
