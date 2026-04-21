@@ -1,10 +1,11 @@
 import { memo, useState, useRef, useCallback, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { Handle, Position, NodeProps, useStore } from 'reactflow'
 import {
   ScrollText, RotateCcw, Square,
   ChevronDown, Languages, Zap, ArrowUp, CheckCircle2,
   AlignJustify, PlaySquare, User, Download, Maximize2, Film, TableProperties,
-  Image as ImageIcon, Check, LayoutGrid, List,
+  Image as ImageIcon, Check, LayoutGrid, List, X, FileDown,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useProjectStore } from '@/stores/projectStore'
@@ -378,6 +379,398 @@ function StoryboardTable({ shots, sceneTitle }: { shots: ShotRow[]; sceneTitle: 
       ))}
     </div>
   )
+}
+
+/* ── Fullscreen storyboard modal ─────────────────────────────── */
+
+type FullscreenTab = 'basic' | 'supplement'
+
+function StoryboardFullscreenModal({
+  shots, sceneTitle, onClose,
+}: {
+  shots: ShotRow[]
+  sceneTitle: string
+  onClose: () => void
+}) {
+  const [tab, setTab] = useState<FullscreenTab>('basic')
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  const handleDownload = () => {
+    const rows = shots.map(s =>
+      [s.sequence, s.duration, s.description, s.character1 || '', s.character1Detail || '', s.shotType || ''].join('\t')
+    )
+    const content = ['序号\t时长\t画面描述\t角色1\t角色描述1\t景别', ...rows].join('\n')
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `${sceneTitle || '分镜脚本'}.tsv`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleExport = () => {
+    // Build CSV
+    const header = ['序号', '时长(s)', '画面描述', '角色', '角色描述', '景别'].join(',')
+    const rows = shots.map(s =>
+      [s.sequence, s.duration,
+        `"${(s.description || '').replace(/"/g, '""')}"`,
+        `"${(s.character1 || '').replace(/"/g, '""')}"`,
+        `"${(s.character1Detail || '').replace(/"/g, '""')}"`,
+        `"${(s.shotType || '').replace(/\n/g, ' ').replace(/"/g, '""')}"`,
+      ].join(',')
+    )
+    const csv = [header, ...rows].join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `${sceneTitle || '分镜脚本'}.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // ── Basic tab columns: 序号/画面描述/角色名/角色描述/场景(地点+时间+光线)/镜头(景别+运镜+时长)/分镜图/提示词/导演备注
+  const basicCols = [
+    { label: '序号',    width: 50  },
+    { label: '画面描述', width: 320 },
+    { label: '角色',    width: 90  },
+    { label: '角色描述', width: 200 },
+    { label: '场景地点', width: 120 },
+    { label: '时间',    width: 80  },
+    { label: '光线',    width: 80  },
+    { label: '景别',    width: 80  },
+    { label: '运镜',    width: 80  },
+    { label: '时长(s)', width: 70  },
+    { label: '分镜图',  width: 80  },
+  ]
+
+  // ── Supplement tab columns: 序号/提示词生成/导演备注
+  const suppCols = [
+    { label: '序号',    width: 50  },
+    { label: '画面描述', width: 320 },
+    { label: '提示词生成', width: 380 },
+    { label: '导演备注', width: 300 },
+  ]
+
+  const totalBasicW  = basicCols.reduce((s, c) => s + c.width, 0)
+  const totalSuppW   = suppCols.reduce((s, c) => s + c.width, 0)
+
+  const tabBtn = (id: FullscreenTab, label: string) => (
+    <button
+      key={id}
+      onClick={() => setTab(id)}
+      style={{
+        background: 'none', border: 'none', cursor: 'pointer',
+        padding: '8px 16px', fontSize: 13, fontWeight: 500,
+        color: tab === id ? '#e0e0e0' : '#666',
+        borderBottom: tab === id ? '2px solid #3a6ff7' : '2px solid transparent',
+        transition: 'color 0.15s, border-color 0.15s',
+        whiteSpace: 'nowrap',
+      }}
+      onMouseEnter={e => { if (tab !== id) e.currentTarget.style.color = '#999' }}
+      onMouseLeave={e => { if (tab !== id) e.currentTarget.style.color = '#666' }}
+    >{label}</button>
+  )
+
+  const modal = (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 99999,
+        background: 'rgba(0,0,0,0.82)',
+        display: 'flex', alignItems: 'stretch',
+        fontFamily: 'Inter, system-ui, sans-serif',
+      }}
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column',
+        background: '#141414',
+        margin: 32,
+        borderRadius: 16,
+        border: '1px solid #2e2e2e',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.8)',
+        overflow: 'hidden',
+      }}>
+
+        {/* ── Top bar ── */}
+        <div style={{
+          display: 'flex', alignItems: 'center',
+          padding: '0 20px',
+          borderBottom: '1px solid #222',
+          background: '#181818',
+          flexShrink: 0,
+          gap: 8,
+          height: 52,
+        }}>
+          {/* Title */}
+          <ScrollText size={15} color="#666" />
+          <span style={{ fontSize: 14, fontWeight: 600, color: '#e0e0e0', marginRight: 8 }}>
+            {sceneTitle || '分镜脚本'}
+          </span>
+
+          {/* Tabs */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+            {tabBtn('basic',      '分镜基础')}
+            {tabBtn('supplement', '分镜补充')}
+          </div>
+
+          <div style={{ flex: 1 }} />
+
+          {/* Toolbar */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              onClick={handleDownload}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                background: '#1e1e1e', border: '1px solid #333',
+                borderRadius: 8, cursor: 'pointer', padding: '6px 14px',
+                color: '#aaa', fontSize: 12,
+                transition: 'background 0.12s, color 0.12s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#282828'; e.currentTarget.style.color = '#e0e0e0' }}
+              onMouseLeave={e => { e.currentTarget.style.background = '#1e1e1e'; e.currentTarget.style.color = '#aaa' }}
+            >
+              <Download size={13} />
+              下载
+            </button>
+            <button
+              onClick={handleExport}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                background: '#1e1e1e', border: '1px solid #333',
+                borderRadius: 8, cursor: 'pointer', padding: '6px 14px',
+                color: '#aaa', fontSize: 12,
+                transition: 'background 0.12s, color 0.12s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#282828'; e.currentTarget.style.color = '#e0e0e0' }}
+              onMouseLeave={e => { e.currentTarget.style.background = '#1e1e1e'; e.currentTarget.style.color = '#aaa' }}
+            >
+              <FileDown size={13} />
+              导出 CSV
+            </button>
+
+            {/* Divider */}
+            <div style={{ width: 1, height: 20, background: '#2e2e2e', margin: '0 4px' }} />
+
+            {/* Close */}
+            <button
+              onClick={onClose}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 32, height: 32, borderRadius: 8,
+                background: 'none', border: 'none', cursor: 'pointer', color: '#666',
+                transition: 'background 0.12s, color 0.12s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = '#2a1a1a'; e.currentTarget.style.color = '#f87171' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#666' }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* ── Table area ── */}
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', minHeight: 0 }}>
+          {tab === 'basic' ? (
+            <table style={{
+              borderCollapse: 'collapse',
+              minWidth: totalBasicW,
+              width: '100%',
+              tableLayout: 'fixed',
+            }}>
+              <colgroup>
+                {basicCols.map((c, i) => <col key={i} style={{ width: c.width }} />)}
+              </colgroup>
+              <thead>
+                <tr style={{ background: '#1a1a1a', position: 'sticky', top: 0, zIndex: 1 }}>
+                  {basicCols.map(c => (
+                    <th key={c.label} style={{
+                      padding: '10px 12px', textAlign: 'left',
+                      fontSize: 11, color: '#555', fontWeight: 600,
+                      borderBottom: '1px solid #2a2a2a',
+                      whiteSpace: 'nowrap', letterSpacing: '0.02em',
+                    }}>{c.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {shots.length === 0 ? (
+                  <tr>
+                    <td colSpan={basicCols.length} style={{
+                      textAlign: 'center', padding: '40px 0',
+                      fontSize: 13, color: '#444',
+                    }}>暂无分镜数据</td>
+                  </tr>
+                ) : shots.map((shot, idx) => (
+                  <tr
+                    key={shot.id}
+                    style={{ background: idx % 2 === 0 ? '#161616' : '#181818' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = '#1e2030' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = idx % 2 === 0 ? '#161616' : '#181818' }}
+                  >
+                    {/* 序号 */}
+                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#888', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 22, height: 22, borderRadius: 6,
+                        background: '#252525', color: '#aaa', fontSize: 11, fontWeight: 600,
+                      }}>{shot.sequence}</span>
+                    </td>
+                    {/* 画面描述 */}
+                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#ccc', lineHeight: 1.6, borderBottom: '1px solid #1e1e1e', verticalAlign: 'top', wordBreak: 'break-all' }}>
+                      {shot.description}
+                    </td>
+                    {/* 角色 */}
+                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#aaa', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
+                      {shot.character1 || <span style={{ color: '#3a3a3a' }}>—</span>}
+                    </td>
+                    {/* 角色描述 */}
+                    <td style={{ padding: '10px 12px', fontSize: 11, color: '#777', lineHeight: 1.5, borderBottom: '1px solid #1e1e1e', verticalAlign: 'top', wordBreak: 'break-all' }}>
+                      {shot.character1Detail || <span style={{ color: '#3a3a3a' }}>—</span>}
+                    </td>
+                    {/* 场景地点 */}
+                    <td style={{ padding: '10px 12px', fontSize: 11, color: '#666', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
+                      <span style={{ color: '#3a3a3a' }}>—</span>
+                    </td>
+                    {/* 时间 */}
+                    <td style={{ padding: '10px 12px', fontSize: 11, color: '#666', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
+                      <span style={{ color: '#3a3a3a' }}>—</span>
+                    </td>
+                    {/* 光线 */}
+                    <td style={{ padding: '10px 12px', fontSize: 11, color: '#666', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
+                      <span style={{ color: '#3a3a3a' }}>—</span>
+                    </td>
+                    {/* 景别 */}
+                    <td style={{ padding: '10px 12px', fontSize: 11, color: '#888', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top', whiteSpace: 'pre-line' }}>
+                      {shot.shotType || <span style={{ color: '#3a3a3a' }}>—</span>}
+                    </td>
+                    {/* 运镜 */}
+                    <td style={{ padding: '10px 12px', fontSize: 11, color: '#666', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
+                      <span style={{ color: '#3a3a3a' }}>—</span>
+                    </td>
+                    {/* 时长 */}
+                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#888', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
+                      {shot.duration}s
+                    </td>
+                    {/* 分镜图 */}
+                    <td style={{ padding: '10px 12px', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
+                      <div style={{
+                        width: 48, height: 32, background: '#1a1a1a',
+                        border: '1px solid #2a2a2a', borderRadius: 4,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        cursor: 'pointer',
+                      }}>
+                        <ImageIcon size={14} color="#333" />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            /* ── Supplement tab ── */
+            <table style={{
+              borderCollapse: 'collapse',
+              minWidth: totalSuppW,
+              width: '100%',
+              tableLayout: 'fixed',
+            }}>
+              <colgroup>
+                {suppCols.map((c, i) => <col key={i} style={{ width: c.width }} />)}
+              </colgroup>
+              <thead>
+                <tr style={{ background: '#1a1a1a', position: 'sticky', top: 0, zIndex: 1 }}>
+                  {suppCols.map(c => (
+                    <th key={c.label} style={{
+                      padding: '10px 12px', textAlign: 'left',
+                      fontSize: 11, color: '#555', fontWeight: 600,
+                      borderBottom: '1px solid #2a2a2a',
+                      whiteSpace: 'nowrap', letterSpacing: '0.02em',
+                    }}>{c.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {shots.length === 0 ? (
+                  <tr>
+                    <td colSpan={suppCols.length} style={{
+                      textAlign: 'center', padding: '40px 0',
+                      fontSize: 13, color: '#444',
+                    }}>暂无分镜数据</td>
+                  </tr>
+                ) : shots.map((shot, idx) => (
+                  <tr
+                    key={shot.id}
+                    style={{ background: idx % 2 === 0 ? '#161616' : '#181818' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = '#1e2030' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = idx % 2 === 0 ? '#161616' : '#181818' }}
+                  >
+                    {/* 序号 */}
+                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#888', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 22, height: 22, borderRadius: 6,
+                        background: '#252525', color: '#aaa', fontSize: 11, fontWeight: 600,
+                      }}>{shot.sequence}</span>
+                    </td>
+                    {/* 画面描述 */}
+                    <td style={{ padding: '10px 12px', fontSize: 12, color: '#ccc', lineHeight: 1.6, borderBottom: '1px solid #1e1e1e', verticalAlign: 'top', wordBreak: 'break-all' }}>
+                      {shot.description}
+                    </td>
+                    {/* 提示词生成 */}
+                    <td style={{ padding: '10px 12px', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
+                      <div style={{
+                        minHeight: 32, background: '#1a1a1a',
+                        border: '1px dashed #2a2a2a', borderRadius: 6,
+                        padding: '6px 10px',
+                        fontSize: 11, color: '#555', lineHeight: 1.5,
+                        cursor: 'pointer',
+                        transition: 'border-color 0.12s, background 0.12s',
+                      }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#3a6ff7'; e.currentTarget.style.background = '#1a1e2a' }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = '#2a2a2a'; e.currentTarget.style.background = '#1a1a1a' }}
+                      >
+                        点击生成 Midjourney / SD 提示词…
+                      </div>
+                    </td>
+                    {/* 导演备注 */}
+                    <td style={{ padding: '10px 12px', borderBottom: '1px solid #1e1e1e', verticalAlign: 'top' }}>
+                      <div style={{
+                        minHeight: 32, background: '#1a1a1a',
+                        border: '1px dashed #2a2a2a', borderRadius: 6,
+                        padding: '6px 10px',
+                        fontSize: 11, color: '#555', lineHeight: 1.5,
+                        cursor: 'text',
+                      }}>
+                        <span style={{ color: '#3a3a3a' }}>添加备注…</span>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* ── Footer ── */}
+        <div style={{
+          borderTop: '1px solid #222',
+          padding: '8px 20px',
+          display: 'flex', alignItems: 'center',
+          background: '#181818', flexShrink: 0,
+        }}>
+          <span style={{ fontSize: 11, color: '#444' }}>
+            共 {shots.length} 个镜头
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+
+  return createPortal(modal, document.body)
 }
 
 /* ── View mode type ──────────────────────────────────────────── */
@@ -849,6 +1242,7 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
   const [sceneTitle, setSceneTitle] = useState('')
   const [warning, setWarning]     = useState<string | null>(null)
   const [viewMode, setViewMode]   = useState<ViewMode>('creative')
+  const [showFullscreen, setShowFullscreen] = useState(false)
 
   const abortRef   = useRef<AbortController | null>(null)
   const warnTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1348,7 +1742,15 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <ViewDropdown value={viewMode} onChange={setViewMode} />
-                <Maximize2 size={12} color="#666" style={{ cursor: 'pointer' }} />
+                <span
+                  className="nodrag nopan"
+                  onClick={() => setShowFullscreen(true)}
+                  style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', padding: 2, borderRadius: 4 }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#252525' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                >
+                  <Maximize2 size={12} color="#666" />
+                </span>
               </div>
             </div>
 
@@ -1382,6 +1784,15 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
             onSourceClick={() => setMenuOpen(v => !v)} menuOpen={menuOpen} onMenuClose={() => setMenuOpen(false)}
             nodeType="libtv_script_gen" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />
         </>
+      )}
+
+      {/* ══════════ FULLSCREEN MODAL ══════════ */}
+      {showFullscreen && (
+        <StoryboardFullscreenModal
+          shots={shots}
+          sceneTitle={sceneTitle}
+          onClose={() => setShowFullscreen(false)}
+        />
       )}
     </div>
   )
