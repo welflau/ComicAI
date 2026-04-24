@@ -1288,8 +1288,8 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
         )}
       </div>
 
-      {/* Prompt panel — expands below when selected */}
-      <CollapsibleSection expanded={(!!selected && !dragging) || hadInitialExpand}>
+      {/* Prompt panel — expands below when selected (hidden during multi-select) */}
+      <CollapsibleSection expanded={((!!selected && !dragging) || hadInitialExpand) && !isMultiSelected}>
         <ZoomInvariantPanel naturalWidth={NODE_W} nodeWidth={NODE_W}>
           <VideoPromptPanel
             value={prompt}
