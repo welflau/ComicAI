@@ -22,6 +22,7 @@ export interface VideoParams {
   resolution:  '480p' | '720p' | '1080p'
   duration:    5 | 10
   generateAudio: boolean
+  audioSync:   boolean
 }
 
 export interface VideoNodeData {
@@ -52,6 +53,8 @@ const DEFAULT_PARAMS: VideoParams = {
   resolution:  '720p',
   duration:    5,
   generateAudio: false,
+  audioSync:   true,
+}
 }
 
 /* ── Aspect ratio definitions ───────────────────────────────────────── */
@@ -867,6 +870,61 @@ function VideoPromptPanel({ value, onChange, onSend, generating, activeTab, onTa
                 })}
               </div>
             </div>
+
+            {/* ── 音画同步（仅开启音频时有效）── */}
+            <div>
+              <div style={{ fontSize: 11, color: '#666', marginBottom: 8, fontWeight: 500, letterSpacing: '0.02em' }}>音画同步</div>
+              <div style={{ display: 'flex', gap: 5 }}>
+                {[
+                  { label: '🎵 开启', value: true  },
+                  { label: '✕ 关闭',  value: false },
+                ].map(opt => {
+                  const active = videoParams.audioSync === opt.value
+                  const disabled = !videoParams.generateAudio
+                  return (
+                    <button
+                      key={String(opt.value)}
+                      className="nodrag nopan"
+                      onMouseDown={e => {
+                        e.preventDefault()
+                        if (!disabled) onParamsChange({ ...videoParams, audioSync: opt.value })
+                      }}
+                      title={disabled ? '请先开启生成音频' : undefined}
+                      style={{
+                        flex: 1,
+                        padding: '5px 0',
+                        background: active && !disabled ? '#2a2a2a' : '#161616',
+                        border: active && !disabled ? '1.5px solid #aaa' : '1px solid #333',
+                        borderRadius: 7,
+                        color: disabled ? '#444' : active ? '#ddd' : '#777',
+                        fontSize: 11,
+                        cursor: disabled ? 'not-allowed' : 'pointer',
+                        fontFamily: 'inherit',
+                        fontWeight: active && !disabled ? 600 : 400,
+                        opacity: disabled ? 0.45 : 1,
+                        transition: 'border-color 0.12s, background 0.12s, color 0.12s',
+                      }}
+                      onMouseEnter={e => {
+                        if (!disabled && !active) {
+                          const el = e.currentTarget as HTMLButtonElement
+                          el.style.borderColor = '#555'
+                          el.style.color = '#aaa'
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        if (!disabled && videoParams.audioSync !== opt.value) {
+                          const el = e.currentTarget as HTMLButtonElement
+                          el.style.borderColor = '#333'
+                          el.style.color = '#777'
+                        }
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -995,6 +1053,7 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
         resolution:    videoParams.resolution,
         generateAudio: videoParams.generateAudio,
         sound:         (videoParams.generateAudio ? 'on' : 'off') as 'on' | 'off',
+        audioSync:     videoParams.audioSync,
         signal: ctrl.signal,
         onProgress: (msg: string) => setStatusMsg(msg),
       }

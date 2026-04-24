@@ -708,6 +708,8 @@ export interface VideoGenerateOptions {
   resolution?: '480p' | '720p' | '1080p'
   /** 生成音频（即梦专用）: true=开启, false=关闭 */
   generateAudio?: boolean
+  /** 音画同步（开启音频时生效）: true=开启, false=关闭 */
+  audioSync?: boolean
   /** 可灵音效: 'on' | 'off' */
   sound?: 'on' | 'off'
   /** AbortSignal */
@@ -874,6 +876,7 @@ export async function klingGenerateVideo(opts: VideoGenerateOptions): Promise<st
     aspect_ratio: aspectRatio,
     mode: 'pro',
     sound: opts.sound ?? 'off',
+    sound_sync: (opts.sound === 'on' || opts.generateAudio) ? (opts.audioSync ?? true) : false,
   }
   if (prompt) taskJson.prompt = prompt
   if (negativePrompt) taskJson.negative_prompt = negativePrompt
@@ -942,6 +945,7 @@ export async function jimengGenerateVideo(opts: VideoGenerateOptions): Promise<s
     duration,
     resolution: opts.resolution ?? '720p',
     generate_audio: opts.generateAudio ?? false,
+    generate_audio_sync: opts.generateAudio ? (opts.audioSync ?? true) : false,
     watermark: false,
     content,
   }
