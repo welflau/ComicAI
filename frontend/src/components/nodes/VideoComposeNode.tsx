@@ -2,7 +2,7 @@ import { memo, useState, useEffect, useCallback, useRef } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import {
   Combine, Play, GripVertical, Loader2, ChevronDown,
-  TriangleAlert, CheckCircle2, ArrowRight, X,
+  TriangleAlert, CheckCircle2, X,
 } from 'lucide-react'
 import { useProjectStore } from '@/stores/projectStore'
 import { useIsMultiSelected } from './shared/useIsMultiSelected'
@@ -37,59 +37,15 @@ interface SourceClip {
 
 const NODE_W   = 300
 const TITLE_H  = 28
-const THUMB_W  = 90
-const THUMB_H  = 58
-const HANDLE_Y = TITLE_H + 108
+// Target/source handle vertical offset: aimed at the center of the card
+// when showing a couple of clip rows. Tweak if the card height changes.
+const HANDLE_Y = TITLE_H + 72
 
 const TRANSITIONS: Array<{ id: TransitionType; label: string }> = [
   { id: 'none',     label: '直切' },
   { id: 'fade',     label: '淡入淡出' },
   { id: 'dissolve', label: '叠化' },
 ]
-
-/* ── Thumbnail strip item ───────────────────────────────────────────── */
-
-function ThumbItem({ clip, index }: { clip: SourceClip; index: number }) {
-  return (
-    <div style={{ position: 'relative', flexShrink: 0 }}>
-      <div style={{
-        width: THUMB_W, height: THUMB_H,
-        borderRadius: 8, overflow: 'hidden',
-        background: '#111', border: '1px solid #2e2e2e',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        {clip.videoUrl ? (
-          <video
-            src={clip.videoUrl}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-            muted playsInline preload="metadata"
-          />
-        ) : (
-          <Play size={16} color="#333" />
-        )}
-      </div>
-      {/* Number badge */}
-      <div style={{
-        position: 'absolute', top: 4, left: 4,
-        width: 16, height: 16, borderRadius: 4,
-        background: 'rgba(0,0,0,0.72)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 9, color: '#ccc', fontWeight: 700,
-        border: '1px solid rgba(255,255,255,0.08)',
-      }}>
-        {index + 1}
-      </div>
-      {/* Label underneath */}
-      <div style={{
-        marginTop: 4, width: THUMB_W,
-        fontSize: 10, color: '#555', textAlign: 'center',
-        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-      }}>
-        {clip.label || '片段'}
-      </div>
-    </div>
-  )
-}
 
 /* ── Draggable clip row ─────────────────────────────────────────────── */
 
@@ -377,32 +333,8 @@ function VideoComposeNode({ data, selected, dragging }: NodeProps<VideoComposeNo
           </div>
         )}
 
-        {/* ── Thumbnail strip ─────────────────────────────────── */}
-        {clips.length > 0 && (
-          <div
-            className="nodrag nopan"
-            onMouseDown={e => e.stopPropagation()}
-            style={{
-              display: 'flex', alignItems: 'flex-start', gap: 6,
-              padding: '14px 14px 0',
-              overflowX: 'auto',
-              /* hide scrollbar but still scrollable */
-              scrollbarWidth: 'none',
-            }}
-          >
-            {clips.map((clip, i) => (
-              <div key={clip.nodeId} style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                <ThumbItem clip={clip} index={i} />
-                {i < clips.length - 1 && (
-                  <ArrowRight size={11} color="#333" style={{ flexShrink: 0, marginBottom: 18 }} />
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* ── Clip list / empty state ─────────────────────────── */}
-        <div style={{ padding: clips.length > 0 ? '10px 8px 4px' : '20px 16px' }}>
+        <div style={{ padding: clips.length > 0 ? '14px 8px 4px' : '20px 16px' }}>
           {clips.length === 0 ? (
             <div style={{
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
