@@ -3,7 +3,7 @@ import { Handle, Position, NodeProps } from 'reactflow'
 import {
   Play, Upload, ChevronDown, ArrowUp,
   Maximize2, Zap, Tag, Camera, Users, Settings, Languages,
-  Layers, Sparkles, Loader2,
+  Layers, Sparkles, Loader2, FolderOpen,
 } from 'lucide-react'
 import CollapsibleSection from './shared/CollapsibleSection'
 import ZoomInvariantPanel from './shared/ZoomInvariantPanel'
@@ -1148,6 +1148,59 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
           >
             <Upload size={12} />
             上传
+          </button>
+        </div>
+      )}
+
+      {/* Reveal-in-folder button — floats above node when selected AND the
+          video is saved to local /uploads/ (won't help for raw CDN URLs). */}
+      {showSelected && hasVideo && data.videoUrl?.startsWith('/uploads/') && (
+        <div style={{
+          position: 'absolute', top: -38, left: '50%',
+          transform: 'translateX(-50%)', zIndex: 10,
+        }}>
+          <button
+            className="nodrag nopan"
+            onClick={async (e) => {
+              e.stopPropagation()
+              try {
+                const { revealVideoInFolder } = await import('@/api')
+                await revealVideoInFolder(data.videoUrl!)
+                addLog({
+                  level: 'info', category: 'operation',
+                  message: '[VideoNode] 已打开文件所在位置',
+                  detail: data.videoUrl,
+                })
+              } catch (err) {
+                const detail = (err as any)?.response?.data?.detail || String(err)
+                addLog({
+                  level: 'error', category: 'operation',
+                  message: '[VideoNode] 打开文件位置失败',
+                  detail,
+                })
+              }
+            }}
+            title="在文件夹中显示"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: '#1e1e1e', border: '1px solid #3a3a3a',
+              borderRadius: 20, padding: '5px 14px',
+              color: '#bbb', fontSize: 12, cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+              whiteSpace: 'nowrap',
+              transition: 'border-color 0.12s, color 0.12s',
+            }}
+            onMouseEnter={e => {
+              const el = e.currentTarget as HTMLButtonElement
+              el.style.borderColor = '#555'; el.style.color = '#fff'
+            }}
+            onMouseLeave={e => {
+              const el = e.currentTarget as HTMLButtonElement
+              el.style.borderColor = '#3a3a3a'; el.style.color = '#bbb'
+            }}
+          >
+            <FolderOpen size={12} />
+            打开文件夹
           </button>
         </div>
       )}

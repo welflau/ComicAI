@@ -1010,6 +1010,18 @@ export async function persistRemoteVideo(remoteUrl: string): Promise<string> {
   }
 }
 
+/**
+ * Ask the backend to open the OS file manager pointing at the given
+ * /uploads/... file (Explorer on Windows, Finder on macOS, xdg-open on Linux).
+ * Only works when the user runs backend and browser on the same machine.
+ */
+export async function revealVideoInFolder(localUrl: string): Promise<void> {
+  if (!localUrl || !localUrl.startsWith('/uploads/')) {
+    throw new Error('只能打开本地保存的视频（/uploads/...）')
+  }
+  await apiClient.post('/video/reveal', { url: localUrl })
+}
+
 // ─── Assets Upload ────────────────────────────────────────────────────────────
 export const assetsApi = {
   upload: (projectId: string, file: File, assetType: string = 'image') => {

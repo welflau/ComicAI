@@ -2,7 +2,7 @@ import { memo, useState, useEffect, useCallback, useRef } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import {
   Combine, Play, GripVertical, Loader2, ChevronDown,
-  TriangleAlert, CheckCircle2, X,
+  TriangleAlert, CheckCircle2, X, FolderOpen,
 } from 'lucide-react'
 import { useProjectStore } from '@/stores/projectStore'
 import { useIsMultiSelected } from './shared/useIsMultiSelected'
@@ -281,6 +281,59 @@ function VideoComposeNode({ data, selected, dragging }: NodeProps<VideoComposeNo
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
+      {/* Reveal-in-folder button — floats above node when selected AND a
+          composed output exists on local disk. */}
+      {showSelected && outputUrl && outputUrl.startsWith('/uploads/') && (
+        <div style={{
+          position: 'absolute', top: -38, left: '50%',
+          transform: 'translateX(-50%)', zIndex: 10,
+        }}>
+          <button
+            className="nodrag nopan"
+            onClick={async (e) => {
+              e.stopPropagation()
+              try {
+                const { revealVideoInFolder } = await import('@/api')
+                await revealVideoInFolder(outputUrl)
+                addLog({
+                  level: 'info', category: 'operation',
+                  message: '[VideoCompose] 已打开文件所在位置',
+                  detail: outputUrl,
+                })
+              } catch (err) {
+                const detail = (err as any)?.response?.data?.detail || String(err)
+                addLog({
+                  level: 'error', category: 'operation',
+                  message: '[VideoCompose] 打开文件位置失败',
+                  detail,
+                })
+              }
+            }}
+            title="在文件夹中显示"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: '#1e1e1e', border: '1px solid #3a3a3a',
+              borderRadius: 20, padding: '5px 14px',
+              color: '#bbb', fontSize: 12, cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+              whiteSpace: 'nowrap',
+              transition: 'border-color 0.12s, color 0.12s',
+            }}
+            onMouseEnter={e => {
+              const el = e.currentTarget as HTMLButtonElement
+              el.style.borderColor = '#555'; el.style.color = '#fff'
+            }}
+            onMouseLeave={e => {
+              const el = e.currentTarget as HTMLButtonElement
+              el.style.borderColor = '#3a3a3a'; el.style.color = '#bbb'
+            }}
+          >
+            <FolderOpen size={12} />
+            打开文件夹
+          </button>
+        </div>
+      )}
+
       {/* ── Title ──────────────────────────────────────────────── */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,

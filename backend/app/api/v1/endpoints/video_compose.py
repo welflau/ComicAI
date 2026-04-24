@@ -330,3 +330,62 @@ async def persist_video(
         f"[VideoPersist] {url[:80]} → {local_url} ({size} bytes, user={current_user.id})"
     )
     return PersistResponse(url=local_url, source_url=url, size=size)
+
+
+# ─── Reveal file in OS file manager ──────────────────────────────────────────
+
+class RevealRequest(BaseModel):
+    # Local URL like /uploads/videos/gen_abc.mp4
+    url: str
+
+
+class RevealResponse(BaseModel):
+    ok: bool
+    path: str
+
+
+@router.post("/reveal", response_model=RevealResponse)
+async def reveal_in_folder(
+    req: RevealRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Open the OS file manager and highlight the given /uploads/... file.
+    Windows: explorer.exe /select,<path>
+    macOS:   open -R <path>
+    Linux:   xdg-open <parent-dir>  (most DEs don't support selecting a file)
+
+    This relies on the user running the backend on the same machine as the
+    file manager they want to use — only practical for local desktop dev /
+    single-user deployments, not server deployments.
+    """
+    url = req.url.strip()
+    if not url.startswith("/uploads/"):
+        raise HTTPException(status_code=400, detail="Only /uploads/ URLs are supported")
+
+    local = (UPLOAD_ROOT / url[len("/uploads/"):]).resolve()
+    # Safety: must stay within UPLOAD_ROOT
+    root_abs = UPLOAD_ROOT.resolve()
+    try:
+        local.relative_to(root_abs)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path escapes uploads root")
+
+    if not local.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {local}")
+
+    import sys, subprocess
+    try:
+        if sys.platform == "win32":
+            # /select, highlights the file inside the folder
+            subprocess.Popen(["explorer.exe", f"/select,{local}"])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(local)])
+        else:
+            # Linux / other: open parent folder
+            subprocess.Popen(["xdg-open", str(local.parent)])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to open file manager: {e}")
+
+    logger.info(f"[VideoReveal] Opened folder for {local} (user={current_user.id})")
+    return RevealResponse(ok=True, path=str(local))
