@@ -49,7 +49,7 @@ const MENU_ITEMS: MenuItem[] = [
     label: '视频合成',
     badge: 'Beta',
     icon: <Combine size={14} />,
-    targetType: 'auto_edit',
+    targetType: 'libtv_video_compose',
     targetLabel: '视频合成',
     targetCategory: 'output',
   },
@@ -87,7 +87,7 @@ const ENABLED_ITEMS: Record<NodeTypeKey, MenuItemId[]> = {
   libtv_script_gen: ['text', 'image', 'video', 'script'],
   libtv_storyboard: ['image', 'video', 'script'],
   libtv_image:      ['text', 'image', 'video', 'script'],
-  libtv_video:      ['text', 'image', 'video'],
+  libtv_video:      ['text', 'image', 'video', 'video_compose'],
   default:          ['text', 'image', 'video', 'video_compose', 'audio', 'script'],
 }
 

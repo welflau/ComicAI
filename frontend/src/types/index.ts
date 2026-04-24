@@ -268,6 +268,7 @@ export type NodeType =
   | 'libtv_storyboard'
   | 'libtv_image'
   | 'libtv_video'
+  | 'libtv_video_compose'
 
 export type NodeCategory = 'input' | 'process' | 'output' | 'control'
 

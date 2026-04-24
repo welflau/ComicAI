@@ -960,7 +960,7 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
     setStatusMsg('准备中...')
 
     try {
-      const { klingGenerateVideo, jimengGenerateVideo } = await import('@/api')
+      const { klingGenerateVideo, jimengGenerateVideo, persistRemoteVideo } = await import('@/api')
       const { resolveImageToDataUrl } = await import('@/stores/imageStore')
       const { addLog } = await import('@/stores/logStore')
 
@@ -1006,15 +1006,31 @@ function VideoNode({ data, selected, dragging }: NodeProps<VideoNodeData>) {
         videoUrl = await jimengGenerateVideo(opts)
       }
 
+      // 将远程 CDN 视频持久化到后端 backend/uploads/videos/，
+      // 得到一个稳定本地 URL，避免 CDN 过期后节点失效。
+      setStatusMsg('保存视频到本地...')
+      addLog({
+        level: 'info', category: 'ai',
+        message: '[持久化] 开始下载 CDN 视频到本地',
+        detail: `源: ${videoUrl.slice(0, 100)}`,
+      })
+      const localUrl = await persistRemoteVideo(videoUrl)
+
       // Save to node data
       updateNode(data.id, {
-        videoUrl,
+        videoUrl: localUrl,
         videoSource: 'generated',
         videoPrompt: prompt.trim(),
         videoModel: selectedModel,
       } as any)
 
-      addLog({ level: 'info', category: 'ai', message: `[VideoNode] 视频生成成功 (${selectedModel})`, detail: videoUrl.slice(0, 80) })
+      addLog({
+        level: 'info', category: 'ai',
+        message: `[VideoNode] 视频生成成功 (${selectedModel})`,
+        detail: localUrl === videoUrl
+          ? `CDN: ${videoUrl.slice(0, 100)}`
+          : `CDN: ${videoUrl.slice(0, 80)}...\n已保存到本地: ${localUrl}\n磁盘路径: backend${localUrl.replace(/\//g, '\\')}`,
+      })
       setStatusMsg('')
     } catch (err) {
       if ((err as Error).message === '已取消') {

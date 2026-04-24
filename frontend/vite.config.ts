@@ -122,15 +122,15 @@ export default defineConfig(({ mode }) => {
           secure: false,
         },
         '/uploads': {
-          target: env.VITE_API_URL || 'http://localhost:8000',
+          target: env.VITE_API_URL || 'http://localhost:8002',
           changeOrigin: true,
         },
         '/api': {
-          target: env.VITE_API_URL || 'http://localhost:8000',
+          target: env.VITE_API_URL || 'http://localhost:8002',
           changeOrigin: true,
         },
         '/ws': {
-          target: env.VITE_WS_URL || 'ws://localhost:8000',
+          target: env.VITE_WS_URL || 'ws://localhost:8002',
           ws: true,
           changeOrigin: true,
         },

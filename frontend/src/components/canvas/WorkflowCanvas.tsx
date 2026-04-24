@@ -22,6 +22,7 @@ import ScriptGenNode from '@/components/nodes/ScriptGenNode'
 import StoryboardTableNode from '@/components/nodes/StoryboardTableNode'
 import ImageNode from '@/components/nodes/ImageNode'
 import VideoNode from '@/components/nodes/VideoNode'
+import VideoComposeNode from '@/components/nodes/VideoComposeNode'
 import AnimatedFlowEdge from '@/components/canvas/AnimatedFlowEdge'
 import TemplatePicker from '@/components/canvas/TemplatePicker'
 import CanvasContextMenu from '@/components/canvas/CanvasContextMenu'
@@ -52,6 +53,7 @@ const nodeTypes = {
   libtv_storyboard: StoryboardTableNode,
   libtv_image: ImageNode,
   libtv_video: VideoNode,
+  libtv_video_compose: VideoComposeNode,
 }
 
 const edgeTypes = {

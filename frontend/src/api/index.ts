@@ -976,6 +976,40 @@ export async function jimengGenerateVideo(opts: VideoGenerateOptions): Promise<s
   return _lightaiPollVideoTask(taskId, apiKey, '即梦', opts)
 }
 
+/**
+ * 把远程 CDN 视频持久化到后端 backend/uploads/videos/。
+ * 返回本地 URL（/uploads/videos/xxx.mp4），前端应当用这个 URL 替换掉原 CDN URL。
+ * 如果传入的已经是本地 /uploads/ 路径，原样返回。
+ */
+export async function persistRemoteVideo(remoteUrl: string): Promise<string> {
+  if (!remoteUrl) return remoteUrl
+  if (remoteUrl.startsWith('/uploads/')) return remoteUrl
+  if (!/^https?:\/\//i.test(remoteUrl)) return remoteUrl
+  try {
+    const res = await apiClient.post('/video/persist', { url: remoteUrl }, { timeout: 180_000 })
+    const localUrl = res.data?.url as string | undefined
+    return localUrl || remoteUrl
+  } catch (err) {
+    // Fall back to the original URL so the user can still see the video
+    // even if persistence fails. Log a warning with the server's detail if any.
+    const anyErr = err as any
+    const detail = anyErr?.response?.data?.detail
+    const status = anyErr?.response?.status
+    const reason = detail ? `${status} ${detail}` : String(err)
+    console.warn('[persistRemoteVideo] failed, keeping original URL:', reason)
+    // Lazy-import to avoid circular deps
+    try {
+      const { addLog } = await import('@/stores/logStore')
+      addLog({
+        level: 'warn', category: 'ai',
+        message: '[持久化] 保存视频到本地失败',
+        detail: `原因: ${reason}\n源 URL: ${remoteUrl.slice(0, 120)}`,
+      })
+    } catch { /* ignore */ }
+    return remoteUrl
+  }
+}
+
 // ─── Assets Upload ────────────────────────────────────────────────────────────
 export const assetsApi = {
   upload: (projectId: string, file: File, assetType: string = 'image') => {

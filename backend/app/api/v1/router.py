@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, projects, ai_assistant, assets, migration, image_toolbar
+from app.api.v1.endpoints import auth, projects, ai_assistant, assets, migration, image_toolbar, video_compose
 
 api_router = APIRouter(prefix="/api/v1")
 
@@ -9,3 +9,4 @@ api_router.include_router(ai_assistant.router)
 api_router.include_router(assets.router)
 api_router.include_router(migration.router)
 api_router.include_router(image_toolbar.router)
+api_router.include_router(video_compose.router)
