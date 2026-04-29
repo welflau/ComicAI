@@ -5,6 +5,7 @@ import {
   ChevronDown, Languages, Zap, ArrowUp,
   CheckCircle2, Download, PenLine,
   Bold, Italic, List, ListOrdered, Minus, Copy, Maximize2,
+  Users, Check, Loader2,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useProjectStore } from '@/stores/projectStore'
@@ -33,6 +34,8 @@ export interface ScriptNodeData {
 }
 
 type Mode = 'idle' | 'write' | 'generating' | 'content'
+
+interface CharItem { id: string; name: string; description: string }
 
 const NODE_W           = 520
 const TITLE_H          = 28
@@ -511,6 +514,13 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const [isImg2PromptMode, setIsImg2PromptMode] = useState(false)
   const [warningMsg, setWarningMsg]     = useState('')
 
+  // Character portrait generation mode
+  const [charGenMode, setCharGenMode]           = useState(false)
+  const [characters, setCharacters]             = useState<CharItem[]>([])
+  const [selectedCharIds, setSelectedCharIds]   = useState<Set<string>>(new Set())
+  const [charExtractStatus, setCharExtractStatus] = useState<'idle' | 'extracting' | 'done' | 'error'>('idle')
+  const charAbortRef = useRef<AbortController | null>(null)
+
   const taRef    = useRef<HTMLTextAreaElement>(null)
   const editTaRef = useRef<HTMLTextAreaElement>(null)   // textarea for content edit mode
   const abortRef = useRef<AbortController | null>(null)
@@ -612,6 +622,66 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   }, [selected, editing])
 
   useEffect(() => () => { abortRef.current?.abort() }, [])
+
+  // Auto-exit char gen mode when node deselected
+  useEffect(() => {
+    if (!selected && charGenMode) {
+      setCharGenMode(false)
+      setCharacters([])
+      setSelectedCharIds(new Set())
+      setCharExtractStatus('idle')
+      charAbortRef.current?.abort()
+    }
+  }, [selected, charGenMode])
+
+  // Extract characters from text via AI
+  const extractCharacters = useCallback(() => {
+    if (!text.trim()) return
+    charAbortRef.current?.abort()
+    const ctrl = new AbortController()
+    charAbortRef.current = ctrl
+    setCharGenMode(true)
+    setCharacters([])
+    setSelectedCharIds(new Set())
+    setCharExtractStatus('extracting')
+
+    let raw = ''
+    streamAI({
+      prompt: text,
+      systemOverride: `你是角色提取助手。从用户提供的文本中，识别所有独立的角色或人物，提取每个角色的完整外貌/人设描述。
+严格输出 JSON 数组，格式如下，不要输出任何其他内容：
+[
+  { "name": "角色名", "description": "完整外貌与人设描述，尽量详细，适合作为AI绘图提示词" },
+  ...
+]
+如果文本中找不到任何角色，返回空数组 []。`,
+      contextType: 'general',
+      onChunk: c => { raw += c },
+      onDone: () => {
+        if (ctrl.signal.aborted) return
+        try {
+          // Extract first [...] block
+          const start = raw.indexOf('[')
+          const end   = raw.lastIndexOf(']')
+          if (start === -1 || end === -1) throw new Error('no array')
+          const parsed = JSON.parse(raw.slice(start, end + 1)) as { name: string; description: string }[]
+          const items: CharItem[] = parsed.map((c, i) => ({
+            id: `char_${i}`,
+            name: c.name || `角色${i + 1}`,
+            description: c.description || '',
+          }))
+          setCharacters(items)
+          setSelectedCharIds(new Set(items.map(c => c.id)))
+          setCharExtractStatus('done')
+        } catch {
+          setCharExtractStatus('error')
+          addLog({ level: 'warn', category: 'ai', message: '角色提取解析失败', detail: raw.slice(0, 200) })
+        }
+      },
+      onError: () => { if (!ctrl.signal.aborted) setCharExtractStatus('error') },
+      signal: ctrl.signal,
+    })
+  }, [text])
 
   const startGenerate = useCallback((promptOverride?: string) => {
     abortRef.current?.abort()
@@ -1225,6 +1295,33 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
             </div>
           )}
 
+          {/* Character portrait toolbar — floats above when selected, has text, not editing */}
+          {!editing && showSelected && !charGenMode && text.trim().length > 0 && (
+            <ZoomInvariantPanel naturalWidth={NODE_W}>
+              <div className="nodrag nopan" style={{
+                display: 'flex', justifyContent: 'center',
+                marginBottom: 8,
+              }}>
+                <button
+                  onClick={extractCharacters}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '5px 14px', borderRadius: 8,
+                    background: '#1e1e1e', border: '1px solid #383838',
+                    color: '#ccc', fontSize: 12, cursor: 'pointer',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+                    transition: 'background 0.1s, color 0.1s',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#2a2a2a'; (e.currentTarget as HTMLButtonElement).style.color = '#fff' }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#1e1e1e'; (e.currentTarget as HTMLButtonElement).style.color = '#ccc' }}
+                >
+                  <Users size={12} />
+                  生成角色图
+                </button>
+              </div>
+            </ZoomInvariantPanel>
+          )}
+
           <div
             onDoubleClick={() => {
               setEditing(true)
@@ -1317,11 +1414,177 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
             )}
           </div>
 
-          <CollapsibleSection expanded={isExpanded}>
+          {/* Character gen panel — extracting / selection */}
+          {charGenMode && (
             <ZoomInvariantPanel naturalWidth={NODE_W}>
-              <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} sourceThumbnailUrl={thumbnailUrl} />
+              <div className="nodrag nopan" style={{
+                marginTop: 8,
+                background: '#1a1a1a', border: '1px solid #333',
+                borderRadius: 10, overflow: 'hidden',
+                boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+              }}>
+                {/* Header */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '8px 12px',
+                  borderBottom: '1px solid #2a2a2a',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#aaa' }}>
+                    <Users size={12} color="#7c6af7" />
+                    <span>角色列表</span>
+                    {charExtractStatus === 'extracting' && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#666' }}>
+                        <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                        <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+                        识别中…
+                      </span>
+                    )}
+                    {charExtractStatus === 'error' && <span style={{ color: '#e05050', fontSize: 11 }}>提取失败</span>}
+                  </div>
+                  <button
+                    onClick={() => { setCharGenMode(false); setCharacters([]); setCharExtractStatus('idle'); charAbortRef.current?.abort() }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#555', padding: 2, lineHeight: 1, borderRadius: 4 }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = '#e05050' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = '#555' }}
+                  >✕</button>
+                </div>
+
+                {/* Character rows */}
+                {charExtractStatus === 'extracting' && characters.length === 0 && (
+                  <div style={{ padding: '20px 12px', textAlign: 'center', color: '#555', fontSize: 12 }}>正在识别角色…</div>
+                )}
+                {characters.length > 0 && (
+                  <div style={{ maxHeight: 220, overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#333 transparent' }}>
+                    {/* Select-all row */}
+                    <div
+                      onClick={() => {
+                        const allSel = selectedCharIds.size === characters.length
+                        setSelectedCharIds(allSel ? new Set() : new Set(characters.map(c => c.id)))
+                      }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '6px 12px', cursor: 'pointer',
+                        borderBottom: '1px solid #222',
+                        fontSize: 11, color: '#666',
+                      }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#212121' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                    >
+                      {/* Checkbox */}
+                      <div style={{
+                        width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+                        border: selectedCharIds.size > 0 ? '1.5px solid #7c6af7' : '1.5px solid #444',
+                        background: selectedCharIds.size === characters.length ? '#7c6af7' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {selectedCharIds.size === characters.length && <Check size={9} color="#fff" />}
+                        {selectedCharIds.size > 0 && selectedCharIds.size < characters.length && (
+                          <div style={{ width: 7, height: 1.5, background: '#7c6af7', borderRadius: 1 }} />
+                        )}
+                      </div>
+                      全选（{characters.length} 个角色）
+                    </div>
+                    {characters.map(char => {
+                      const sel = selectedCharIds.has(char.id)
+                      return (
+                        <div
+                          key={char.id}
+                          onClick={() => setSelectedCharIds(prev => {
+                            const next = new Set(prev)
+                            sel ? next.delete(char.id) : next.add(char.id)
+                            return next
+                          })}
+                          style={{
+                            display: 'flex', alignItems: 'flex-start', gap: 8,
+                            padding: '7px 12px', cursor: 'pointer',
+                            background: sel ? 'rgba(124,106,247,0.06)' : 'transparent',
+                            borderBottom: '1px solid #1e1e1e',
+                          }}
+                          onMouseEnter={e => { if (!sel) (e.currentTarget as HTMLElement).style.background = '#212121' }}
+                          onMouseLeave={e => { if (!sel) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                        >
+                          <div style={{
+                            width: 14, height: 14, borderRadius: 3, flexShrink: 0, marginTop: 2,
+                            border: sel ? '1.5px solid #7c6af7' : '1.5px solid #444',
+                            background: sel ? '#7c6af7' : 'transparent',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            {sel && <Check size={9} color="#fff" />}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, color: '#e0e0e0', fontWeight: 600, marginBottom: 2 }}>{char.name}</div>
+                            <div style={{
+                              fontSize: 11, color: '#777', lineHeight: 1.5,
+                              overflow: 'hidden', display: '-webkit-box',
+                              WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                            }}>{char.description}</div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Bottom action bar */}
+                {charExtractStatus === 'done' && characters.length > 0 && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '8px 12px', borderTop: '1px solid #2a2a2a',
+                  }}>
+                    <span style={{ fontSize: 11, color: '#666' }}>已选 {selectedCharIds.size}/{characters.length}</span>
+                    <button
+                      disabled={selectedCharIds.size === 0}
+                      onClick={() => {
+                        const selected = characters.filter(c => selectedCharIds.has(c.id))
+                        const SPACING_Y = 260
+                        const startX = data.position.x + NODE_W + 80
+                        const startY = data.position.y - ((selected.length - 1) * SPACING_Y) / 2
+                        selected.forEach((char, idx) => {
+                          const newId = `libtv_image_${Date.now()}_${idx}`
+                          addNode({
+                            id: newId, type: 'libtv_image',
+                            label: char.name,
+                            category: 'output',
+                            position: { x: startX, y: startY + idx * SPACING_Y },
+                            config: {},
+                            title: char.name,
+                            imagePrompt: char.description,
+                          } as NodeData)
+                          addEdge({ id: `e-${data.id}-${newId}`, source: data.id, target: newId })
+                        })
+                        setCharGenMode(false)
+                        setCharacters([])
+                        setCharExtractStatus('idle')
+                        addLog({ level: 'info', category: 'operation', message: `生成 ${selected.length} 个角色图节点`, detail: selected.map(c => c.name).join('、') })
+                      }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 5,
+                        padding: '5px 14px', borderRadius: 7,
+                        background: selectedCharIds.size === 0 ? '#2a2a2a' : '#7c6af7',
+                        border: 'none', cursor: selectedCharIds.size === 0 ? 'not-allowed' : 'pointer',
+                        color: selectedCharIds.size === 0 ? '#555' : '#fff',
+                        fontSize: 12, fontWeight: 600,
+                        transition: 'background 0.15s',
+                      }}
+                      onMouseEnter={e => { if (selectedCharIds.size > 0) (e.currentTarget as HTMLButtonElement).style.background = '#9077ff' }}
+                      onMouseLeave={e => { if (selectedCharIds.size > 0) (e.currentTarget as HTMLButtonElement).style.background = '#7c6af7' }}
+                    >
+                      <Zap size={11} />
+                      生成 {selectedCharIds.size} 张
+                    </button>
+                  </div>
+                )}
+              </div>
             </ZoomInvariantPanel>
-          </CollapsibleSection>
+          )}
+
+          {!charGenMode && (
+            <CollapsibleSection expanded={isExpanded}>
+              <ZoomInvariantPanel naturalWidth={NODE_W}>
+                <PromptPanel value={prompt} onChange={setPrompt} onSend={handleSend} sourceThumbnailUrl={thumbnailUrl} />
+              </ZoomInvariantPanel>
+            </CollapsibleSection>
+          )}
 
           <CircleHandle type="target" position={Position.Left}  top={contentHandleY} visible={handlesVisible}
             onSourceClick={() => setTargetMenuOpen(v => !v)} menuOpen={targetMenuOpen} onMenuClose={() => setTargetMenuOpen(false)}
