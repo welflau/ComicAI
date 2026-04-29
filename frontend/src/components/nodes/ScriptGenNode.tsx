@@ -310,21 +310,71 @@ function GVLMIcon() {
   )
 }
 
+/* ── Lib Nano Pro icon (matches ImageNode) ───────────────────── */
+
+function LibNanoIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
+      <path
+        d="M7 1.5L9 5.5H13L10 8.5L11.5 12.5L7 10L2.5 12.5L4 8.5L1 5.5H5L7 1.5Z"
+        fill="none" stroke="#6b8fff" strokeWidth="1.2" strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 /* ── Storyboard Table ────────────────────────────────────────── */
 
-function StoryboardTable({ shots, sceneTitle }: { shots: ShotRow[]; sceneTitle: string }) {
+function StoryboardTable({
+  shots, sceneTitle, selectable, selectedIds, onToggle, onToggleAll,
+}: {
+  shots: ShotRow[]
+  sceneTitle: string
+  selectable?: boolean
+  selectedIds?: Set<string | number>
+  onToggle?: (id: string | number) => void
+  onToggleAll?: () => void
+}) {
+  const allSelected   = selectable && shots.length > 0 && selectedIds?.size === shots.length
+  const someSelected  = selectable && (selectedIds?.size ?? 0) > 0 && !allSelected
+
+  const cols = selectable
+    ? '24px 28px 36px 1fr 60px 72px 40px 36px 40px'
+    : '28px 36px 1fr 60px 72px 40px 36px 40px'
+
   return (
     <div style={{ overflow: 'hidden' }}>
       {/* Table header */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: '28px 36px 1fr 60px 72px 40px 36px 40px',
+        gridTemplateColumns: cols,
         padding: '5px 8px',
         borderBottom: '1px solid #2a2a2a',
         background: '#161616',
+        alignItems: 'center',
       }}>
-        {['编号', '时长', '画面描述', '角色1', '角色描述1', '角色图1', '参考', '景别'].map(h => (
-          <div key={h} style={{ fontSize: 10, color: '#555', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {/* Select-all checkbox */}
+        {selectable && (
+          <div
+            onClick={onToggleAll}
+            style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
+          >
+            <div style={{
+              width: 14, height: 14, borderRadius: 3, flexShrink: 0,
+              border: (allSelected || someSelected) ? '1.5px solid #7c6af7' : '1.5px solid #444',
+              background: allSelected ? '#7c6af7' : 'transparent',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {allSelected && <Check size={9} color="#fff" />}
+              {someSelected && (
+                /* indeterminate dash */
+                <div style={{ width: 7, height: 1.5, background: '#7c6af7', borderRadius: 1 }} />
+              )}
+            </div>
+          </div>
+        )}
+        {['编号', '时长', '画面描述', '角色1', '角色描述1', '角色图1', '参考', '景别'].map((h, i) => (
+          <div key={i} style={{ fontSize: 10, color: '#555', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {h}
           </div>
         ))}
@@ -335,48 +385,69 @@ function StoryboardTable({ shots, sceneTitle }: { shots: ShotRow[]; sceneTitle: 
         <div style={{ padding: '16px 8px', textAlign: 'center', fontSize: 11, color: '#444' }}>
           暂无分镜数据
         </div>
-      ) : shots.map((shot, idx) => (
-        <div
-          key={shot.id}
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '28px 36px 1fr 60px 72px 40px 36px 40px',
-            padding: '5px 8px',
-            borderBottom: '1px solid #222',
-            background: idx % 2 === 0 ? '#1a1a1a' : '#181818',
-            alignItems: 'start',
-          }}
-        >
-          <div style={{ fontSize: 10, color: '#777' }}>{shot.sequence}</div>
-          <div style={{ fontSize: 10, color: '#777' }}>{shot.duration}</div>
-          <div style={{ fontSize: 10, color: '#ccc', lineHeight: 1.5, paddingRight: 4 }}>{shot.description}</div>
-          <div style={{ fontSize: 10, color: '#aaa' }}>{shot.character1 || ''}</div>
-          <div style={{ fontSize: 9, color: '#777', lineHeight: 1.4, maxHeight: 48, overflow: 'hidden' }}>
-            {shot.character1Detail || ''}
-          </div>
-          {/* 角色图1 — placeholder */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 2 }}>
-            <div style={{
-              width: 24, height: 24, border: '1px solid #333', borderRadius: 3,
-              background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <User size={10} color="#444" />
+      ) : shots.map((shot, idx) => {
+        const checked = selectable && selectedIds?.has(shot.id)
+        return (
+          <div
+            key={shot.id}
+            onClick={selectable ? () => onToggle?.(shot.id) : undefined}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: cols,
+              padding: '5px 8px',
+              borderBottom: '1px solid #222',
+              background: selectable && checked
+                ? 'rgba(124,106,247,0.08)'
+                : idx % 2 === 0 ? '#1a1a1a' : '#181818',
+              alignItems: 'start',
+              cursor: selectable ? 'pointer' : 'default',
+              transition: 'background 0.1s',
+            }}
+          >
+            {selectable && (
+              <div style={{ display: 'flex', alignItems: 'flex-start', paddingTop: 1 }}>
+                <div style={{
+                  width: 14, height: 14, borderRadius: 3,
+                  border: checked ? '1.5px solid #7c6af7' : '1.5px solid #444',
+                  background: checked ? '#7c6af7' : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  {checked && <Check size={9} color="#fff" />}
+                </div>
+              </div>
+            )}
+            <div style={{ fontSize: 10, color: '#777' }}>{shot.sequence}</div>
+            <div style={{ fontSize: 10, color: '#777' }}>{shot.duration}</div>
+            <div style={{ fontSize: 10, color: '#ccc', lineHeight: 1.5, paddingRight: 4 }}>{shot.description}</div>
+            <div style={{ fontSize: 10, color: '#aaa' }}>{shot.character1 || ''}</div>
+            <div style={{ fontSize: 9, color: '#777', lineHeight: 1.4, maxHeight: 48, overflow: 'hidden' }}>
+              {shot.character1Detail || ''}
+            </div>
+            {/* 角色图1 — placeholder */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 2 }}>
+              <div style={{
+                width: 24, height: 24, border: '1px solid #333', borderRadius: 3,
+                background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <User size={10} color="#444" />
+              </div>
+            </div>
+            {/* 参考 — placeholder */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 2 }}>
+              <div style={{
+                width: 20, height: 20, border: '1px solid #333', borderRadius: 2,
+                background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Film size={8} color="#444" />
+              </div>
+            </div>
+            <div style={{ fontSize: 9, color: '#555', lineHeight: 1.4, whiteSpace: 'pre-line' }}>
+              {shot.shotType || ''}
             </div>
           </div>
-          {/* 参考 — placeholder */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 2 }}>
-            <div style={{
-              width: 20, height: 20, border: '1px solid #333', borderRadius: 2,
-              background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Film size={8} color="#444" />
-            </div>
-          </div>
-          <div style={{ fontSize: 9, color: '#555', lineHeight: 1.4, whiteSpace: 'pre-line' }}>
-            {shot.shotType || ''}
-          </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -1374,14 +1445,39 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
   const [viewMode, setViewMode]   = useState<ViewMode>('creative')
   const [showFullscreen, setShowFullscreen] = useState(false)
 
+  // Shot-generation selection mode
+  const [shotGenMode, setShotGenMode]       = useState(false)
+  const [selectedShotIds, setSelectedShotIds] = useState<Set<string | number>>(new Set())
+  const [imgModel, setImgModel]             = useState('Lib Nano Pro')
+  const [imgRatio, setImgRatio]             = useState('16:9·2K')
+  const [modelDropOpen, setModelDropOpen]   = useState(false)
+  const [ratioDropOpen, setRatioDropOpen]   = useState(false)
+  const modelDropRef = useRef<HTMLDivElement>(null)
+  const ratioDropRef = useRef<HTMLDivElement>(null)
+
+  const IMG_MODELS = ['Lib Nano Pro']
+  const IMG_RATIOS = ['16:9·2K', '9:16·2K', '1:1·2K', '4:3·2K', '21:9·2K']
+
+  // Close image-gen dropdowns on outside click
+  useEffect(() => {
+    if (!modelDropOpen && !ratioDropOpen) return
+    const handler = (e: MouseEvent) => {
+      if (modelDropRef.current && !modelDropRef.current.contains(e.target as Node)) setModelDropOpen(false)
+      if (ratioDropRef.current && !ratioDropRef.current.contains(e.target as Node)) setRatioDropOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [modelDropOpen, ratioDropOpen])
+
   const abortRef   = useRef<AbortController | null>(null)
   const warnTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const streamRef  = useRef<string>('')   // authoritative accumulator — immune to StrictMode double-invoke
   const nodeLabel  = data.title || data.label || '分镜脚本'
 
-  const addNode    = useProjectStore(s => s.addNode)
-  const addEdge    = useProjectStore(s => s.addEdge)
-  const updateNode = useProjectStore(s => s.updateNode)
+  const addNode           = useProjectStore(s => s.addNode)
+  const addEdge           = useProjectStore(s => s.addEdge)
+  const updateNode        = useProjectStore(s => s.updateNode)
+  const requestSelectNode = useProjectStore(s => s.requestSelectNode)
 
   // Helper: persist shots + mode into node config so refresh restores them
   const persistResult = useCallback((savedShots: ShotRow[], savedTitle: string) => {
@@ -1588,6 +1684,14 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
     if (warnTimer.current) clearTimeout(warnTimer.current)
   }, [])
 
+  // Exit shot-gen selection mode when node is deselected
+  useEffect(() => {
+    if (!effectiveSelected && shotGenMode) {
+      setShotGenMode(false)
+      setSelectedShotIds(new Set())
+    }
+  }, [effectiveSelected, shotGenMode])
+
   return (
     <div
       style={{
@@ -1696,15 +1800,17 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
           </div>
 
           {/* Prompt panel */}
-          <CollapsibleSection expanded={isExpanded}>
-            <ZoomInvariantPanel naturalWidth={NODE_W}>
-              <PromptPanel
-                value={prompt}
-                onChange={setPrompt}
-                onSend={handleSend}
-              />
-            </ZoomInvariantPanel>
-          </CollapsibleSection>
+          {!shotGenMode && (
+            <CollapsibleSection expanded={isExpanded}>
+              <ZoomInvariantPanel naturalWidth={NODE_W}>
+                <PromptPanel
+                  value={prompt}
+                  onChange={setPrompt}
+                  onSend={handleSend}
+                />
+              </ZoomInvariantPanel>
+            </CollapsibleSection>
+          )}
 
           <CircleHandle type="target" position={Position.Left}  top={idleHandleY} visible={handlesVisible}
             onSourceClick={() => setTargetMenuOpen(v => !v)} menuOpen={targetMenuOpen} onMenuClose={() => setTargetMenuOpen(false)}
@@ -1784,8 +1890,8 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
       {/* ══════════ CONTENT ══════════ */}
       {mode === 'content' && (
         <>
-          {/* Floating toolbar — zoom-invariant, sits above the card */}
-          <div
+          {/* Floating toolbar — zoom-invariant, sits above the card; only when selected */}
+          {effectiveSelected && <div
             className="nodrag nopan"
             style={{
               position: 'absolute',
@@ -1820,11 +1926,15 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
 
             <div style={{ width: 1, height: 16, background: '#333' }} />
 
-            {/* 生成分镜 — navigate/create storyboard node */}
+            {/* 生成分镜 — enter selection mode to create image nodes */}
             <button
               className="nodrag nopan"
               onClick={() => {
-                addLog({ level: 'info', category: 'operation', message: '生成分镜表节点', detail: `场景: ${sceneTitle}` })
+                setShotGenMode(true)
+                setSelectedShotIds(new Set(shots.map(s => s.id)))
+                setViewMode('script')
+                requestSelectNode(data.id)
+                addLog({ level: 'info', category: 'operation', message: '进入分镜生成选择模式', detail: `场景: ${sceneTitle}，共 ${shots.length} 个镜头` })
               }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 5,
@@ -1865,7 +1975,7 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
             >
               <Download size={13} />
             </button>
-          </div>
+          </div>}
 
           {/* Storyboard card */}
           <div style={{
@@ -1906,22 +2016,237 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
               style={{ height: 340, overflowY: 'auto', overflowX: 'hidden' }}
             >
               {viewMode === 'script'
-                ? <StoryboardTable shots={shots} sceneTitle={sceneTitle} />
+                ? <StoryboardTable
+                    shots={shots}
+                    sceneTitle={sceneTitle}
+                    selectable={shotGenMode}
+                    selectedIds={selectedShotIds}
+                    onToggle={id => setSelectedShotIds(prev => {
+                      const next = new Set(prev)
+                      next.has(id) ? next.delete(id) : next.add(id)
+                      return next
+                    })}
+                    onToggleAll={() => setSelectedShotIds(prev =>
+                      prev.size === shots.length
+                        ? new Set()
+                        : new Set(shots.map(s => s.id))
+                    )}
+                  />
                 : <CreativeGrid shots={shots} />
               }
             </div>
           </div>
 
-          {/* Prompt panel */}
-          <CollapsibleSection expanded={isExpanded}>
+          {/* Shot-gen selection bar — floats below the card */}
+          {shotGenMode && effectiveSelected && (
             <ZoomInvariantPanel naturalWidth={NODE_W}>
-              <PromptPanel
-                value={prompt}
-                onChange={setPrompt}
-                onSend={handleSend}
-              />
+              <div
+                className="nodrag nopan"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  marginTop: 8, padding: '6px 10px',
+                  background: '#1a1a1a', border: '1px solid #333',
+                  borderRadius: 10, boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+                }}
+              >
+                {/* Model dropdown */}
+                <div ref={modelDropRef} style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => { setModelDropOpen(v => !v); setRatioDropOpen(false) }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      background: '#252525', border: '1px solid #383838',
+                      borderRadius: 6, padding: '3px 8px', cursor: 'pointer',
+                      color: '#ccc', fontSize: 11, whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <LibNanoIcon />
+                    {imgModel}
+                    <ChevronDown size={9} />
+                  </button>
+                  {modelDropOpen && (
+                    <div style={{
+                      position: 'absolute', bottom: '110%', left: 0,
+                      background: '#1e1e1e', border: '1px solid #333',
+                      borderRadius: 8, overflow: 'hidden', zIndex: 9999,
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+                      minWidth: 140,
+                    }}>
+                      {IMG_MODELS.map(m => (
+                        <div
+                          key={m}
+                          onClick={() => { setImgModel(m); setModelDropOpen(false) }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '7px 12px', cursor: 'pointer', fontSize: 12,
+                            color: m === imgModel ? '#7c6af7' : '#ccc',
+                            background: m === imgModel ? 'rgba(124,106,247,0.1)' : 'transparent',
+                          }}
+                          onMouseEnter={e => { if (m !== imgModel) (e.currentTarget as HTMLElement).style.background = '#252525' }}
+                          onMouseLeave={e => { if (m !== imgModel) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                        >
+                          {m === imgModel && <Check size={10} color="#7c6af7" />}
+                          {m !== imgModel && <div style={{ width: 10 }} />}
+                          {m}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Aspect ratio dropdown */}
+                <div ref={ratioDropRef} style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => { setRatioDropOpen(v => !v); setModelDropOpen(false) }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      background: '#252525', border: '1px solid #383838',
+                      borderRadius: 6, padding: '3px 8px', cursor: 'pointer',
+                      color: '#ccc', fontSize: 11, whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {imgRatio}
+                    <ChevronDown size={9} />
+                  </button>
+                  {ratioDropOpen && (
+                    <div style={{
+                      position: 'absolute', bottom: '110%', left: 0,
+                      background: '#1e1e1e', border: '1px solid #333',
+                      borderRadius: 8, overflow: 'hidden', zIndex: 9999,
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+                      minWidth: 120,
+                    }}>
+                      {IMG_RATIOS.map(r => (
+                        <div
+                          key={r}
+                          onClick={() => { setImgRatio(r); setRatioDropOpen(false) }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '7px 12px', cursor: 'pointer', fontSize: 12,
+                            color: r === imgRatio ? '#7c6af7' : '#ccc',
+                            background: r === imgRatio ? 'rgba(124,106,247,0.1)' : 'transparent',
+                          }}
+                          onMouseEnter={e => { if (r !== imgRatio) (e.currentTarget as HTMLElement).style.background = '#252525' }}
+                          onMouseLeave={e => { if (r !== imgRatio) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                        >
+                          {r === imgRatio && <Check size={10} color="#7c6af7" />}
+                          {r !== imgRatio && <div style={{ width: 10 }} />}
+                          {r}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Selected count badge */}
+                <div style={{
+                  fontSize: 11, color: '#aaa', padding: '2px 6px',
+                  background: '#252525', borderRadius: 5, whiteSpace: 'nowrap', flexShrink: 0,
+                }}>
+                  已选 {selectedShotIds.size}/{shots.length}
+                </div>
+
+                <div style={{ flex: 1 }} />
+
+                {/* Style placeholder button */}
+                <button
+                  onClick={() => {/* TODO: style picker */}}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    background: '#252525', border: '1px solid #383838',
+                    borderRadius: 6, padding: '4px 8px', cursor: 'pointer',
+                    color: '#aaa', fontSize: 11,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#333' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = '#252525' }}
+                >
+                  <AlignJustify size={10} />
+                  风格
+                </button>
+
+                {/* Generate button */}
+                <button
+                  disabled={selectedShotIds.size === 0}
+                  onClick={() => {
+                    const selectedShots = shots.filter(s => selectedShotIds.has(s.id))
+                    const SPACING_Y = 280
+                    const startX = data.position.x + NODE_W + 80
+                    const startY = data.position.y - ((selectedShots.length - 1) * SPACING_Y) / 2
+
+                    selectedShots.forEach((shot, idx) => {
+                      const newId = `libtv_image_${Date.now()}_${idx}`
+                      addNode({
+                        id: newId,
+                        type: 'libtv_image' as NodeData['type'],
+                        label: `分镜 #${shot.sequence}`,
+                        category: 'output',
+                        position: {
+                          x: startX,
+                          y: startY + idx * SPACING_Y,
+                        },
+                        config: {},
+                        title: '分镜图·脚本生成器',
+                        imagePrompt: shot.description,
+                      } as NodeData)
+                      addEdge({
+                        id: `e-${data.id}-${newId}`,
+                        source: data.id,
+                        target: newId,
+                      })
+                    })
+
+                    addLog({
+                      level: 'info', category: 'operation',
+                      message: `已创建 ${selectedShots.length} 个分镜图节点`,
+                      detail: `场景: ${sceneTitle} | 模型: ${imgModel} | 比例: ${imgRatio}`,
+                    })
+                    setShotGenMode(false)
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    background: selectedShotIds.size === 0 ? '#252525' : '#7c6af7',
+                    border: 'none', borderRadius: 6,
+                    padding: '4px 10px', cursor: selectedShotIds.size === 0 ? 'not-allowed' : 'pointer',
+                    color: selectedShotIds.size === 0 ? '#555' : '#fff', fontSize: 12, fontWeight: 500,
+                    transition: 'background 0.12s',
+                  }}
+                  onMouseEnter={e => { if (selectedShotIds.size > 0) e.currentTarget.style.background = '#6a5be0' }}
+                  onMouseLeave={e => { if (selectedShotIds.size > 0) e.currentTarget.style.background = '#7c6af7' }}
+                >
+                  <Zap size={11} />
+                  {selectedShotIds.size}
+                </button>
+
+                {/* Close selection mode */}
+                <button
+                  onClick={() => setShotGenMode(false)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: 24, height: 24, borderRadius: 6,
+                    background: 'none', border: 'none', cursor: 'pointer', color: '#666',
+                    transition: 'background 0.12s, color 0.12s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#2a2a2a'; e.currentTarget.style.color = '#ff4444' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#666' }}
+                >
+                  <X size={13} />
+                </button>
+              </div>
             </ZoomInvariantPanel>
-          </CollapsibleSection>
+          )}
+
+          {/* Prompt panel */}
+          {!shotGenMode && (
+            <CollapsibleSection expanded={isExpanded}>
+              <ZoomInvariantPanel naturalWidth={NODE_W}>
+                <PromptPanel
+                  value={prompt}
+                  onChange={setPrompt}
+                  onSend={handleSend}
+                />
+              </ZoomInvariantPanel>
+            </CollapsibleSection>
+          )}
 
           <CircleHandle type="target" position={Position.Left}  top={contentHandleY} visible={handlesVisible}
             onSourceClick={() => setTargetMenuOpen(v => !v)} menuOpen={targetMenuOpen} onMenuClose={() => setTargetMenuOpen(false)}
