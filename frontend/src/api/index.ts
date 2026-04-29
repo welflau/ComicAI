@@ -113,7 +113,7 @@ export interface CanvasAction {
   nodeType?: string
   nodeLabel?: string
   // ADD_WORKFLOW
-  nodes?: Array<{ nodeType: string; nodeLabel: string }>
+  nodes?: Array<{ nodeType: string; nodeLabel: string; nodeConfig?: Record<string, unknown> }>
   edges?: Array<{ fromIdx: number; toIdx: number }>
 }
 

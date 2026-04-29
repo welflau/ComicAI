@@ -215,7 +215,7 @@ interface IntentResult {
   nodeLabel?: string
   nodePrompt?: string  // extracted description/prompt from user message
   // ADD_WORKFLOW: multiple nodes + edges to create
-  workflowNodes?: Array<{ type: string; label: string }>
+  workflowNodes?: Array<{ type: string; label: string; config?: Record<string, unknown> }>
   workflowEdges?: Array<{ fromIdx: number; toIdx: number }>  // index into workflowNodes
   confirmText: string
 }
@@ -355,7 +355,7 @@ interface PendingAction {
   nodeType?: string
   nodeLabel?: string
   nodePrompt?: string  // pre-filled prompt for image/video nodes
-  workflowNodes?: Array<{ type: string; label: string }>
+  workflowNodes?: Array<{ type: string; label: string; config?: Record<string, unknown> }>
   workflowEdges?: Array<{ fromIdx: number; toIdx: number }>
   // snapshot at match time (for display only)
   previewText: string       // e.g. "添加「图片节点」"
@@ -717,14 +717,38 @@ function AIAssistantPanel() {
       setTimeout(() => focusCanvasNode(newNodeId), 100)
       addLog({ level: 'info', category: 'operation', message: `AI指令：添加节点「${action.nodeLabel || action.nodeType}」` })
     } else if (action.intent === 'ADD_WORKFLOW' && action.workflowNodes) {
-      // Create multiple nodes centered on viewport, connected horizontally
       const center = getViewportCenter()
-      const totalWidth = (action.workflowNodes.length - 1) * 260
-      const baseX = center.x - totalWidth / 2
-      const baseY = center.y - 40
+      const wNodes = action.workflowNodes
+      const wEdges = action.workflowEdges || []
+
+      // Topo-based layout: assign each node a column via edge propagation
+      const colOf = new Array(wNodes.length).fill(0)
+      let changed = true
+      while (changed) {
+        changed = false
+        wEdges.forEach(({ fromIdx, toIdx }) => {
+          if (colOf[toIdx] < colOf[fromIdx] + 1) { colOf[toIdx] = colOf[fromIdx] + 1; changed = true }
+        })
+      }
+
+      // Assign row within each column
+      const colCounts: Record<number, number> = {}
+      const rowOf = new Array(wNodes.length).fill(0)
+      wNodes.forEach((_, i) => {
+        rowOf[i] = colCounts[colOf[i]] ?? 0
+        colCounts[colOf[i]] = (colCounts[colOf[i]] ?? 0) + 1
+      })
+
+      const COL_W = 290
+      const ROW_H = 290
+      const maxCol = colOf.length > 0 ? Math.max(...colOf) : 0
+      const baseX = center.x - (maxCol * COL_W) / 2
       const createdIds: string[] = []
 
-      action.workflowNodes.forEach((n, i) => {
+      wNodes.forEach((n, i) => {
+        const colCount = colCounts[colOf[i]] ?? 1
+        const colCenterY = center.y
+        const nodeY = colCenterY - ((colCount - 1) * ROW_H) / 2 + rowOf[i] * ROW_H
         const id = `${n.type}_${Date.now() + i}`
         createdIds.push(id)
         const newNode: NodeData = {
@@ -732,16 +756,17 @@ function AIAssistantPanel() {
           type: n.type as NodeData['type'],
           label: n.label,
           category: 'process',
-          position: { x: baseX + i * 260, y: baseY },
+          position: { x: baseX + colOf[i] * COL_W, y: nodeY },
           status: 'idle',
           config: {},
+          ...(n.config || {}),
         }
         addNode(newNode)
       })
 
       // Connect edges after all nodes are added, then focus first node
       setTimeout(() => {
-        action.workflowEdges?.forEach(({ fromIdx, toIdx }) => {
+        wEdges.forEach(({ fromIdx, toIdx }) => {
           const edge: EdgeData = {
             id: `e_${createdIds[fromIdx]}_${createdIds[toIdx]}`,
             source: createdIds[fromIdx],
@@ -803,7 +828,7 @@ function AIAssistantPanel() {
         if (!action.nodes || action.nodes.length === 0) return null
         return {
           intent: 'ADD_WORKFLOW',
-          workflowNodes: action.nodes.map(n => ({ type: n.nodeType, label: n.nodeLabel || n.nodeType })),
+          workflowNodes: action.nodes.map(n => ({ type: n.nodeType, label: n.nodeLabel || n.nodeType, config: n.nodeConfig })),
           workflowEdges: action.edges?.map(e => ({ fromIdx: e.fromIdx, toIdx: e.toIdx })),
           previewText: action.nodes.map(n => `「${n.nodeLabel || n.nodeType}」`).join(' → '),
           snapshotNodeCount: nodesRef.current.length,

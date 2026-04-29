@@ -59,7 +59,7 @@ PLATFORM_BASE_PROMPT = """
 | 文本 | `libtv_script` | 输入剧本/描述文字，工作流起点 |
 | 图片 | `libtv_image` | 上传或 AI 生成图像，含提示词面板 |
 | 视频 | `libtv_video` | 上传或 AI 生成视频（支持 Kling/即梦模型） |
-| 视频合成 (Beta) | `auto_edit` | 将多个视频/图片合成为完整视频 |
+| 视频合成 (Beta) | `libtv_video_compose` | 将多个视频/图片合成为完整视频 |
 | 音频 | `tts` | 文字转语音配音 |
 | 脚本 (Beta) | `libtv_script_gen` | AI 生成/编辑分镜脚本 |
 
@@ -117,7 +117,7 @@ PLATFORM_BASE_PROMPT = """
 - '文本'/'文字'/'剧本'/'脚本文字' → libtv_script
 - '脚本'/'分镜脚本' → libtv_script_gen
 - '音频'/'配音'/'语音' → tts
-- '视频合成'/'合成' → auto_edit
+- '视频合成'/'合成' → libtv_video_compose
 
 ---
 
@@ -205,20 +205,53 @@ _JSON_OUTPUT_SECTION = """
   "nodeLabel": "图片节点"
 }
 ```
-nodeType 必须是以下 6 种之一：`libtv_script` | `libtv_image` | `libtv_video` | `auto_edit` | `tts` | `libtv_script_gen`
+nodeType 必须是以下 6 种之一：`libtv_script` | `libtv_image` | `libtv_video` | `libtv_video_compose` | `tts` | `libtv_script_gen`
 
 #### ADD_WORKFLOW — 添加多节点工作流（自动连线）
+
+每个节点可携带 `nodeConfig`，字段会直接注入节点数据（如 `content`、`imagePrompt`、`videoPrompt`、`initialMode`）。
+
 ```json
 {
   "type": "ADD_WORKFLOW",
   "nodes": [
-    { "nodeType": "libtv_script", "nodeLabel": "文本" },
-    { "nodeType": "libtv_image", "nodeLabel": "图片" },
-    { "nodeType": "libtv_video", "nodeLabel": "视频" }
+    { "nodeType": "libtv_script",     "nodeLabel": "剧本",
+      "nodeConfig": { "content": "一位侠客在雪山上决斗...", "initialMode": "content" } },
+    { "nodeType": "libtv_image",      "nodeLabel": "分镜1",
+      "nodeConfig": { "imagePrompt": "侠客，雪山，对决，近景，冷色调" } },
+    { "nodeType": "libtv_image",      "nodeLabel": "分镜2",
+      "nodeConfig": { "imagePrompt": "刀光剑影，特写，飞雪" } }
   ],
   "edges": [
     { "fromIdx": 0, "toIdx": 1 },
-    { "fromIdx": 1, "toIdx": 2 }
+    { "fromIdx": 0, "toIdx": 2 }
+  ]
+}
+```
+
+支持 1→N 扇出：同一个 fromIdx 可出现在多条 edge 里，前端会自动垂直排列下游节点。
+
+**漫画/分镜工作流示例**（用户说"帮我搭一个 X 镜头的 Y 风格漫画工作流"）：
+
+```json
+{
+  "type": "ADD_WORKFLOW",
+  "nodes": [
+    { "nodeType": "libtv_script",     "nodeLabel": "剧本",
+      "nodeConfig": { "content": "古风爱情：江南才女与侠客月下相遇...", "initialMode": "content" } },
+    { "nodeType": "libtv_script_gen", "nodeLabel": "分镜脚本" },
+    { "nodeType": "libtv_image",      "nodeLabel": "分镜1",
+      "nodeConfig": { "imagePrompt": "古风，江南水乡，才女站在水边，远景，柔光" } },
+    { "nodeType": "libtv_image",      "nodeLabel": "分镜2",
+      "nodeConfig": { "imagePrompt": "古风，侠客身影出现在桥头，中景，逆光" } },
+    { "nodeType": "libtv_image",      "nodeLabel": "分镜3",
+      "nodeConfig": { "imagePrompt": "古风，两人相视而笑，中近景，柔焦" } }
+  ],
+  "edges": [
+    { "fromIdx": 0, "toIdx": 1 },
+    { "fromIdx": 1, "toIdx": 2 },
+    { "fromIdx": 1, "toIdx": 3 },
+    { "fromIdx": 1, "toIdx": 4 }
   ]
 }
 ```
@@ -237,6 +270,7 @@ nodeType 必须是以下 6 种之一：`libtv_script` | `libtv_image` | `libtv_v
 
 - 用户说"帮我创建/添加 X 节点" → ADD_NODE
 - 用户说"帮我搭建 X 工作流" 或 "X 怎么做，帮我建一下" → ADD_WORKFLOW（建议完整链路）
+- 用户说"帮我搭一个漫画/分镜/图文工作流" → ADD_WORKFLOW，使用漫画工作流模式（script → script_gen → image×N）
 - 用户说"删除选中节点"/"删掉这个" → DELETE_SELECTED
 - 用户说"清空画布" → CLEAR_CANVAS
 - 纯咨询、建议、问答类问题 → actions 为 `[]`
