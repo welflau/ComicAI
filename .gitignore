@@ -47,3 +47,24 @@ logs/
 postgres_data/
 redis_data/
 minio_data/
+
+# User-uploaded / AI-generated media (CDN videos persisted locally)
+backend/uploads/
+
+# One-off backend debug / DB scripts
+backend/check_*.py
+backend/query_db*.py
+backend/reset_pwd.py
+backend/run_query.ps1
+backend/test_login.py
+backend/db_result.txt
+
+# Frontend ad-hoc analysis artifacts (keep actual docs in /Docs)
+frontend/COMPONENTS_INDEX.md
+frontend/COMPONENT_ANALYSIS.md
+frontend/COMPONENT_CODE_SNIPPETS.txt
+frontend/FINAL_SUMMARY.txt
+frontend/IMPLEMENTATION_NOTES.txt
+frontend/MULTI_SELECTION_ANALYSIS.md
+frontend/QUICK_START.md
+frontend/README_COMPONENTS.md
