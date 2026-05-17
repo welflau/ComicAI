@@ -5,7 +5,7 @@ import {
   ChevronDown, Languages, Zap, ArrowUp,
   CheckCircle2, Download, PenLine,
   Bold, Italic, List, ListOrdered, Minus, Copy, Maximize2,
-  Users, Check, Loader2,
+  Users, Check, Loader2, FolderOpen,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useProjectStore } from '@/stores/projectStore'
@@ -386,10 +386,11 @@ function LinesIcon({ scale = 1 }: { scale?: number }) {
 /* ── Quick actions ───────────────────────────────────────────── */
 
 const QUICK_ACTIONS = [
-  { id: 'write',      Icon: FileText,  label: '自己编写内容' },
-  { id: 'text2video', Icon: Video,     label: '文生视频' },
-  { id: 'img2prompt', Icon: ImageIcon, label: '图片反推提示词' },
-  { id: 'text2music', Icon: Volume2,   label: '文字生音乐' },
+  { id: 'write',      Icon: FileText,   label: '自己编写内容' },
+  { id: 'import',     Icon: FolderOpen, label: '导入 MD / TXT 文件' },
+  { id: 'text2video', Icon: Video,      label: '文生视频' },
+  { id: 'img2prompt', Icon: ImageIcon,  label: '图片反推提示词' },
+  { id: 'text2music', Icon: Volume2,    label: '文字生音乐' },
 ]
 
 /* ── Toolbar helpers ─────────────────────────────────────────── */
@@ -524,6 +525,7 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
   const taRef    = useRef<HTMLTextAreaElement>(null)
   const editTaRef = useRef<HTMLTextAreaElement>(null)   // textarea for content edit mode
   const abortRef = useRef<AbortController | null>(null)
+  const fileImportRef = useRef<HTMLInputElement>(null)
 
   const addNode = useProjectStore(s => s.addNode)
   const addEdge = useProjectStore(s => s.addEdge)
@@ -837,6 +839,10 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
     if (id === 'write') {
       setMode('write')
       addLog({ level: 'info', category: 'operation', message: `剧本节点: 进入编写模式`, detail: `节点ID: ${data.id}` })
+      return
+    }
+    if (id === 'import') {
+      fileImportRef.current?.click()
       return
     }
     if (id === 'storyboard') {
@@ -1594,6 +1600,41 @@ function ScriptNode({ data, selected, dragging }: NodeProps<ScriptNodeData>) {
             nodeType="libtv_script" sourceNodeId={data.id} sourcePosition={data.position} sourceNodeWidth={NODE_W} />
         </>
       )}
+
+      {/* Hidden file input for MD/TXT import */}
+      <input
+        ref={fileImportRef}
+        type="file"
+        accept=".md,.txt,.markdown"
+        style={{ display: 'none' }}
+        onChange={e => {
+          const file = e.target.files?.[0]
+          if (!file) return
+          const MAX_CHARS = 500_000
+          const reader = new FileReader()
+          reader.onload = ev => {
+            let content = (ev.target?.result as string) ?? ''
+            let truncated = false
+            if (content.length > MAX_CHARS) {
+              content = content.slice(0, MAX_CHARS)
+              truncated = true
+            }
+            const fileName = file.name.replace(/\.(md|txt|markdown)$/i, '')
+            setText(content)
+            setMode('content')
+            updateNode(data.id, { content, initialMode: 'content', label: fileName, title: fileName })
+            addLog({
+              level: 'info', category: 'operation',
+              message: `已导入文件：${file.name}`,
+              detail: `${content.length.toLocaleString()} 字符${truncated ? '（已截断至 50 万字）' : ''}`,
+            })
+            if (truncated) setWarningMsg(`文件过大，已截断至前 50 万字符`)
+          }
+          reader.readAsText(file, 'utf-8')
+          // 清空 input 值，允许重复导入同一文件
+          e.target.value = ''
+        }}
+      />
     </div>
   )
 }
