@@ -13,7 +13,7 @@ import NodeAddMenu from './shared/NodeAddMenu'
 import { useIsMultiSelected } from './shared/useIsMultiSelected'
 import { useProjectStore } from '../../stores/projectStore'
 import { saveImage, resolveImageUrl, DEFAULT_IMAGE_URL } from '../../stores/imageStore'
-import { lightaiGenerateImage, streamAI, imageToolbarApi } from '../../api'
+import { lightaiGenerateImage, jimengGenerateImage, streamAI, imageToolbarApi } from '../../api'
 import { addLog } from '../../stores/logStore'
 import type { NodeData } from '../../types'
 
@@ -287,15 +287,37 @@ function RefImageThumbnails({ urls }: { urls: string[] }) {
 
 type PromptTab = 'style' | 'mark' | 'focus'
 
-function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [] }: {
+type ImageModel = 'nano-pro' | 'jimeng'
+
+const IMAGE_MODELS: Array<{ id: ImageModel; label: string; hint: string }> = [
+  { id: 'nano-pro', label: 'Lib Nano Pro', hint: '2-5 分钟' },
+  { id: 'jimeng',   label: '即梦',         hint: '10-60 秒' },
+]
+
+function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [], model = 'nano-pro', onModelChange }: {
   value: string
   onChange: (v: string) => void
   onSend: () => void
   generating: boolean
   hasImage: boolean   // kept in signature for API compat, unused in layout
   refImages?: string[]
+  model?: ImageModel
+  onModelChange?: (m: ImageModel) => void
 }) {
   const [activeTab, setActiveTab] = useState<PromptTab>('style')
+  const [modelDropOpen, setModelDropOpen] = useState(false)
+  const modelDropRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!modelDropOpen) return
+    const handler = (e: MouseEvent) => {
+      if (modelDropRef.current && !modelDropRef.current.contains(e.target as Node))
+        setModelDropOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [modelDropOpen])
 
   const TABS: Array<{ id: PromptTab; label: string; Icon: React.ElementType }> = [
     { id: 'style', label: '风格', Icon: Box },
@@ -396,19 +418,50 @@ function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [] 
         paddingTop: 8,
         borderTop: '1px solid #272727',
       }}>
-        {/* Model */}
-        <button className="nodrag nopan" style={{
-          display: 'flex', alignItems: 'center', gap: 4,
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: '#777', fontSize: 11, padding: '2px 4px', borderRadius: 5, flexShrink: 0,
-        }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#252525' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
-        >
-          <LibNanoIcon />
-          <span style={{ fontWeight: 500 }}>Lib Nano Pro</span>
-          <ChevronDown size={9} />
-        </button>
+        {/* Model dropdown */}
+        <div ref={modelDropRef} style={{ position: 'relative', flexShrink: 0 }}>
+          <button
+            className="nodrag nopan"
+            onClick={() => setModelDropOpen(v => !v)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4,
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: '#777', fontSize: 11, padding: '2px 4px', borderRadius: 5,
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#252525' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'none' }}
+          >
+            {model === 'nano-pro' ? <LibNanoIcon /> : <span style={{ fontSize: 10 }}>✦</span>}
+            <span style={{ fontWeight: 500 }}>{IMAGE_MODELS.find(m => m.id === model)?.label}</span>
+            <ChevronDown size={9} />
+          </button>
+          {modelDropOpen && (
+            <div style={{
+              position: 'absolute', bottom: '110%', left: 0, zIndex: 9999,
+              background: '#1e1e1e', border: '1px solid #333', borderRadius: 8,
+              overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.6)', minWidth: 140,
+            }}>
+              {IMAGE_MODELS.map(m => (
+                <div
+                  key={m.id}
+                  className="nodrag nopan"
+                  onClick={() => { onModelChange?.(m.id); setModelDropOpen(false) }}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '7px 12px', cursor: 'pointer', fontSize: 12,
+                    color: m.id === model ? '#7c6af7' : '#ccc',
+                    background: m.id === model ? 'rgba(124,106,247,0.1)' : 'transparent',
+                  }}
+                  onMouseEnter={e => { if (m.id !== model) (e.currentTarget as HTMLElement).style.background = '#252525' }}
+                  onMouseLeave={e => { if (m.id !== model) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+                >
+                  <span style={{ fontWeight: m.id === model ? 600 : 400 }}>{m.label}</span>
+                  <span style={{ fontSize: 10, color: '#555', marginLeft: 8 }}>{m.hint}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div style={{ width: 1, height: 10, background: '#2a2a2a', flexShrink: 0 }} />
 
@@ -527,6 +580,7 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const [targetMenuOpen, setTargetMenuOpen] = useState(false)
   const [prompt,      setPrompt]      = useState(() => data.imagePrompt ?? '')
   const [generating,  setGenerating]  = useState(false)
+  const [imgModel,    setImgModel]    = useState<ImageModel>('nano-pro')
   const [genError,    setGenError]    = useState<string | null>(null)
   // When initialPanelExpanded is set, the panel starts expanded until user explicitly
   // deselects; after that it follows the normal selected-only rule.
@@ -733,8 +787,10 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
     const promptPreview = imageGenPrompt.length > 100 ? imageGenPrompt.slice(0, 100) + '…' : imageGenPrompt
 
     try {
-      // Call LightAI with the resolved image generation prompt
-      const imageUrl = await lightaiGenerateImage(imageGenPrompt, ctrl.signal)
+      // Call image generation API based on selected model
+      const imageUrl = imgModel === 'jimeng'
+        ? await jimengGenerateImage(imageGenPrompt, ctrl.signal)
+        : await lightaiGenerateImage(imageGenPrompt, ctrl.signal)
 
       // Fetch image bytes — try direct first (pre-signed COS URLs are public),
       // fall back to cors-proxy if blocked by CORS
@@ -1273,6 +1329,8 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
               generating={generating}
               hasImage={hasImage}
               refImages={refImages}
+              model={imgModel}
+              onModelChange={setImgModel}
             />
           </ZoomInvariantPanel>
           {genError && (

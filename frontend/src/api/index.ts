@@ -641,6 +641,84 @@ export async function lightaiGenerateImage(
   throw new Error('LightAI 任务超时 (600s)')
 }
 
+/**
+ * 即梦（Doubao Seedream）文生图 — volces_ark / image40_generate
+ * 典型耗时 10-60s，轮询间隔 10s
+ */
+export async function jimengGenerateImage(
+  prompt: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const { getServiceSettings } = await import('@/stores/settingsStore')
+  const { addLog } = await import('@/stores/logStore')
+  const apiKey = getServiceSettings('lightai').apiKey || ''
+  if (!apiKey) throw new Error('未配置 LightAI API Key')
+
+  addLog({ level: 'info', category: 'ai', message: '[即梦] 提交生图任务...', detail: prompt.slice(0, 60) })
+
+  const createResp = await fetch(`${LIGHTAI_API_BASE}/create_async_task`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      service_name: 'volces_ark',
+      api_name: 'image40_generate',
+      app_info: { model: 'doubao-seedream-5-0-260128', mode: '' },
+      task_query: {
+        path: {}, params: {},
+        json: { model: 'doubao-seedream-5-0-260128', prompt, size: '2K', watermark: false },
+        data: {}, file: {},
+      },
+      custom_data: {},
+    }),
+    signal,
+  })
+  if (!createResp.ok) {
+    const errText = await createResp.text().catch(() => createResp.statusText)
+    throw new Error(`即梦生图提交失败 ${createResp.status}: ${errText}`)
+  }
+
+  const createData = await createResp.json()
+  const taskId = _lightaiExtractTaskId(createData)
+  if (!taskId) throw new Error('即梦未返回 task_id: ' + JSON.stringify(createData).slice(0, 120))
+
+  addLog({ level: 'info', category: 'ai', message: `[即梦] 任务已提交: ${taskId}` })
+
+  const INTERVAL = 10000
+  const MAX_WAIT  = 300000
+  const start = Date.now()
+  await new Promise<void>(r => setTimeout(r, INTERVAL))
+
+  let pollCount = 0
+  while (Date.now() - start < MAX_WAIT) {
+    if (signal?.aborted) throw new Error('已取消')
+    pollCount++
+    const elapsed = Math.round((Date.now() - start) / 1000)
+    addLog({ level: 'info', category: 'ai', message: `[即梦] 轮询 #${pollCount}（${elapsed}s）`, detail: taskId })
+
+    const pollResp = await fetch(`${LIGHTAI_API_BASE}/get_task_status/${taskId}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      signal,
+    })
+    if (!pollResp.ok) { await new Promise<void>(r => setTimeout(r, INTERVAL)); continue }
+
+    const pollData = await pollResp.json()
+    const status: number | string = pollData.status ?? pollData.data?.status ?? ''
+    const isSuccess = status === 2 || status === '2' || status === 'completed' || status === 'success' || status === 'done'
+    const isFailed  = status === 'failed' || status === 'error' || (typeof status === 'number' && status < 0)
+
+    if (isSuccess) {
+      const urls = _lightaiExtractUrls(pollData)
+      if (urls.length === 0) throw new Error('即梦生图未返回 URL: ' + JSON.stringify(pollData).slice(0, 200))
+      addLog({ level: 'info', category: 'ai', message: '[即梦] 生图成功', detail: urls[0].slice(0, 80) })
+      return urls[0]
+    }
+    if (isFailed) throw new Error(`即梦生图失败: ${JSON.stringify(pollData)}`)
+
+    await new Promise<void>(r => setTimeout(r, INTERVAL))
+  }
+  throw new Error('[即梦] 生图超时 (300s)')
+}
+
 function _lightaiExtractUrls(result: Record<string, unknown>): string[] {
   const urls: string[] = []
 
