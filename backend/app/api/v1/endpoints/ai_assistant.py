@@ -62,6 +62,7 @@ PLATFORM_BASE_PROMPT = """
 | 视频合成 (Beta) | `libtv_video_compose` | 将多个视频/图片合成为完整视频 |
 | 音频 | `tts` | 文字转语音配音 |
 | 脚本 (Beta) | `libtv_script_gen` | AI 生成/编辑分镜脚本 |
+| 章节分解 (Beta) | `libtv_chapter_split` | 小说/长文自动按章节拆分，批量生成章节节点 |
 
 **重要**：目前只有以上 6 种节点可用。不存在"剧本解析节点""角色设计节点""场景设计节点"等其他节点。
 
@@ -118,6 +119,7 @@ PLATFORM_BASE_PROMPT = """
 - '脚本'/'分镜脚本' → libtv_script_gen
 - '音频'/'配音'/'语音' → tts
 - '视频合成'/'合成' → libtv_video_compose
+- '章节分解'/'小说分章'/'拆章节' → libtv_chapter_split
 
 ---
 
@@ -205,7 +207,7 @@ _JSON_OUTPUT_SECTION = """
   "nodeLabel": "图片节点"
 }
 ```
-nodeType 必须是以下 6 种之一：`libtv_script` | `libtv_image` | `libtv_video` | `libtv_video_compose` | `tts` | `libtv_script_gen`
+nodeType 必须是以下 7 种之一：`libtv_script` | `libtv_image` | `libtv_video` | `libtv_video_compose` | `tts` | `libtv_script_gen` | `libtv_chapter_split`
 
 #### ADD_WORKFLOW — 添加多节点工作流（自动连线）
 
@@ -256,6 +258,26 @@ nodeType 必须是以下 6 种之一：`libtv_script` | `libtv_image` | `libtv_v
 }
 ```
 
+**小说/长文工作流示例**（用户说"帮我搭一个小说转图片工作流"）：
+```json
+{
+  "type": "ADD_WORKFLOW",
+  "nodes": [
+    { "nodeType": "libtv_script",        "nodeLabel": "小说全文",
+      "nodeConfig": { "content": "（在此粘贴小说内容）", "initialMode": "content" } },
+    { "nodeType": "libtv_chapter_split", "nodeLabel": "章节分解" },
+    { "nodeType": "libtv_script_gen",    "nodeLabel": "第一章分镜" },
+    { "nodeType": "libtv_image",         "nodeLabel": "配图1",
+      "nodeConfig": { "imagePrompt": "根据章节内容生成的画面描述" } }
+  ],
+  "edges": [
+    { "fromIdx": 0, "toIdx": 1 },
+    { "fromIdx": 1, "toIdx": 2 },
+    { "fromIdx": 2, "toIdx": 3 }
+  ]
+}
+```
+
 #### DELETE_SELECTED — 删除当前选中的节点
 ```json
 { "type": "DELETE_SELECTED" }
@@ -271,6 +293,7 @@ nodeType 必须是以下 6 种之一：`libtv_script` | `libtv_image` | `libtv_v
 - 用户说"帮我创建/添加 X 节点" → ADD_NODE
 - 用户说"帮我搭建 X 工作流" 或 "X 怎么做，帮我建一下" → ADD_WORKFLOW（建议完整链路）
 - 用户说"帮我搭一个漫画/分镜/图文工作流" → ADD_WORKFLOW，使用漫画工作流模式（script → script_gen → image×N）
+- 用户说"帮我搭一个小说/长文/章节转图片工作流" → ADD_WORKFLOW，使用小说工作流模式（script → chapter_split → script_gen → image×N）
 - 用户说"删除选中节点"/"删掉这个" → DELETE_SELECTED
 - 用户说"清空画布" → CLEAR_CANVAS
 - 纯咨询、建议、问答类问题 → actions 为 `[]`
