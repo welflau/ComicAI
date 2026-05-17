@@ -200,54 +200,55 @@ function ChapterSplitNode({ data, selected, dragging }: NodeProps<ChapterSplitNo
     const SPACING_Y = 320
     const startX = data.position.x + NODE_W + 80
     const startY = data.position.y - ((selected.length - 1) * SPACING_Y) / 2
+    const shouldGroup = selected.length > 3
 
-    const newIds: string[] = []
+    // 预先生成组节点 ID，章节节点创建时直接携带 groupId，避免两步同步问题
+    const groupId = shouldGroup ? `libtv_group_${Date.now()}` : null
+    const groupLabel = data.label ? `${data.label} 章节组` : '章节组'
+
+    if (groupId) {
+      // 先建组节点（放在章节节点列的左边，垂直居中）
+      addNode({
+        id: groupId,
+        type: 'libtv_group' as any,
+        label: groupLabel,
+        category: 'process',
+        position: { x: startX, y: data.position.y - 40 },
+        config: {},
+      } as any)
+      addEdge({ id: `e-${data.id}-${groupId}`, source: data.id, target: groupId })
+    }
+
     selected.forEach((chapter, idx) => {
       const newId = `libtv_script_${Date.now()}_${idx}`
-      newIds.push(newId)
       addNode({
         id: newId,
         type: 'libtv_script' as any,
         label: chapter.title,
         category: 'input',
-        position: { x: startX, y: startY + idx * SPACING_Y },
+        // 打组时节点位置在组右侧，不打组时直接在分解节点右侧
+        position: {
+          x: startX + (groupId ? 320 : 0),
+          y: startY + idx * SPACING_Y,
+        },
         config: {},
         title: chapter.title,
         content: chapter.content,
         initialMode: 'content',
+        groupId: groupId ?? undefined,  // 直接携带 groupId
       } as any)
-    })
 
-    // 超过 3 个章节节点自动打组
-    if (newIds.length > 3) {
-      // addNode 是同步的，节点已在 store 中，可以立即打组
-      const groupLabel = data.label ? `${data.label} 章节组` : '章节组'
-      groupNodes(newIds, groupLabel)
-      // 找到刚创建的组节点（包含 newIds[0] 的那个）
-      setTimeout(() => {
-        const { nodes, edges } = useProjectStore.getState()
-        const firstChild = nodes.find(n => n.id === newIds[0])
-        const groupId = firstChild?.groupId
-        if (groupId) {
-          const alreadyConnected = edges.some(e => e.source === data.id && e.target === groupId)
-          if (!alreadyConnected) {
-            addEdge({ id: `e-${data.id}-${groupId}`, source: data.id, target: groupId })
-          }
-        }
-      }, 0)
-    } else {
-      // 少量节点直接连线
-      newIds.forEach(newId => {
+      if (!groupId) {
         addEdge({ id: `e-${data.id}-${newId}`, source: data.id, target: newId })
-      })
-    }
+      }
+    })
 
     addLog({
       level: 'info', category: 'operation',
-      message: `生成 ${selected.length} 个章节节点${selected.length > 3 ? '（已自动打组）' : ''}`,
+      message: `生成 ${selected.length} 个章节节点${shouldGroup ? '（已自动打组）' : ''}`,
       detail: selected.map(c => c.title).join('、'),
     })
-  }, [chapters, selectedIds, data.id, data.label, data.position, addNode, addEdge, groupNodes, addLog])
+  }, [chapters, selectedIds, data.id, data.label, data.position, addNode, addEdge, addLog])
 
   const toggleAll = () => {
     setSelectedIds(prev =>
