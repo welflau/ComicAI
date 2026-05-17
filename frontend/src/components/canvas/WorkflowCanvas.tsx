@@ -24,6 +24,7 @@ import ImageNode from '@/components/nodes/ImageNode'
 import VideoNode from '@/components/nodes/VideoNode'
 import VideoComposeNode from '@/components/nodes/VideoComposeNode'
 import ChapterSplitNode from '@/components/nodes/ChapterSplitNode'
+import GroupNode from '@/components/nodes/GroupNode'
 import AnimatedFlowEdge from '@/components/canvas/AnimatedFlowEdge'
 import TemplatePicker from '@/components/canvas/TemplatePicker'
 import CanvasContextMenu from '@/components/canvas/CanvasContextMenu'
@@ -56,6 +57,7 @@ const nodeTypes = {
   libtv_video: VideoNode,
   libtv_video_compose: VideoComposeNode,
   libtv_chapter_split: ChapterSplitNode,
+  libtv_group: GroupNode,
 }
 
 const edgeTypes = {
@@ -78,12 +80,31 @@ function toRFEdge(edge: EdgeData): Edge {
 }
 
 function WorkflowCanvasInner() {
-  const storeNodes          = useProjectStore(s => s.nodes)
-  const storeEdges          = useProjectStore(s => s.edges)
+  const allNodes            = useProjectStore(s => s.nodes)
+  const allEdges            = useProjectStore(s => s.edges)
+  const currentGroupId      = useProjectStore(s => s.currentGroupId)
+  const groupNavStack       = useProjectStore(s => s.groupNavStack)
+  const exitGroup           = useProjectStore(s => s.exitGroup)
+  const groupNodes          = useProjectStore(s => s.groupNodes)
   const updateWorkflow      = useProjectStore(s => s.updateWorkflow)
   const addNode             = useProjectStore(s => s.addNode)
   const selectNodes         = useProjectStore(s => s.selectNodes)
   const pendingSelectNodeId = useProjectStore(s => s.pendingSelectNodeId)
+  const selectedNodeIds     = useProjectStore(s => s.selectedNodeIds)
+
+  // Filter to current group level
+  const storeNodes = useMemo(
+    () => allNodes.filter(n => (n.groupId ?? null) === (currentGroupId ?? null)),
+    [allNodes, currentGroupId]
+  )
+  const storeEdges = useMemo(
+    () => allEdges.filter(e => {
+      const srcIn = storeNodes.some(n => n.id === e.source)
+      const tgtIn = storeNodes.some(n => n.id === e.target)
+      return srcIn && tgtIn
+    }),
+    [allEdges, storeNodes]
+  )
 
   const isEmpty = storeNodes.length === 0
 
@@ -385,6 +406,59 @@ function WorkflowCanvasInner() {
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      {/* Group breadcrumb navigation */}
+      {groupNavStack.length > 0 && (
+        <div style={{
+          position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 20, display: 'flex', alignItems: 'center', gap: 4,
+          background: '#1a1a2e', border: '1px solid #3a3060',
+          borderRadius: 20, padding: '5px 14px',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+          fontSize: 12, color: '#999',
+          pointerEvents: 'auto',
+        }}>
+          <span
+            style={{ cursor: 'pointer', color: '#7c6af7' }}
+            onClick={() => { for (let i = 0; i < groupNavStack.length; i++) exitGroup() }}
+          >画布</span>
+          {groupNavStack.map((g, i) => (
+            <span key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ color: '#444' }}>/</span>
+              <span
+                style={{ cursor: i < groupNavStack.length - 1 ? 'pointer' : 'default', color: i < groupNavStack.length - 1 ? '#7c6af7' : '#ccc' }}
+                onClick={() => { for (let j = groupNavStack.length - 1; j > i; j--) exitGroup() }}
+              >{g.label}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Multi-select group button */}
+      {selectedNodeIds.length >= 2 && currentGroupId === null && (
+        <div style={{
+          position: 'absolute', top: 10, right: 16,
+          zIndex: 20, pointerEvents: 'auto',
+        }}>
+          <button
+            onClick={() => {
+              const label = `组 ${Date.now().toString().slice(-4)}`
+              groupNodes(selectedNodeIds, label)
+            }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '6px 14px', borderRadius: 8,
+              background: '#7c6af7', border: 'none', cursor: 'pointer',
+              color: '#fff', fontSize: 12, fontWeight: 600,
+              boxShadow: '0 2px 8px rgba(124,106,247,0.4)',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#9077ff' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#7c6af7' }}
+          >
+            📦 打组（{selectedNodeIds.length}）
+          </button>
+        </div>
+      )}
+
       {isEmpty && <TemplatePicker />}
       <ReactFlow
         nodes={nodes}
