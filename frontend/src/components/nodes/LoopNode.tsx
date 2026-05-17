@@ -104,11 +104,11 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
   return (
     <div style={{
       width: NODE_W,
-      background: selected ? '#1a2a1a' : '#161e16',
-      border: `1.5px solid ${selected ? '#4caf50' : '#2a3e2a'}`,
+      background: selected ? '#1e1e1e' : '#161616',
+      border: `1.5px solid ${selected ? '#7c6af7' : '#2e2e2e'}`,
       borderRadius: 14,
       boxShadow: selected
-        ? '0 0 0 2px rgba(76,175,80,0.2), 0 4px 20px rgba(0,0,0,0.5)'
+        ? '0 0 0 2px rgba(124,106,247,0.2), 0 4px 20px rgba(0,0,0,0.5)'
         : '0 2px 12px rgba(0,0,0,0.4)',
       overflow: 'hidden',
       position: 'relative',
@@ -117,8 +117,8 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '9px 12px 8px',
-        borderBottom: '1px solid #2a3e2a',
-        background: 'rgba(76,175,80,0.08)',
+        borderBottom: '1px solid #252525',
+        background: '#1a1a1a',
       }}>
         <Repeat size={13} color="#4caf50" />
         <span style={{ fontSize: 13, fontWeight: 600, color: '#ccc', flex: 1 }}>
@@ -141,7 +141,7 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
             style={{
               width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               padding: '4px 8px', borderRadius: 6,
-              background: '#1e2e1e', border: '1px solid #2a3e2a',
+              background: '#222', border: '1px solid #333',
               color: '#aaa', fontSize: 11, cursor: 'pointer',
             }}
           >
@@ -151,7 +151,7 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
           {filterDropOpen && (
             <div style={{
               position: 'absolute', top: '110%', left: 0, right: 0, zIndex: 9999,
-              background: '#1a2a1a', border: '1px solid #2a3e2a',
+              background: '#1e1e1e', border: '1px solid #333',
               borderRadius: 8, overflow: 'hidden',
               boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
             }}>
@@ -187,7 +187,7 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
           </div>
         ) : (
           <div style={{
-            background: '#1e2e1e', border: '1px solid #2a3e2a',
+            background: '#1e1e1e', border: '1px solid #2a2a2a',
             borderRadius: 8, padding: '7px 10px',
           }}>
             <div style={{ fontSize: 12, color: '#ddd', fontWeight: 500, marginBottom: 3,
@@ -211,7 +211,7 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
         padding: '8px 12px 10px',
-        borderTop: '1px solid #2a3e2a',
+        borderTop: '1px solid #252525',
       }}>
         <button
           className="nodrag nopan"
@@ -220,10 +220,10 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 28, height: 28, borderRadius: 6,
-            background: 'transparent', border: '1px solid #2a3e2a',
-            color: safeIndex === 0 ? '#333' : '#888', cursor: safeIndex === 0 ? 'not-allowed' : 'pointer',
+            background: 'transparent', border: '1px solid #2e2e2e',
+            color: safeIndex === 0 ? '#333' : '#777', cursor: safeIndex === 0 ? 'not-allowed' : 'pointer',
           }}
-          onMouseEnter={e => { if (safeIndex > 0) (e.currentTarget as HTMLButtonElement).style.background = '#1e2e1e' }}
+          onMouseEnter={e => { if (safeIndex > 0) (e.currentTarget as HTMLButtonElement).style.background = '#252525' }}
           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
         >
           <ChevronLeft size={13} />
@@ -255,11 +255,11 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             width: 28, height: 28, borderRadius: 6,
-            background: 'transparent', border: '1px solid #2a3e2a',
-            color: safeIndex >= total - 1 ? '#333' : '#888',
+            background: 'transparent', border: '1px solid #2e2e2e',
+            color: safeIndex >= total - 1 ? '#333' : '#777',
             cursor: safeIndex >= total - 1 ? 'not-allowed' : 'pointer',
           }}
-          onMouseEnter={e => { if (safeIndex < total - 1) (e.currentTarget as HTMLButtonElement).style.background = '#1e2e1e' }}
+          onMouseEnter={e => { if (safeIndex < total - 1) (e.currentTarget as HTMLButtonElement).style.background = '#252525' }}
           onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
         >
           <ChevronRight size={13} />
@@ -269,11 +269,11 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
       {/* Handles */}
       <Handle
         type="target" position={Position.Left}
-        style={{ top: 40, background: '#4caf50', width: 10, height: 10, border: '2px solid #161e16', opacity: handlesVisible ? 1 : 0 }}
+        style={{ top: 40, background: '#7c6af7', width: 10, height: 10, border: '2px solid #161616', opacity: handlesVisible ? 1 : 0 }}
       />
       <Handle
         type="source" position={Position.Right}
-        style={{ top: 40, background: '#4caf50', width: 10, height: 10, border: '2px solid #161e16', opacity: handlesVisible ? 1 : 0 }}
+        style={{ top: 40, background: '#7c6af7', width: 10, height: 10, border: '2px solid #161616', opacity: handlesVisible ? 1 : 0 }}
       />
     </div>
   )

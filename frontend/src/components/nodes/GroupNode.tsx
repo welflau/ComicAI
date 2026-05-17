@@ -61,11 +61,11 @@ function GroupNode({ data, selected, dragging }: NodeProps<GroupNodeData>) {
     <div
       style={{
         width: NODE_W,
-        background: selected ? '#1e1b38' : '#181828',
-        border: `1.5px solid ${selected ? '#7c6af7' : '#3a3060'}`,
+        background: selected ? '#1e1e1e' : '#161616',
+        border: `1.5px solid ${selected ? '#7c6af7' : '#2e2e2e'}`,
         borderRadius: 14,
         boxShadow: selected
-          ? '0 0 0 2px rgba(124,106,247,0.25), 0 4px 20px rgba(0,0,0,0.5)'
+          ? '0 0 0 2px rgba(124,106,247,0.2), 0 4px 20px rgba(0,0,0,0.5)'
           : '0 2px 12px rgba(0,0,0,0.4)',
         transition: 'border-color 0.15s, background 0.15s',
         overflow: 'hidden',
@@ -76,8 +76,8 @@ function GroupNode({ data, selected, dragging }: NodeProps<GroupNodeData>) {
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '9px 12px 8px',
-        borderBottom: '1px solid #2a2050',
-        background: 'rgba(124,106,247,0.08)',
+        borderBottom: '1px solid #252525',
+        background: '#1a1a1a',
       }}>
         <Package size={13} color="#7c6af7" />
         <span style={{
@@ -106,9 +106,9 @@ function GroupNode({ data, selected, dragging }: NodeProps<GroupNodeData>) {
                 <div key={type} style={{
                   display: 'flex', alignItems: 'center', gap: 4,
                   padding: '3px 8px', borderRadius: 6,
-                  background: 'rgba(124,106,247,0.1)',
-                  border: '1px solid rgba(124,106,247,0.2)',
-                  fontSize: 11, color: '#9b8fff',
+                  background: '#252525',
+                  border: '1px solid #333',
+                  fontSize: 11, color: '#888',
                 }}>
                   {Icon && <Icon size={10} />}
                   <span>{label} ×{count}</span>
@@ -128,17 +128,19 @@ function GroupNode({ data, selected, dragging }: NodeProps<GroupNodeData>) {
             width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
             gap: 6, padding: '6px 0', borderRadius: 8,
             background: 'transparent',
-            border: '1px solid #3a3060',
-            color: '#7c6af7', fontSize: 12, fontWeight: 500,
-            cursor: 'pointer', transition: 'background 0.12s, border-color 0.12s',
+            border: '1px solid #333',
+            color: '#888', fontSize: 12, fontWeight: 500,
+            cursor: 'pointer', transition: 'background 0.12s, border-color 0.12s, color 0.12s',
           }}
           onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = 'rgba(124,106,247,0.15)'
-            ;(e.currentTarget as HTMLButtonElement).style.borderColor = '#7c6af7'
+            (e.currentTarget as HTMLButtonElement).style.background = '#252525'
+            ;(e.currentTarget as HTMLButtonElement).style.borderColor = '#555'
+            ;(e.currentTarget as HTMLButtonElement).style.color = '#ccc'
           }}
           onMouseLeave={e => {
             (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-            ;(e.currentTarget as HTMLButtonElement).style.borderColor = '#3a3060'
+            ;(e.currentTarget as HTMLButtonElement).style.borderColor = '#333'
+            ;(e.currentTarget as HTMLButtonElement).style.color = '#888'
           }}
         >
           进入组

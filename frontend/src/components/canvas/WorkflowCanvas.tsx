@@ -195,6 +195,16 @@ function WorkflowCanvasInner() {
     }
   }, [storeEdges, rfEdges])
 
+  // When group navigation changes, fit view to show the new level's nodes
+  const prevGroupId = useRef(currentGroupId)
+  useEffect(() => {
+    if (prevGroupId.current !== currentGroupId) {
+      prevGroupId.current = currentGroupId
+      // Give ReactFlow one tick to apply the new nodes, then fit view
+      setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 50)
+    }
+  }, [currentGroupId, fitView])
+
   // Handle requestSelectNode: pan to the node and clear the pending flag
   useEffect(() => {
     if (!pendingSelectNodeId) return
