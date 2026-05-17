@@ -60,6 +60,7 @@ function ChapterSplitNode({ data, selected, dragging }: NodeProps<ChapterSplitNo
   const addNode    = useProjectStore(s => s.addNode)
   const addEdge    = useProjectStore(s => s.addEdge)
   const updateNode = useProjectStore(s => s.updateNode)
+  const groupNodes = useProjectStore(s => s.groupNodes)
   const allEdges   = useProjectStore(s => s.edges)
   const allNodes   = useProjectStore(s => s.nodes)
   const addLog     = useLogStore(s => s.addLog)
@@ -200,8 +201,10 @@ function ChapterSplitNode({ data, selected, dragging }: NodeProps<ChapterSplitNo
     const startX = data.position.x + NODE_W + 80
     const startY = data.position.y - ((selected.length - 1) * SPACING_Y) / 2
 
+    const newIds: string[] = []
     selected.forEach((chapter, idx) => {
       const newId = `libtv_script_${Date.now()}_${idx}`
+      newIds.push(newId)
       addNode({
         id: newId,
         type: 'libtv_script' as any,
@@ -213,15 +216,38 @@ function ChapterSplitNode({ data, selected, dragging }: NodeProps<ChapterSplitNo
         content: chapter.content,
         initialMode: 'content',
       } as any)
-      addEdge({ id: `e-${data.id}-${newId}`, source: data.id, target: newId })
     })
+
+    // 超过 3 个章节节点自动打组
+    if (newIds.length > 3) {
+      // addNode 是同步的，节点已在 store 中，可以立即打组
+      const groupLabel = data.label ? `${data.label} 章节组` : '章节组'
+      groupNodes(newIds, groupLabel)
+      // 找到刚创建的组节点（包含 newIds[0] 的那个）
+      setTimeout(() => {
+        const { nodes, edges } = useProjectStore.getState()
+        const firstChild = nodes.find(n => n.id === newIds[0])
+        const groupId = firstChild?.groupId
+        if (groupId) {
+          const alreadyConnected = edges.some(e => e.source === data.id && e.target === groupId)
+          if (!alreadyConnected) {
+            addEdge({ id: `e-${data.id}-${groupId}`, source: data.id, target: groupId })
+          }
+        }
+      }, 0)
+    } else {
+      // 少量节点直接连线
+      newIds.forEach(newId => {
+        addEdge({ id: `e-${data.id}-${newId}`, source: data.id, target: newId })
+      })
+    }
 
     addLog({
       level: 'info', category: 'operation',
-      message: `生成 ${selected.length} 个章节节点`,
+      message: `生成 ${selected.length} 个章节节点${selected.length > 3 ? '（已自动打组）' : ''}`,
       detail: selected.map(c => c.title).join('、'),
     })
-  }, [chapters, selectedIds, data.id, data.position, addNode, addEdge, addLog])
+  }, [chapters, selectedIds, data.id, data.label, data.position, addNode, addEdge, groupNodes, addLog])
 
   const toggleAll = () => {
     setSelectedIds(prev =>
