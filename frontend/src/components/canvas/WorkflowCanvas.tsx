@@ -25,6 +25,7 @@ import VideoNode from '@/components/nodes/VideoNode'
 import VideoComposeNode from '@/components/nodes/VideoComposeNode'
 import ChapterSplitNode from '@/components/nodes/ChapterSplitNode'
 import GroupNode from '@/components/nodes/GroupNode'
+import LoopNode from '@/components/nodes/LoopNode'
 import AnimatedFlowEdge from '@/components/canvas/AnimatedFlowEdge'
 import TemplatePicker from '@/components/canvas/TemplatePicker'
 import CanvasContextMenu from '@/components/canvas/CanvasContextMenu'
@@ -58,6 +59,7 @@ const nodeTypes = {
   libtv_video_compose: VideoComposeNode,
   libtv_chapter_split: ChapterSplitNode,
   libtv_group: GroupNode,
+  libtv_loop: LoopNode,
 }
 
 const edgeTypes = {
