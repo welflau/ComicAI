@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   FileText, Image, Video, Scissors, Music, ScrollText,
-  Upload, LayoutGrid,
+  Upload, LayoutGrid, BookOpen,
 } from 'lucide-react'
 import { useProjectStore } from '@/stores/projectStore'
 import { getViewportCenter } from '@/stores/viewportCenter'
@@ -15,7 +15,8 @@ export const ADD_NODE_ITEMS = [
   { id: 'libtv_video',      icon: <Video size={20} />,     label: '视频',    badge: null,   desc: '创意广告、动画、电影' },
   { id: 'libtv_video_compose', icon: <Scissors size={20} />, label: '视频合成', badge: 'Beta', desc: '多个视频片段合为一个' },
   { id: 'audio',            icon: <Music size={20} />,     label: '音频',    badge: null,   desc: '音效、配音、音乐' },
-  { id: 'libtv_script_gen', icon: <ScrollText size={20} />, label: '脚本',   badge: 'Beta', desc: '创意脚本、AI 生成故事板' },
+  { id: 'libtv_script_gen',    icon: <ScrollText size={20} />, label: '脚本',   badge: 'Beta', desc: '创意脚本、AI 生成故事板' },
+  { id: 'libtv_chapter_split', icon: <BookOpen size={20} />,  label: '章节分解', badge: 'Beta', desc: '小说章节自动拆分' },
 ]
 
 export const ADD_RESOURCE_ITEMS = [
@@ -26,12 +27,13 @@ export const ADD_RESOURCE_ITEMS = [
 const LABELS: Record<string, string> = {
   libtv_script: '文本', libtv_script_gen: '脚本',
   libtv_image: '图片',  libtv_storyboard: '分镜', libtv_video: '视频',
-  libtv_video_compose: '视频合成',
+  libtv_video_compose:  '视频合成',
+  libtv_chapter_split:  '章节分解',
 }
 const CATEGORIES: Record<string, string> = {
   libtv_script: 'input', libtv_script_gen: 'input',
   libtv_storyboard: 'process', libtv_image: 'process', libtv_video: 'output',
-  libtv_video_compose: 'output',
+  libtv_video_compose: 'output', libtv_chapter_split: 'process',
 }
 
 /* ── Props ─────────────────────────────────────────────────────── */
@@ -53,7 +55,7 @@ export default function AddNodePanel({ spawnPosition, onClose }: Props) {
   const addNode = useProjectStore(s => s.addNode)
 
   const handleAddNode = (typeId: string) => {
-    if (!['libtv_script', 'libtv_script_gen', 'libtv_storyboard', 'libtv_image', 'libtv_video', 'libtv_video_compose'].includes(typeId)) return
+    if (!['libtv_script', 'libtv_script_gen', 'libtv_storyboard', 'libtv_image', 'libtv_video', 'libtv_video_compose', 'libtv_chapter_split'].includes(typeId)) return
     const id = `${typeId}_${Date.now()}`
     const centre = spawnPosition ?? getViewportCenter()
     const jitter = () => (Math.random() - 0.5) * 60

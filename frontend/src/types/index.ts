@@ -269,6 +269,7 @@ export type NodeType =
   | 'libtv_image'
   | 'libtv_video'
   | 'libtv_video_compose'
+  | 'libtv_chapter_split'
 
 export type NodeCategory = 'input' | 'process' | 'output' | 'control'
 
