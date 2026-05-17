@@ -270,6 +270,8 @@ export type NodeType =
   | 'libtv_video'
   | 'libtv_video_compose'
   | 'libtv_chapter_split'
+  | 'libtv_group'
+  | 'libtv_loop'
 
 export type NodeCategory = 'input' | 'process' | 'output' | 'control'
 
@@ -303,6 +305,8 @@ export interface NodeData {
   videoUrl?: string
   videoSource?: 'uploaded' | 'generated'
   videoPrompt?: string
+  // Group support — nodes with groupId belong to that group's sub-canvas
+  groupId?: string
 }
 
 export interface EdgeData {

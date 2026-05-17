@@ -30,6 +30,10 @@ interface ProjectState {
   pendingSelectNodeId: string | null
   activeView: 'workflow' | 'storyboard' | 'timeline' | 'preview'
 
+  // Group navigation
+  currentGroupId: string | null
+  groupNavStack: Array<{ id: string; label: string }>
+
   // Collaboration
   collabUsers: CollabUser[]
   wsConnected: boolean
@@ -49,6 +53,12 @@ interface ProjectState {
   addEdge: (edge: EdgeData) => void
   updateNode: (id: string, updates: Partial<NodeData>) => void
   deleteNode: (id: string) => void
+
+  // Group navigation actions
+  enterGroup: (groupId: string) => void
+  exitGroup: () => void
+  /** 将选中的节点打包进一个新组节点 */
+  groupNodes: (nodeIds: string[], label: string) => void
 
   // Task actions
   addTask: (task: GenerationTask) => void
@@ -76,6 +86,8 @@ export const useProjectStore = create<ProjectState>()(
     selectedNodeIds: [],
     pendingSelectNodeId: null,
     activeView: 'workflow',
+    currentGroupId: null,
+    groupNavStack: [],
     collabUsers: [],
     wsConnected: false,
     isLoading: false,
@@ -271,6 +283,83 @@ export const useProjectStore = create<ProjectState>()(
         projectsApi.update(currentProject.id, {
           workflow_config: { ...currentProject.workflow_config, nodes, edges }
         }).catch(e => console.error('Failed to save after deleteNode:', e))
+      }, 300)
+    },
+
+    // ── Group navigation ──────────────────────────────────────────
+    enterGroup: (groupId) => {
+      const group = get().nodes.find(n => n.id === groupId)
+      if (!group) return
+      set(state => ({
+        currentGroupId: groupId,
+        groupNavStack: [...state.groupNavStack, { id: groupId, label: group.label }],
+        selectedNodeIds: [],
+      }))
+    },
+
+    exitGroup: () => {
+      set(state => {
+        const newStack = state.groupNavStack.slice(0, -1)
+        return {
+          currentGroupId: newStack.length > 0 ? newStack[newStack.length - 1].id : null,
+          groupNavStack: newStack,
+          selectedNodeIds: [],
+        }
+      })
+    },
+
+    groupNodes: (nodeIds, label) => {
+      const state = get()
+      const toGroup = state.nodes.filter(n => nodeIds.includes(n.id))
+      if (toGroup.length === 0) return
+
+      // Compute center of selected nodes for group node position
+      const xs = toGroup.map(n => n.position.x)
+      const ys = toGroup.map(n => n.position.y)
+      const cx = (Math.min(...xs) + Math.max(...xs)) / 2
+      const cy = (Math.min(...ys) + Math.max(...ys)) / 2
+
+      const groupId = `libtv_group_${Date.now()}`
+
+      // Count node types for summary
+      const typeSummary = toGroup.reduce<Record<string, number>>((acc, n) => {
+        const key = n.type
+        acc[key] = (acc[key] ?? 0) + 1
+        return acc
+      }, {})
+
+      // Create group node
+      const groupNode: NodeData = {
+        id: groupId,
+        type: 'libtv_group',
+        label,
+        category: 'process',
+        position: { x: cx - 140, y: cy - 40 },
+        config: { typeSummary },
+        groupId: state.currentGroupId ?? undefined,
+      }
+
+      // Move selected nodes into group (set their groupId)
+      const updatedNodes = state.nodes.map(n =>
+        nodeIds.includes(n.id) ? { ...n, groupId } : n
+      )
+
+      // Move edges: if both endpoints are in group, set groupId on edge
+      const updatedEdges = state.edges.map(e => {
+        const srcInGroup = nodeIds.includes(e.source)
+        const tgtInGroup = nodeIds.includes(e.target)
+        return (srcInGroup && tgtInGroup) ? { ...e, groupId } : e
+      })
+
+      set({ nodes: [...updatedNodes, groupNode], edges: updatedEdges, selectedNodeIds: [] })
+
+      addLog({ level: 'info', category: 'operation', message: `已打组：${label}`, detail: `${toGroup.length} 个节点` })
+
+      // Trigger save via existing updateWorkflow action
+      clearTimeout(_saveTimer)
+      _saveTimer = setTimeout(() => {
+        const s = get()
+        s.updateWorkflow(s.nodes, s.edges).catch(() => {})
       }, 300)
     },
 
