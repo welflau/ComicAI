@@ -1,4 +1,4 @@
-import { memo, useState, useCallback } from 'react'
+import { memo, useState, useCallback, useEffect } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import { ScrollText, Play, Trash2 } from 'lucide-react'
 import { useProjectStore } from '@/stores/projectStore'
@@ -41,6 +41,7 @@ function LogNode({ data, selected, dragging }: NodeProps<LogNodeData>) {
 
   const [lastOutput, setLastOutput] = useState<string>('')
   const [hovered, setHovered] = useState(false)
+  const updateNode = useProjectStore(s => s.updateNode)
 
   const handlesVisible = !dragging && (selected || hovered)
 
@@ -71,6 +72,14 @@ function LogNode({ data, selected, dragging }: NodeProps<LogNodeData>) {
 
     setLastOutput(results.join('\n\n'))
   }, [allEdges, allNodes, data.id, data.label, addLog])
+
+  // Auto-execute + clear triggerRun when LoopNode triggers this node
+  useEffect(() => {
+    if ((data as any).triggerRun === true) {
+      handleRead()
+      updateNode(data.id, { triggerRun: false } as any)
+    }
+  }, [(data as any).triggerRun])   // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div
