@@ -224,8 +224,20 @@ function WorkflowCanvasInner() {
   useEffect(() => {
     if (prevGroupId.current !== currentGroupId) {
       prevGroupId.current = currentGroupId
-      // Give ReactFlow one tick to apply the new nodes, then fit view
-      setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 50)
+      // Fit view to content nodes only (exclude port nodes which sit at extreme positions)
+      setTimeout(() => {
+        const contentNodes = useProjectStore.getState().nodes
+          .filter(n =>
+            (n.groupId ?? null) === (currentGroupId ?? null) &&
+            n.type !== 'libtv_group_input' &&
+            n.type !== 'libtv_group_output'
+          )
+        if (contentNodes.length > 0) {
+          fitView({ nodes: contentNodes.map(n => ({ id: n.id })), padding: 0.25, duration: 400 })
+        } else {
+          fitView({ padding: 0.25, duration: 400 })
+        }
+      }, 80)
     }
   }, [currentGroupId, fitView])
 

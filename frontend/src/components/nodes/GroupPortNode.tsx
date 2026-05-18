@@ -12,53 +12,59 @@ export interface GroupPortNodeData {
   groupId?: string
 }
 
-const W = 90
-const H = 40
+const W = 88
+const H = 36
 
 function GroupPortNode({ data }: NodeProps<GroupPortNodeData>) {
   const isInput = data.type === 'libtv_group_input'
-  const Icon = isInput ? LogIn : LogOut
+  const Icon    = isInput ? LogIn : LogOut
+  // Input = 蓝色，Output = 橙色
+  const color   = isInput ? '#4a9eff' : '#ff8c42'
+  const bg      = isInput ? 'rgba(74,158,255,0.12)' : 'rgba(255,140,66,0.12)'
+  const border  = isInput ? 'rgba(74,158,255,0.45)' : 'rgba(255,140,66,0.45)'
 
   return (
     <div style={{
       width: W, height: H,
       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-      background: '#1a1a1a',
-      border: '1.5px dashed #3a3a3a',
+      background: bg,
+      border: `1.5px solid ${border}`,
       borderRadius: 10,
-      color: '#666', fontSize: 12, fontWeight: 500,
+      color, fontSize: 12, fontWeight: 600,
       userSelect: 'none',
       position: 'relative',
+      boxShadow: `0 0 8px ${isInput ? 'rgba(74,158,255,0.15)' : 'rgba(255,140,66,0.15)'}`,
     }}>
-      <Icon size={13} color="#555" />
+      <Icon size={13} />
       <span>{isInput ? '输入' : '输出'}</span>
 
-      {/* Input port: source handle on the RIGHT (data flows out into the group) */}
+      {/* Input: 右侧 source（向组内输出） */}
       {isInput && (
         <Handle
           type="source" position={Position.Right}
-          style={{ width: 10, height: 10, background: '#555', border: '2px solid #1a1a1a', right: -5 }}
+          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', right: -5 }}
         />
       )}
 
-      {/* Output port: target handle on the LEFT (data flows in from internal nodes) */}
-      {isInput && (
-        <Handle
-          type="target" position={Position.Left}
-          style={{ width: 10, height: 10, background: '#444', border: '2px solid #1a1a1a', left: -5, opacity: 0.3 }}
-        />
-      )}
-
+      {/* Output: 左侧 target（接收组内结果） */}
       {!isInput && (
         <Handle
           type="target" position={Position.Left}
-          style={{ width: 10, height: 10, background: '#555', border: '2px solid #1a1a1a', left: -5 }}
+          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', left: -5 }}
+        />
+      )}
+
+      {/* 另一侧连接外部（半透明，标示对外接口） */}
+      {isInput && (
+        <Handle
+          type="target" position={Position.Left}
+          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', left: -5, opacity: 0.35 }}
         />
       )}
       {!isInput && (
         <Handle
           type="source" position={Position.Right}
-          style={{ width: 10, height: 10, background: '#444', border: '2px solid #1a1a1a', right: -5, opacity: 0.3 }}
+          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', right: -5, opacity: 0.35 }}
         />
       )}
     </div>
