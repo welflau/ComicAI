@@ -274,6 +274,7 @@ export type NodeType =
   | 'libtv_loop'
   | 'libtv_group_input'
   | 'libtv_group_output'
+  | 'libtv_log'
 
 export type NodeCategory = 'input' | 'process' | 'output' | 'control'
 

@@ -18,6 +18,7 @@ export const ADD_NODE_ITEMS = [
   { id: 'libtv_script_gen',    icon: <ScrollText size={20} />, label: '脚本',   badge: 'Beta', desc: '创意脚本、AI 生成故事板' },
   { id: 'libtv_chapter_split', icon: <BookOpen size={20} />,  label: '章节分解', badge: 'Beta', desc: '小说章节自动拆分' },
   { id: 'libtv_loop',          icon: <Repeat size={20} />,   label: '循环遍历', badge: 'Beta', desc: '逐一推送组内节点内容' },
+  { id: 'libtv_log',           icon: <ScrollText size={20} />, label: 'Log',    badge: null,   desc: '读取上游节点输出，输出到日志' },
 ]
 
 export const ADD_RESOURCE_ITEMS = [
@@ -32,12 +33,13 @@ const LABELS: Record<string, string> = {
   libtv_chapter_split:  '章节分解',
   libtv_group:          '节点组',
   libtv_loop:           '循环遍历',
+  libtv_log:            'Log',
 }
 const CATEGORIES: Record<string, string> = {
   libtv_script: 'input', libtv_script_gen: 'input',
   libtv_storyboard: 'process', libtv_image: 'process', libtv_video: 'output',
   libtv_video_compose: 'output', libtv_chapter_split: 'process',
-  libtv_group: 'process', libtv_loop: 'control',
+  libtv_group: 'process', libtv_loop: 'control', libtv_log: 'control',
 }
 
 /* ── Props ─────────────────────────────────────────────────────── */
@@ -59,7 +61,7 @@ export default function AddNodePanel({ spawnPosition, onClose }: Props) {
   const addNode = useProjectStore(s => s.addNode)
 
   const handleAddNode = (typeId: string) => {
-    if (!['libtv_script', 'libtv_script_gen', 'libtv_storyboard', 'libtv_image', 'libtv_video', 'libtv_video_compose', 'libtv_chapter_split', 'libtv_group', 'libtv_loop'].includes(typeId)) return
+    if (!['libtv_script', 'libtv_script_gen', 'libtv_storyboard', 'libtv_image', 'libtv_video', 'libtv_video_compose', 'libtv_chapter_split', 'libtv_group', 'libtv_loop', 'libtv_log'].includes(typeId)) return
     const id = `${typeId}_${Date.now()}`
     const centre = spawnPosition ?? getViewportCenter()
     const jitter = () => (Math.random() - 0.5) * 60

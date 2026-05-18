@@ -27,6 +27,7 @@ import ChapterSplitNode from '@/components/nodes/ChapterSplitNode'
 import GroupNode from '@/components/nodes/GroupNode'
 import LoopNode from '@/components/nodes/LoopNode'
 import GroupPortNode from '@/components/nodes/GroupPortNode'
+import LogNode from '@/components/nodes/LogNode'
 import AnimatedFlowEdge from '@/components/canvas/AnimatedFlowEdge'
 import TemplatePicker from '@/components/canvas/TemplatePicker'
 import CanvasContextMenu from '@/components/canvas/CanvasContextMenu'
@@ -63,6 +64,7 @@ const nodeTypes = {
   libtv_loop: LoopNode,
   libtv_group_input:  GroupPortNode,
   libtv_group_output: GroupPortNode,
+  libtv_log: LogNode,
 }
 
 const edgeTypes = {
