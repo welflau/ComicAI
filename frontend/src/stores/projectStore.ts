@@ -122,6 +122,8 @@ export const useProjectStore = create<ProjectState>()(
           nodes: wf?.nodes ?? [],
           edges: wf?.edges ?? [],
           isLoading: false,
+          currentGroupId: null, groupNavStack: [],
+          _undoStack: [], _redoStack: [],
         })
         return
       }
@@ -146,6 +148,8 @@ export const useProjectStore = create<ProjectState>()(
           nodes: getDefaultNodes(),
           edges: getDefaultEdges(),
           isLoading: false,
+          currentGroupId: null, groupNavStack: [],
+          _undoStack: [], _redoStack: [],
         })
         return
       }
@@ -169,7 +173,9 @@ export const useProjectStore = create<ProjectState>()(
           assets,
           nodes: workflowConfig.nodes ?? [],
           edges: workflowConfig.edges ?? [],
-          isLoading: false
+          isLoading: false,
+          currentGroupId: null, groupNavStack: [],
+          _undoStack: [], _redoStack: [],
         })
         addLog({
           level: 'info',
