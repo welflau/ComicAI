@@ -294,7 +294,9 @@ const IMAGE_MODELS: Array<{ id: ImageModel; label: string; hint: string }> = [
   { id: 'jimeng',   label: '即梦',         hint: '10-60 秒' },
 ]
 
-function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [], model = 'nano-pro', onModelChange }: {
+type UpstreamSource = { id: string; label: string; content: string; enabled: boolean }
+
+function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [], model = 'nano-pro', onModelChange, upstreamSources = [], onSourcesChange }: {
   value: string
   onChange: (v: string) => void
   onSend: () => void
@@ -303,6 +305,8 @@ function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [],
   refImages?: string[]
   model?: ImageModel
   onModelChange?: (m: ImageModel) => void
+  upstreamSources?: UpstreamSource[]
+  onSourcesChange?: (sources: UpstreamSource[]) => void
 }) {
   const [activeTab, setActiveTab] = useState<PromptTab>('style')
   const [modelDropOpen, setModelDropOpen] = useState(false)
@@ -394,6 +398,49 @@ function ImagePromptPanel({ value, onChange, onSend, generating, refImages = [],
           <Maximize2 size={12} />
         </button>
       </div>
+
+      {/* ── Upstream source tags (drag to reorder, click × to toggle) ── */}
+      {upstreamSources.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+          {upstreamSources.map((src, idx) => (
+            <div
+              key={src.id}
+              draggable
+              onDragStart={e => e.dataTransfer.setData('text/plain', String(idx))}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => {
+                e.preventDefault()
+                const from = parseInt(e.dataTransfer.getData('text/plain'))
+                if (from === idx) return
+                const next = [...upstreamSources]
+                const [item] = next.splice(from, 1)
+                next.splice(idx, 0, item)
+                onSourcesChange?.(next)
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                padding: '2px 6px 2px 8px', borderRadius: 5, cursor: 'grab',
+                background: src.enabled ? 'rgba(124,106,247,0.12)' : '#222',
+                border: `1px solid ${src.enabled ? 'rgba(124,106,247,0.35)' : '#333'}`,
+                fontSize: 10,
+                color: src.enabled ? '#9b8fff' : '#444',
+                userSelect: 'none',
+                transition: 'background 0.1s, color 0.1s',
+              }}
+              title={src.content.slice(0, 80)}
+            >
+              <span style={{ maxWidth: 80, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {src.label}
+              </span>
+              <span
+                className="nodrag nopan"
+                onClick={() => onSourcesChange?.(upstreamSources.map((s, i) => i === idx ? { ...s, enabled: !s.enabled } : s))}
+                style={{ cursor: 'pointer', opacity: 0.7, lineHeight: 1, fontSize: 11 }}
+              >×</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* ── Row 2: prompt textarea ── */}
       <textarea
@@ -581,6 +628,10 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
   const [prompt,      setPrompt]      = useState(() => data.imagePrompt ?? '')
   const [generating,  setGenerating]  = useState(false)
   const [imgModel,    setImgModel]    = useState<ImageModel>('nano-pro')
+
+  // Ordered list of upstream text sources — user can reorder and toggle
+  type UpstreamSource = { id: string; label: string; content: string; enabled: boolean }
+  const [upstreamSources, setUpstreamSources] = useState<UpstreamSource[]>([])
   const [genError,    setGenError]    = useState<string | null>(null)
   // When initialPanelExpanded is set, the panel starts expanded until user explicitly
   // deselects; after that it follows the normal selected-only rule.
@@ -658,16 +709,38 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
     }
   }, [data.imageUrl])
 
-  // Upstream text content from connected ScriptNodes
-  const [sourceTextContent, setSourceTextContent] = useState<string | undefined>(undefined)
+  // Upstream text content — derived from upstreamSources (enabled, in user-defined order)
+  const sourceTextContent: string | undefined = upstreamSources.length > 0
+    ? (upstreamSources.filter(s => s.enabled).map(s => s.content).join('\n\n') || undefined)
+    : undefined
+
+  // Sync upstream ScriptNode connections → upstreamSources list
+  // Preserves existing order & enabled state; adds new nodes at end; removes disconnected ones.
   useEffect(() => {
     const incomingEdges = allEdges.filter(e => e.target === data.id)
-    const upstreamTexts = incomingEdges
+    const connected = incomingEdges
       .map(e => allNodes.find(n => n.id === e.source))
-      .filter((n): n is NonNullable<typeof n> => !!n && n.type === 'libtv_script' && !!(n as NodeData).content)
-      .map(n => (n as NodeData).content as string)
-      .filter(Boolean)
-    setSourceTextContent(upstreamTexts.length > 0 ? upstreamTexts.join('\n\n') : undefined)
+      .filter((n): n is NonNullable<typeof n> => !!n && n.type === 'libtv_script' && !!(n as any).content)
+      .map(n => ({ id: n.id, label: n.label ?? '文本', content: (n as any).content as string }))
+
+    if (connected.length === 0) {
+      setUpstreamSources([])
+      return
+    }
+
+    setUpstreamSources(prev => {
+      const connectedIds = new Set(connected.map(c => c.id))
+      // Keep existing entries that are still connected (preserve order + enabled state)
+      const kept = prev.filter(s => connectedIds.has(s.id)).map(s => ({
+        ...s,
+        label: connected.find(c => c.id === s.id)?.label ?? s.label,
+        content: connected.find(c => c.id === s.id)?.content ?? s.content,
+      }))
+      // Append new connections at the end
+      const keptIds = new Set(kept.map(s => s.id))
+      const added = connected.filter(c => !keptIds.has(c.id)).map(c => ({ ...c, enabled: true }))
+      return [...kept, ...added]
+    })
   }, [allEdges, allNodes, data.id])
 
   // Resolve reference images from connected source nodes
@@ -1331,6 +1404,8 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
               refImages={refImages}
               model={imgModel}
               onModelChange={setImgModel}
+              upstreamSources={upstreamSources}
+              onSourcesChange={setUpstreamSources}
             />
           </ZoomInvariantPanel>
           {genError && (
