@@ -26,6 +26,7 @@ import VideoComposeNode from '@/components/nodes/VideoComposeNode'
 import ChapterSplitNode from '@/components/nodes/ChapterSplitNode'
 import GroupNode from '@/components/nodes/GroupNode'
 import LoopNode from '@/components/nodes/LoopNode'
+import GroupPortNode from '@/components/nodes/GroupPortNode'
 import AnimatedFlowEdge from '@/components/canvas/AnimatedFlowEdge'
 import TemplatePicker from '@/components/canvas/TemplatePicker'
 import CanvasContextMenu from '@/components/canvas/CanvasContextMenu'
@@ -60,6 +61,8 @@ const nodeTypes = {
   libtv_chapter_split: ChapterSplitNode,
   libtv_group: GroupNode,
   libtv_loop: LoopNode,
+  libtv_group_input:  GroupPortNode,
+  libtv_group_output: GroupPortNode,
 }
 
 const edgeTypes = {
@@ -290,8 +293,11 @@ function WorkflowCanvasInner() {
   }, [nodes, edges, saveWorkflow])
 
   const onNodesDelete = useCallback((deleted: Node[]) => {
+    // Port nodes are fixed and cannot be deleted
+    const deletable = deleted.filter(n => n.type !== 'libtv_group_input' && n.type !== 'libtv_group_output')
+    if (deletable.length === 0) return
     pushHistory()
-    deleted.forEach(n => {
+    deletable.forEach(n => {
       addLog({
         level: 'info',
         category: 'operation',
@@ -299,7 +305,7 @@ function WorkflowCanvasInner() {
         detail: `类型: ${n.type} | ID: ${n.id}`,
       })
     })
-    const ids = new Set(deleted.map(n => n.id))
+    const ids = new Set(deletable.map(n => n.id))
     saveWorkflow(
       nodes.filter(n => !ids.has(n.id)),
       edges.filter(e => !ids.has(e.source) && !ids.has(e.target))

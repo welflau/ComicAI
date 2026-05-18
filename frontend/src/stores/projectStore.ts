@@ -304,11 +304,54 @@ export const useProjectStore = create<ProjectState>()(
 
     // ── Group navigation ──────────────────────────────────────────
     enterGroup: (groupId) => {
-      const group = get().nodes.find(n => n.id === groupId)
+      const state = get()
+      const group = state.nodes.find(n => n.id === groupId)
       if (!group) return
-      set(state => ({
+
+      // Auto-create input/output port nodes if not yet present
+      const hasInput  = state.nodes.some(n => n.groupId === groupId && n.type === 'libtv_group_input')
+      const hasOutput = state.nodes.some(n => n.groupId === groupId && n.type === 'libtv_group_output')
+
+      // Position: centre vertically on existing children, or default 0
+      const children = state.nodes.filter(n => n.groupId === groupId)
+      const centerY = children.length > 0
+        ? children.reduce((s, n) => s + n.position.y, 0) / children.length
+        : 0
+      const maxX = children.length > 0
+        ? Math.max(...children.map(n => n.position.x)) + 400
+        : 600
+
+      const newNodes: NodeData[] = []
+      if (!hasInput) {
+        newNodes.push({
+          id: `${groupId}_input`,
+          type: 'libtv_group_input',
+          label: '输入',
+          category: 'input',
+          position: { x: -200, y: centerY },
+          config: {},
+          groupId,
+        })
+      }
+      if (!hasOutput) {
+        newNodes.push({
+          id: `${groupId}_output`,
+          type: 'libtv_group_output',
+          label: '输出',
+          category: 'output',
+          position: { x: maxX, y: centerY },
+          config: {},
+          groupId,
+        })
+      }
+
+      if (newNodes.length > 0) {
+        set(s => ({ nodes: [...s.nodes, ...newNodes] }))
+      }
+
+      set(s => ({
         currentGroupId: groupId,
-        groupNavStack: [...state.groupNavStack, { id: groupId, label: group.label }],
+        groupNavStack: [...s.groupNavStack, { id: groupId, label: group.label }],
         selectedNodeIds: [],
       }))
     },
