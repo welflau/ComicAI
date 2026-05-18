@@ -18,7 +18,7 @@ const H = 36
 
 function GroupPortNode({ data }: NodeProps<GroupPortNodeData>) {
   const zoom    = useStore(s => s.transform[2])
-  const scale   = 1 / zoom
+  const scale   = 1 / zoom   // counter-scale to keep visual size constant
 
   const isInput = data.type === 'libtv_group_input'
   const Icon    = isInput ? LogIn : LogOut
@@ -26,17 +26,22 @@ function GroupPortNode({ data }: NodeProps<GroupPortNodeData>) {
   const bg      = isInput ? 'rgba(74,158,255,0.15)' : 'rgba(255,140,66,0.15)'
   const border  = isInput ? 'rgba(74,158,255,0.55)' : 'rgba(255,140,66,0.55)'
 
+  // Handle size at screen pixels — we inverse-scale them so they appear constant too
+  const hSize = 10
+
   return (
-    // Outer div: reserves flow-space (W×H); keep overflow visible for handles
+    // Outer div: occupies W×H in flow-space
     <div style={{ width: W, height: H, overflow: 'visible', position: 'relative' }}>
-      {/* Inner div: counter-scaled so visual size stays constant */}
+
+      {/* Inner div: counter-scaled so visual content stays at W×H screen pixels */}
       <div style={{
-        position: 'absolute',
-        top: 0, left: 0,
+        position: 'absolute', top: 0, left: 0,
         width: W, height: H,
         transformOrigin: 'top left',
         transform: `scale(${scale})`,
+        overflow: 'visible',
       }}>
+        {/* Visual card */}
         <div style={{
           width: W, height: H,
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -51,33 +56,63 @@ function GroupPortNode({ data }: NodeProps<GroupPortNodeData>) {
           <Icon size={13} />
           <span>{isInput ? '输入' : '输出'}</span>
         </div>
-      </div>
 
-      {/* Handles — placed on the outer (flow-space) div so ReactFlow can snap connections */}
-      {isInput && (
-        <Handle
-          type="source" position={Position.Right}
-          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', right: -5, top: H / 2 }}
-        />
-      )}
-      {isInput && (
-        <Handle
-          type="target" position={Position.Left}
-          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', left: -5, top: H / 2, opacity: 0.4 }}
-        />
-      )}
-      {!isInput && (
-        <Handle
-          type="target" position={Position.Left}
-          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', left: -5, top: H / 2 }}
-        />
-      )}
-      {!isInput && (
-        <Handle
-          type="source" position={Position.Right}
-          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', right: -5, top: H / 2, opacity: 0.4 }}
-        />
-      )}
+        {/*
+          Handles inside the counter-scaled div so they appear at the visual edges.
+          ReactFlow reads their DOM position (getBoundingClientRect) to place connection lines —
+          placing them here means lines start/end at the correct visual position.
+        */}
+
+        {/* Input node: right = source (connects to internal nodes) */}
+        {isInput && (
+          <Handle
+            type="source" position={Position.Right}
+            style={{
+              width: hSize, height: hSize,
+              background: color, border: '2px solid #161616',
+              right: -(hSize / 2), top: H / 2 - hSize / 2,
+              transform: 'none',
+            }}
+          />
+        )}
+        {/* Input node: left = target (receives from external / group boundary) */}
+        {isInput && (
+          <Handle
+            type="target" position={Position.Left}
+            style={{
+              width: hSize, height: hSize,
+              background: color, border: '2px solid #161616',
+              left: -(hSize / 2), top: H / 2 - hSize / 2,
+              opacity: 0.45, transform: 'none',
+            }}
+          />
+        )}
+
+        {/* Output node: left = target (receives from internal nodes) */}
+        {!isInput && (
+          <Handle
+            type="target" position={Position.Left}
+            style={{
+              width: hSize, height: hSize,
+              background: color, border: '2px solid #161616',
+              left: -(hSize / 2), top: H / 2 - hSize / 2,
+              transform: 'none',
+            }}
+          />
+        )}
+        {/* Output node: right = source (connects to external / group boundary) */}
+        {!isInput && (
+          <Handle
+            type="source" position={Position.Right}
+            style={{
+              width: hSize, height: hSize,
+              background: color, border: '2px solid #161616',
+              right: -(hSize / 2), top: H / 2 - hSize / 2,
+              opacity: 0.45, transform: 'none',
+            }}
+          />
+        )}
+      </div>
     </div>
   )
 }
