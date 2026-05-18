@@ -238,15 +238,32 @@ function WorkflowCanvasInner() {
   }, [pendingSelectNodeId, fitView])
 
   const saveWorkflow = useCallback((ns: Node[], es: Edge[]) => {
-    updateWorkflow(
-      ns.map(n => ({ ...n.data, position: n.position })),
-      es.map(e => ({
-        id: e.id, source: e.source, target: e.target,
-        sourceHandle: e.sourceHandle ?? undefined,
-        targetHandle: e.targetHandle ?? undefined,
-      }))
+    // Only replace nodes/edges belonging to the CURRENT group level.
+    // Nodes from other levels must be preserved as-is.
+    const allStoreNodes = useProjectStore.getState().nodes
+    const allStoreEdges = useProjectStore.getState().edges
+
+    const updatedNodes: NodeData[] = ns.map(n => ({ ...n.data, position: n.position }))
+    const updatedNodeIds = new Set(updatedNodes.map(n => n.id))
+
+    // Nodes not in current level — keep untouched
+    const otherNodes = allStoreNodes.filter(n => (n.groupId ?? null) !== (currentGroupId ?? null))
+
+    // Edges: keep those where neither endpoint is in current level
+    const otherEdges = allStoreEdges.filter(
+      e => !updatedNodeIds.has(e.source) && !updatedNodeIds.has(e.target)
     )
-  }, [updateWorkflow])
+    const updatedEdges = es.map(e => ({
+      id: e.id, source: e.source, target: e.target,
+      sourceHandle: e.sourceHandle ?? undefined,
+      targetHandle: e.targetHandle ?? undefined,
+    }))
+
+    updateWorkflow(
+      [...otherNodes, ...updatedNodes],
+      [...otherEdges, ...updatedEdges],
+    )
+  }, [updateWorkflow, currentGroupId])
 
   const onConnect = useCallback(
     (params: Connection) => {
