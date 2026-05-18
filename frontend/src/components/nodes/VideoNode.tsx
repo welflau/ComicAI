@@ -55,7 +55,6 @@ const DEFAULT_PARAMS: VideoParams = {
   generateAudio: false,
   audioSync:   true,
 }
-}
 
 /* ── Aspect ratio definitions ───────────────────────────────────────── */
 
