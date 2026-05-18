@@ -1,6 +1,6 @@
 import { memo, useState, useCallback } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
-import { Package, FileText, Image, Video, BookOpen, Film } from 'lucide-react'
+import { Package, FileText, Image, Video, BookOpen, Film, Layers } from 'lucide-react'
 import NodeAddMenu from './shared/NodeAddMenu'
 import { useProjectStore } from '@/stores/projectStore'
 
@@ -41,6 +41,76 @@ const TYPE_LABELS: Record<string, string> = {
   libtv_video_compose: '合成',
   libtv_group:         '子组',
   libtv_loop:          '循环',
+}
+
+/* ── NodePreviewCard ─────────────────────────────────────────────── */
+
+function NodePreviewCard({ node }: { node: any }) {
+  const THUMB = 44   // px
+
+  // Image node with actual image
+  if (node.type === 'libtv_image' && node.imageUrl) {
+    return (
+      <div style={{
+        width: THUMB, height: THUMB, borderRadius: 7, flexShrink: 0,
+        overflow: 'hidden', border: '1px solid #333', background: '#1a1a1a',
+      }}>
+        <img
+          src={node.imageUrl.startsWith('/uploads') ? `http://localhost:8002${node.imageUrl}` : node.imageUrl}
+          alt=""
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+        />
+      </div>
+    )
+  }
+
+  // Text / script node — show text snippet
+  if ((node.type === 'libtv_script') && node.content) {
+    const snippet = (node.content as string).replace(/#+\s*/g, '').slice(0, 40).trim()
+    return (
+      <div style={{
+        width: THUMB * 2, height: THUMB, borderRadius: 7, flexShrink: 0,
+        background: '#1e1e1e', border: '1px solid #2e2e2e',
+        padding: '4px 6px', overflow: 'hidden',
+        fontSize: 9, color: '#666', lineHeight: 1.4,
+      }}>
+        {snippet || node.label}
+      </div>
+    )
+  }
+
+  // Video node — icon + label
+  if (node.type === 'libtv_video' && node.videoUrl) {
+    return (
+      <div style={{
+        width: THUMB, height: THUMB, borderRadius: 7, flexShrink: 0,
+        background: '#1a1a1a', border: '1px solid #333',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: 3,
+      }}>
+        <Video size={14} color="#555" />
+        <span style={{ fontSize: 8, color: '#444' }}>视频</span>
+      </div>
+    )
+  }
+
+  // Fallback: type icon + label
+  const Icon = TYPE_ICONS[node.type]
+  const label = TYPE_LABELS[node.type] ?? node.label ?? ''
+  return (
+    <div style={{
+      width: THUMB, height: THUMB, borderRadius: 7, flexShrink: 0,
+      background: '#1e1e1e', border: '1px solid #2e2e2e',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: 3,
+    }}>
+      {Icon ? <Icon size={14} color="#555" /> : null}
+      <span style={{ fontSize: 8, color: '#444', maxWidth: THUMB - 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {label}
+      </span>
+    </div>
+  )
 }
 
 /* ── CircleHandle (same pattern as ScriptNode) ───────────────────── */
@@ -156,8 +226,31 @@ function GroupNode({ data, selected, dragging }: NodeProps<GroupNodeData>) {
         </span>
       </div>
 
+      {/* Node preview row */}
+      {children.length > 0 && (
+        <div style={{
+          padding: '8px 12px 0',
+          display: 'flex', gap: 5, alignItems: 'flex-start',
+          overflowX: 'hidden',
+        }}>
+          {children.slice(0, 5).map(child => (
+            <NodePreviewCard key={child.id} node={child} />
+          ))}
+          {children.length > 5 && (
+            <div style={{
+              width: 44, height: 44, borderRadius: 7, flexShrink: 0,
+              background: '#252525', border: '1px solid #333',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 10, color: '#666',
+            }}>
+              +{children.length - 5}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Type tags */}
-      <div style={{ padding: '8px 12px 10px' }}>
+      <div style={{ padding: children.length > 0 ? '6px 12px 10px' : '8px 12px 10px' }}>
         {typeEntries.length === 0 ? (
           <div style={{ fontSize: 11, color: '#3a3a3a', textAlign: 'center', padding: '4px 0' }}>
             空组 · 双击进入
