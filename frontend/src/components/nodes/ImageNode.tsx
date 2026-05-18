@@ -930,7 +930,10 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
         }
       }
     } catch (err) {}
-    finally { setGenerating(false) }
+    finally {
+      setGenerating(false)
+      updateNode(data.id, { triggerRun: false } as any)   // signal loop: done
+    }
   }, [displayUrl, prompt, data.id, currentProject, updateNode])
 
   const handleLighting = useCallback(async () => {
@@ -1081,6 +1084,13 @@ function ImageNode({ data, selected, dragging }: NodeProps<ImageNodeData>) {
 
   // Clean up pending request on unmount
   useEffect(() => () => { abortRef.current?.abort() }, [])
+
+  // Auto-trigger generation when LoopNode pushes triggerRun=true
+  useEffect(() => {
+    if ((data as any).triggerRun === true && prompt.trim()) {
+      handleGenerate()
+    }
+  }, [(data as any).triggerRun])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Once the node loses selection, clear the initialPanelExpanded flag so the panel
   // follows normal selected-only behavior from that point on.

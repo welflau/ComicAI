@@ -1,6 +1,6 @@
-import { memo, useState, useCallback, useEffect } from 'react'
+import { memo, useState, useCallback, useEffect, useRef } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
-import { Repeat, ChevronLeft, ChevronRight, Play, ChevronDown, Check } from 'lucide-react'
+import { Repeat, ChevronLeft, ChevronRight, Play, ChevronDown, Check, Square } from 'lucide-react'
 import { useProjectStore } from '@/stores/projectStore'
 import { useLogStore } from '@/stores/logStore'
 
@@ -39,7 +39,10 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
   const [filterType,   setFilterType]   = useState(data.filterType ?? 'libtv_script')
   const [currentIndex, setCurrentIndex] = useState(data.currentIndex ?? 0)
   const [filterDropOpen, setFilterDropOpen] = useState(false)
-  const [hovered, setHovered] = useState(false)
+  const [hovered,  setHovered]  = useState(false)
+  const [looping,  setLooping]  = useState(false)
+  const [loopMsg,  setLoopMsg]  = useState('')
+  const abortLoop = useRef<AbortController | null>(null)
 
   const handlesVisible = !dragging && (selected || hovered)
 
@@ -99,6 +102,76 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
       detail: content.slice(0, 80) + (content.length > 80 ? '…' : ''),
     })
   }, [currentItem, safeIndex, total, allEdges, data.id, updateNode, addLog])
+
+  // ── Auto-loop: iterate through all items, triggering downstream execution ──
+
+  const stopLoop = useCallback(() => {
+    abortLoop.current?.abort()
+    setLooping(false)
+    setLoopMsg('')
+  }, [])
+
+  const startLoop = useCallback(async () => {
+    if (items.length === 0) return
+    const downstreamIds = allEdges.filter(e => e.source === data.id).map(e => e.target)
+    if (downstreamIds.length === 0) {
+      addLog({ level: 'warn', category: 'operation', message: '[循环] 没有连接下游节点' })
+      return
+    }
+
+    const ctrl = new AbortController()
+    abortLoop.current = ctrl
+    setLooping(true)
+
+    const waitDone = (ids: string[], timeout = 180_000) =>
+      new Promise<void>((resolve, reject) => {
+        const deadline = Date.now() + timeout
+        const tick = setInterval(() => {
+          if (ctrl.signal.aborted) { clearInterval(tick); reject(new Error('aborted')); return }
+          if (Date.now() > deadline)  { clearInterval(tick); reject(new Error('timeout')); return }
+          const nodes = useProjectStore.getState().nodes
+          const allDone = ids.every(id => !(nodes.find(n => n.id === id) as any)?.triggerRun)
+          if (allDone) { clearInterval(tick); resolve() }
+        }, 500)
+      })
+
+    for (let i = 0; i < items.length; i++) {
+      if (ctrl.signal.aborted) break
+      const item = items[i]
+      setCurrentIndex(i)
+      updateNode(data.id, { currentIndex: i } as any)
+      setLoopMsg(`${i + 1} / ${items.length}：${item.label}`)
+
+      addLog({
+        level: 'info', category: 'operation',
+        message: `[遍历] 第 ${i + 1}/${items.length}：${item.label}`,
+      })
+
+      // Push content + triggerRun to all downstream
+      downstreamIds.forEach(id => {
+        updateNode(id, { content: item.content, initialMode: 'content', title: item.label, triggerRun: true } as any)
+      })
+
+      try {
+        await waitDone(downstreamIds)
+      } catch (e: any) {
+        if (e?.message === 'aborted') break
+        addLog({ level: 'warn', category: 'operation', message: `[遍历] 超时，跳过第 ${i + 1} 项` })
+      }
+
+      // Brief pause between items
+      await new Promise(r => setTimeout(r, 800))
+    }
+
+    if (!ctrl.signal.aborted) {
+      addLog({ level: 'info', category: 'operation', message: `[遍历] 完成，共处理 ${items.length} 项` })
+    }
+    setLooping(false)
+    setLoopMsg('')
+  }, [items, allEdges, data.id, updateNode, addLog])
+
+  // Cleanup on unmount
+  useEffect(() => () => { abortLoop.current?.abort() }, [])
 
   const filterLabel = FILTER_OPTIONS.find(o => o.value === filterType)?.label ?? filterType
 
@@ -211,6 +284,20 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
         )}
       </div>
 
+      {/* Loop status bar */}
+      {looping && (
+        <div style={{
+          padding: '4px 12px', fontSize: 10, color: '#7c6af7',
+          background: 'rgba(124,106,247,0.08)', borderTop: '1px solid #252525',
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <Repeat size={10} style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {loopMsg}
+          </span>
+        </div>
+      )}
+
       {/* Control bar */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
@@ -268,6 +355,44 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
         >
           <ChevronRight size={13} />
         </button>
+
+        {/* 一键遍历 / 停止 */}
+        {looping ? (
+          <button
+            className="nodrag nopan"
+            onClick={stopLoop}
+            title="停止遍历"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 28, height: 28, borderRadius: 6,
+              background: 'rgba(224,80,80,0.15)', border: '1px solid rgba(224,80,80,0.4)',
+              color: '#e05050', cursor: 'pointer', flexShrink: 0,
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(224,80,80,0.25)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(224,80,80,0.15)' }}
+          >
+            <Square size={11} />
+          </button>
+        ) : (
+          <button
+            className="nodrag nopan"
+            disabled={total === 0}
+            onClick={startLoop}
+            title={`一键遍历全部 ${total} 项`}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 28, height: 28, borderRadius: 6,
+              background: total === 0 ? 'transparent' : 'rgba(124,106,247,0.15)',
+              border: `1px solid ${total === 0 ? '#2e2e2e' : 'rgba(124,106,247,0.4)'}`,
+              color: total === 0 ? '#333' : '#9b8fff',
+              cursor: total === 0 ? 'not-allowed' : 'pointer', flexShrink: 0,
+            }}
+            onMouseEnter={e => { if (total > 0) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(124,106,247,0.25)' }}
+            onMouseLeave={e => { if (total > 0) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(124,106,247,0.15)' }}
+          >
+            <Repeat size={11} />
+          </button>
+        )}
       </div>
 
       {/* Handles */}

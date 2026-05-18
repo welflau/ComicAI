@@ -1594,6 +1594,7 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
           // Read from ref (not state) — avoids React StrictMode double-invoke of state updaters
           const raw = streamRef.current
           const { shots: parsed, error: parseError } = parseShots(raw)
+          updateNode(data.id, { triggerRun: false } as any)   // signal loop: done
           if (parsed && parsed.length > 0) {
             setShots(parsed)
             setText(raw)
@@ -1618,6 +1619,7 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
           setMode('content')
         },
         onError: (err) => {
+          updateNode(data.id, { triggerRun: false } as any)
           addLog({ level: 'warn', category: 'ai', message: 'AI 不可用，使用模拟内容', detail: err })
           runMock(err)
         },
@@ -1683,6 +1685,13 @@ function ScriptGenNode({ data, selected, dragging }: NodeProps<ScriptGenNodeData
     abortRef.current?.abort()
     if (warnTimer.current) clearTimeout(warnTimer.current)
   }, [])
+
+  // Auto-trigger generation when LoopNode pushes triggerRun=true
+  useEffect(() => {
+    if ((data as any).triggerRun === true) {
+      handleSend()
+    }
+  }, [(data as any).triggerRun])   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Exit shot-gen selection mode when node is deselected
   useEffect(() => {
