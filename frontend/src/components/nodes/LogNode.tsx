@@ -66,7 +66,7 @@ function LogNode({ data, selected, dragging }: NodeProps<LogNodeData>) {
       const content = extractContent(node)
       // Use the "last pushed" label for LoopNode, otherwise the node's own label
       const displayLabel = (node as any)._lastPushedLabel || node.label || node.type
-      const header = `↑ ${displayLabel}`
+      const header = displayLabel
       results.push(`${header}\n${content}`)
       addLog({
         level: 'debug',
