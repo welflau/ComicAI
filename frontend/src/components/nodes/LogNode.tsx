@@ -64,12 +64,14 @@ function LogNode({ data, selected, dragging }: NodeProps<LogNodeData>) {
       const node = allNodes.find(n => n.id === id)
       if (!node) return
       const content = extractContent(node)
-      const header = `↑ ${node.label || node.type}`
+      // Use the "last pushed" label for LoopNode, otherwise the node's own label
+      const displayLabel = (node as any)._lastPushedLabel || node.label || node.type
+      const header = `↑ ${displayLabel}`
       results.push(`${header}\n${content}`)
       addLog({
         level: 'debug',
         category: 'operation',
-        message: `[Log] ${data.label || 'Log'} ← ${node.label || node.type}`,
+        message: `[Log] ${data.label || 'Log'} ← ${displayLabel}`,
         detail: content,
       })
     })
