@@ -88,6 +88,9 @@ function WorkflowCanvasInner() {
   const groupNavStack       = useProjectStore(s => s.groupNavStack)
   const exitGroup           = useProjectStore(s => s.exitGroup)
   const groupNodes          = useProjectStore(s => s.groupNodes)
+  const pushHistory         = useProjectStore(s => s.pushHistory)
+  const undo                = useProjectStore(s => s.undo)
+  const redo                = useProjectStore(s => s.redo)
   const updateWorkflow      = useProjectStore(s => s.updateWorkflow)
   const addNode             = useProjectStore(s => s.addNode)
   const selectNodes         = useProjectStore(s => s.selectNodes)
@@ -195,6 +198,23 @@ function WorkflowCanvasInner() {
     }
   }, [storeEdges, rfEdges])
 
+  // Keyboard undo / redo
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return   // don't intercept text input
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault()
+        undo()
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault()
+        redo()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [undo, redo])
+
   // When group navigation changes, fit view to show the new level's nodes
   const prevGroupId = useRef(currentGroupId)
   useEffect(() => {
@@ -248,7 +268,8 @@ function WorkflowCanvasInner() {
 
   const onNodeDragStart = useCallback((_: unknown, node: Node) => {
     dragStartPos.current = { x: node.position.x, y: node.position.y }
-  }, [])
+    pushHistory()   // snapshot before move
+  }, [pushHistory])
 
   const onNodeDragStop = useCallback((_: unknown, node: Node) => {
     const start = dragStartPos.current
@@ -269,6 +290,7 @@ function WorkflowCanvasInner() {
   }, [nodes, edges, saveWorkflow])
 
   const onNodesDelete = useCallback((deleted: Node[]) => {
+    pushHistory()
     deleted.forEach(n => {
       addLog({
         level: 'info',
@@ -282,9 +304,10 @@ function WorkflowCanvasInner() {
       nodes.filter(n => !ids.has(n.id)),
       edges.filter(e => !ids.has(e.source) && !ids.has(e.target))
     )
-  }, [nodes, edges, saveWorkflow])
+  }, [nodes, edges, saveWorkflow, pushHistory])
 
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
+    pushHistory()
     deleted.forEach(e => {
       addLog({
         level: 'info',
@@ -295,7 +318,7 @@ function WorkflowCanvasInner() {
     })
     const ids = new Set(deleted.map(e => e.id))
     saveWorkflow(nodes, edges.filter(e => !ids.has(e.id)))
-  }, [nodes, edges, saveWorkflow])
+  }, [nodes, edges, saveWorkflow, pushHistory])
 
   // Pane right-click
   const onPaneContextMenu = useCallback((e: React.MouseEvent) => {

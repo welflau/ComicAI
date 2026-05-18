@@ -34,6 +34,10 @@ interface ProjectState {
   currentGroupId: string | null
   groupNavStack: Array<{ id: string; label: string }>
 
+  // Undo / redo history
+  _undoStack: Array<{ nodes: NodeData[]; edges: EdgeData[] }>
+  _redoStack: Array<{ nodes: NodeData[]; edges: EdgeData[] }>
+
   // Collaboration
   collabUsers: CollabUser[]
   wsConnected: boolean
@@ -59,6 +63,12 @@ interface ProjectState {
   exitGroup: () => void
   /** 将选中的节点打包进一个新组节点 */
   groupNodes: (nodeIds: string[], label: string) => void
+
+  // Undo / redo
+  /** 手动快照（供 WorkflowCanvas 在拖拽结束时调用） */
+  pushHistory: () => void
+  undo: () => void
+  redo: () => void
 
   // Task actions
   addTask: (task: GenerationTask) => void
@@ -88,6 +98,8 @@ export const useProjectStore = create<ProjectState>()(
     activeView: 'workflow',
     currentGroupId: null,
     groupNavStack: [],
+    _undoStack: [],
+    _redoStack: [],
     collabUsers: [],
     wsConnected: false,
     isLoading: false,
@@ -210,6 +222,8 @@ export const useProjectStore = create<ProjectState>()(
     requestSelectNode: (id) => set({ pendingSelectNodeId: id, selectedNodeIds: [id] }),
 
     addNode: (node) => {
+      // Snapshot before structural change
+      const s0 = get(); const stack = s0._undoStack.slice(-49); stack.push({ nodes: s0.nodes, edges: s0.edges }); set({ _undoStack: stack, _redoStack: [] })
       set((state) => ({ nodes: [...state.nodes, node] }))
       addLog({
         level: 'info',
@@ -229,6 +243,7 @@ export const useProjectStore = create<ProjectState>()(
     },
 
     addEdge: (edge) => {
+      const s0 = get(); const stack = s0._undoStack.slice(-49); stack.push({ nodes: s0.nodes, edges: s0.edges }); set({ _undoStack: stack, _redoStack: [] })
       set((state) => ({ edges: [...state.edges, edge] }))
       addLog({
         level: 'info',
@@ -266,6 +281,7 @@ export const useProjectStore = create<ProjectState>()(
     },
 
     deleteNode: (id) => {
+      const s0 = get(); const stack = s0._undoStack.slice(-49); stack.push({ nodes: s0.nodes, edges: s0.edges }); set({ _undoStack: stack, _redoStack: [] })
       set((state) => ({
         nodes: state.nodes.filter(n => n.id !== id),
         edges: state.edges.filter(e => e.source !== id && e.target !== id)
@@ -312,6 +328,8 @@ export const useProjectStore = create<ProjectState>()(
       const state = get()
       const toGroup = state.nodes.filter(n => nodeIds.includes(n.id))
       if (toGroup.length === 0) return
+      // Snapshot before grouping
+      { const stack = state._undoStack.slice(-49); stack.push({ nodes: state.nodes, edges: state.edges }); set({ _undoStack: stack, _redoStack: [] }) }
 
       // Compute center of selected nodes for group node position
       const xs = toGroup.map(n => n.position.x)
@@ -361,6 +379,40 @@ export const useProjectStore = create<ProjectState>()(
         const s = get()
         s.updateWorkflow(s.nodes, s.edges).catch(() => {})
       }, 300)
+    },
+
+    // ── Undo / Redo ───────────────────────────────────────────────
+    pushHistory: () => {
+      const { nodes, edges, _undoStack } = get()
+      const stack = _undoStack.slice(-49)
+      stack.push({ nodes, edges })
+      set({ _undoStack: stack, _redoStack: [] })
+    },
+
+    undo: () => {
+      const { nodes, edges, _undoStack, _redoStack } = get()
+      if (_undoStack.length === 0) return
+      const prev = _undoStack[_undoStack.length - 1]
+      set({
+        nodes: prev.nodes,
+        edges: prev.edges,
+        _undoStack: _undoStack.slice(0, -1),
+        _redoStack: [{ nodes, edges }, ..._redoStack].slice(0, 50),
+        selectedNodeIds: [],
+      })
+    },
+
+    redo: () => {
+      const { nodes, edges, _undoStack, _redoStack } = get()
+      if (_redoStack.length === 0) return
+      const next = _redoStack[0]
+      set({
+        nodes: next.nodes,
+        edges: next.edges,
+        _undoStack: [..._undoStack, { nodes, edges }].slice(-50),
+        _redoStack: _redoStack.slice(1),
+        selectedNodeIds: [],
+      })
     },
 
     addTask: (task) => {
