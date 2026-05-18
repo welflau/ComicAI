@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
+import { useStore } from 'reactflow'
 import { LogIn, LogOut } from 'lucide-react'
 
 export interface GroupPortNodeData {
@@ -16,55 +17,65 @@ const W = 88
 const H = 36
 
 function GroupPortNode({ data }: NodeProps<GroupPortNodeData>) {
+  const zoom    = useStore(s => s.transform[2])
+  const scale   = 1 / zoom
+
   const isInput = data.type === 'libtv_group_input'
   const Icon    = isInput ? LogIn : LogOut
-  // Input = 蓝色，Output = 橙色
   const color   = isInput ? '#4a9eff' : '#ff8c42'
-  const bg      = isInput ? 'rgba(74,158,255,0.12)' : 'rgba(255,140,66,0.12)'
-  const border  = isInput ? 'rgba(74,158,255,0.45)' : 'rgba(255,140,66,0.45)'
+  const bg      = isInput ? 'rgba(74,158,255,0.15)' : 'rgba(255,140,66,0.15)'
+  const border  = isInput ? 'rgba(74,158,255,0.55)' : 'rgba(255,140,66,0.55)'
 
   return (
-    <div style={{
-      width: W, height: H,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-      background: bg,
-      border: `1.5px solid ${border}`,
-      borderRadius: 10,
-      color, fontSize: 12, fontWeight: 600,
-      userSelect: 'none',
-      position: 'relative',
-      boxShadow: `0 0 8px ${isInput ? 'rgba(74,158,255,0.15)' : 'rgba(255,140,66,0.15)'}`,
-    }}>
-      <Icon size={13} />
-      <span>{isInput ? '输入' : '输出'}</span>
+    // Outer div: reserves flow-space (W×H); keep overflow visible for handles
+    <div style={{ width: W, height: H, overflow: 'visible', position: 'relative' }}>
+      {/* Inner div: counter-scaled so visual size stays constant */}
+      <div style={{
+        position: 'absolute',
+        top: 0, left: 0,
+        width: W, height: H,
+        transformOrigin: 'top left',
+        transform: `scale(${scale})`,
+      }}>
+        <div style={{
+          width: W, height: H,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          background: bg,
+          border: `1.5px solid ${border}`,
+          borderRadius: 10,
+          color, fontSize: 12, fontWeight: 600,
+          userSelect: 'none',
+          position: 'relative',
+          boxShadow: `0 0 10px ${isInput ? 'rgba(74,158,255,0.2)' : 'rgba(255,140,66,0.2)'}`,
+        }}>
+          <Icon size={13} />
+          <span>{isInput ? '输入' : '输出'}</span>
+        </div>
+      </div>
 
-      {/* Input: 右侧 source（向组内输出） */}
+      {/* Handles — placed on the outer (flow-space) div so ReactFlow can snap connections */}
       {isInput && (
         <Handle
           type="source" position={Position.Right}
-          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', right: -5 }}
+          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', right: -5, top: H / 2 }}
         />
       )}
-
-      {/* Output: 左侧 target（接收组内结果） */}
-      {!isInput && (
-        <Handle
-          type="target" position={Position.Left}
-          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', left: -5 }}
-        />
-      )}
-
-      {/* 另一侧连接外部（半透明，标示对外接口） */}
       {isInput && (
         <Handle
           type="target" position={Position.Left}
-          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', left: -5, opacity: 0.35 }}
+          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', left: -5, top: H / 2, opacity: 0.4 }}
+        />
+      )}
+      {!isInput && (
+        <Handle
+          type="target" position={Position.Left}
+          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', left: -5, top: H / 2 }}
         />
       )}
       {!isInput && (
         <Handle
           type="source" position={Position.Right}
-          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', right: -5, opacity: 0.35 }}
+          style={{ width: 10, height: 10, background: color, border: '2px solid #161616', right: -5, top: H / 2, opacity: 0.4 }}
         />
       )}
     </div>
