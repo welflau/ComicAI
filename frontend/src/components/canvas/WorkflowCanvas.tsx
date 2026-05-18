@@ -89,6 +89,7 @@ function WorkflowCanvasInner() {
   const allEdges            = useProjectStore(s => s.edges)
   const currentGroupId      = useProjectStore(s => s.currentGroupId)
   const groupNavStack       = useProjectStore(s => s.groupNavStack)
+  const enterGroup          = useProjectStore(s => s.enterGroup)
   const exitGroup           = useProjectStore(s => s.exitGroup)
   const groupNodes          = useProjectStore(s => s.groupNodes)
   const pushHistory         = useProjectStore(s => s.pushHistory)
