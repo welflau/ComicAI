@@ -314,52 +314,65 @@ export const useProjectStore = create<ProjectState>()(
       const group = state.nodes.find(n => n.id === groupId)
       if (!group) return
 
-      // Auto-create input/output port nodes if not yet present
       const hasInput  = state.nodes.some(n => n.groupId === groupId && n.type === 'libtv_group_input')
       const hasOutput = state.nodes.some(n => n.groupId === groupId && n.type === 'libtv_group_output')
+      const isFirstEntry = !hasInput && !hasOutput
 
-      // Position relative to actual content nodes (exclude port nodes themselves)
       const PORT_TYPES = new Set(['libtv_group_input', 'libtv_group_output'])
       const children = state.nodes.filter(n => n.groupId === groupId && !PORT_TYPES.has(n.type))
-      const centerY = children.length > 0
-        ? children.reduce((s, n) => s + n.position.y, 0) / children.length
-        : 0
-      const minX = children.length > 0 ? Math.min(...children.map(n => n.position.x)) : 0
-      const maxX = children.length > 0 ? Math.max(...children.map(n => n.position.x)) + 400 : 600
+
+      // ── Step 1: Grid layout (only on first entry) ───────────────
+      let layoutedChildren = children
+      if (isFirstEntry && children.length > 1) {
+        const COLS   = Math.min(Math.ceil(Math.sqrt(children.length)), 5)
+        const COL_W  = 600   // 520 node + 80 gap
+        const ROW_H  = 320   // estimated row height + gap
+        // Sort by original y position to preserve chapter order
+        const sorted = [...children].sort((a, b) => a.position.y - b.position.y)
+        layoutedChildren = sorted.map((node, i) => ({
+          ...node,
+          position: { x: (i % COLS) * COL_W, y: Math.floor(i / COLS) * ROW_H },
+        }))
+        set(s => ({
+          nodes: s.nodes.map(n => {
+            const upd = layoutedChildren.find(g => g.id === n.id)
+            return upd ? { ...n, position: upd.position } : n
+          })
+        }))
+      }
+
+      // ── Step 2: Port node positions based on (possibly updated) bounding box ──
+      const liveChildren = isFirstEntry ? layoutedChildren : children
+      const centerY = liveChildren.length > 0
+        ? liveChildren.reduce((s, n) => s + n.position.y, 0) / liveChildren.length : 0
+      const minX    = liveChildren.length > 0 ? Math.min(...liveChildren.map(n => n.position.x)) : 0
+      const gridW   = liveChildren.length > 0
+        ? Math.max(...liveChildren.map(n => n.position.x)) + 600 : 600  // 600 = node width estimate
+      const portGap = 280
 
       const newNodes: NodeData[] = []
       if (!hasInput) {
         newNodes.push({
-          id: `${groupId}_input`,
-          type: 'libtv_group_input',
-          label: '输入',
-          category: 'input',
-          position: { x: minX - 200, y: centerY },
-          config: {},
-          groupId,
+          id: `${groupId}_input`, type: 'libtv_group_input', label: '输入',
+          category: 'input', position: { x: minX - portGap, y: centerY }, config: {}, groupId,
         })
       }
       if (!hasOutput) {
         newNodes.push({
-          id: `${groupId}_output`,
-          type: 'libtv_group_output',
-          label: '输出',
-          category: 'output',
-          position: { x: maxX, y: centerY },
-          config: {},
-          groupId,
+          id: `${groupId}_output`, type: 'libtv_group_output', label: '输出',
+          category: 'output', position: { x: gridW + portGap - 600, y: centerY }, config: {}, groupId,
         })
       }
 
-      // Also reposition existing port nodes if content has moved
+      // Reposition existing port nodes to match new bounding box
       const portUpdates: Array<{ id: string; pos: { x: number; y: number } }> = []
       if (hasInput) {
-        const existingInput = state.nodes.find(n => n.groupId === groupId && n.type === 'libtv_group_input')
-        if (existingInput) portUpdates.push({ id: existingInput.id, pos: { x: minX - 200, y: centerY } })
+        const n = state.nodes.find(n => n.groupId === groupId && n.type === 'libtv_group_input')
+        if (n) portUpdates.push({ id: n.id, pos: { x: minX - portGap, y: centerY } })
       }
       if (hasOutput) {
-        const existingOutput = state.nodes.find(n => n.groupId === groupId && n.type === 'libtv_group_output')
-        if (existingOutput) portUpdates.push({ id: existingOutput.id, pos: { x: maxX, y: centerY } })
+        const n = state.nodes.find(n => n.groupId === groupId && n.type === 'libtv_group_output')
+        if (n) portUpdates.push({ id: n.id, pos: { x: gridW + portGap - 600, y: centerY } })
       }
 
       if (newNodes.length > 0 || portUpdates.length > 0) {
@@ -376,43 +389,23 @@ export const useProjectStore = create<ProjectState>()(
         }))
       }
 
-      // Auto-connect port nodes to group-internal nodes (only when first created)
-      if (newNodes.length > 0 && children.length > 0) {
-        const freshState = get()
-        const internalEdges = freshState.edges.filter(e => {
-          const src = freshState.nodes.find(n => n.id === e.source)
-          const tgt = freshState.nodes.find(n => n.id === e.target)
-          return src?.groupId === groupId && tgt?.groupId === groupId
-        })
-        const internalNodeIds = new Set(children.map(n => n.id))
-        const hasIncoming = new Set(internalEdges.filter(e => internalNodeIds.has(e.target)).map(e => e.target))
-        const hasOutgoing = new Set(internalEdges.filter(e => internalNodeIds.has(e.source)).map(e => e.source))
+      // ── Step 3: Auto-connect ports (first entry only) ────────────
+      if (isFirstEntry && liveChildren.length > 0) {
+        const freshEdges = get().edges
+        const internalNodeIds = new Set(liveChildren.map(n => n.id))
+        const hasIncoming = new Set(freshEdges.filter(e => internalNodeIds.has(e.target)).map(e => e.target))
+        const hasOutgoing = new Set(freshEdges.filter(e => internalNodeIds.has(e.source)).map(e => e.source))
 
-        // Source nodes (no incoming inside group) → connect from Input
-        const inputNodeId  = `${groupId}_input`
-        const outputNodeId = `${groupId}_output`
-        const sourceNodes  = children.filter(n => !hasIncoming.has(n.id))
-        const sinkNodes    = children.filter(n => !hasOutgoing.has(n.id))
+        const inputId   = `${groupId}_input`
+        const outputId  = `${groupId}_output`
+        const srcNodes  = liveChildren.filter(n => !hasIncoming.has(n.id)).slice(0, 1)
+        const sinkNodes = liveChildren.filter(n => !hasOutgoing.has(n.id)).slice(-1)
 
-        // Cap to avoid clutter when there are many isolated nodes
-        const MAX_AUTO = 1
-        const toConnectInput  = sourceNodes.slice(0, MAX_AUTO)
-        const toConnectOutput = sinkNodes.slice(0, MAX_AUTO)
-
-        const autoEdges: EdgeData[] = []
-        if (newNodes.some(n => n.type === 'libtv_group_input')) {
-          toConnectInput.forEach((n, i) => {
-            autoEdges.push({ id: `e_port_in_${groupId}_${i}`, source: inputNodeId, target: n.id })
-          })
-        }
-        if (newNodes.some(n => n.type === 'libtv_group_output')) {
-          toConnectOutput.forEach((n, i) => {
-            autoEdges.push({ id: `e_port_out_${groupId}_${i}`, source: n.id, target: outputNodeId })
-          })
-        }
-        if (autoEdges.length > 0) {
-          set(s => ({ edges: [...s.edges, ...autoEdges] }))
-        }
+        const autoEdges: EdgeData[] = [
+          ...srcNodes.map((n, i)  => ({ id: `e_pin_${groupId}_${i}`,  source: inputId, target: n.id })),
+          ...sinkNodes.map((n, i) => ({ id: `e_pout_${groupId}_${i}`, source: n.id,    target: outputId })),
+        ]
+        if (autoEdges.length > 0) set(s => ({ edges: [...s.edges, ...autoEdges] }))
       }
 
       set(s => ({
