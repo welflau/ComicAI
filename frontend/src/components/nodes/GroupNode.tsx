@@ -1,6 +1,7 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
-import { Package, ChevronRight, FileText, Image, Video, BookOpen, Film } from 'lucide-react'
+import { Package, FileText, Image, Video, BookOpen, Film } from 'lucide-react'
+import NodeAddMenu from './shared/NodeAddMenu'
 import { useProjectStore } from '@/stores/projectStore'
 
 /* ── Types ─────────────────────────────────────────────────────── */
@@ -17,9 +18,10 @@ export interface GroupNodeData {
 
 /* ── Constants ──────────────────────────────────────────────────── */
 
-const NODE_W = 240
+const NODE_W = 220
+const HANDLE_TOP = 44   // vertically centred on the card
 
-/* ── Type icons ─────────────────────────────────────────────────── */
+/* ── Type icons & labels ─────────────────────────────────────────── */
 
 const TYPE_ICONS: Record<string, React.ElementType> = {
   libtv_script:        FileText,
@@ -41,11 +43,66 @@ const TYPE_LABELS: Record<string, string> = {
   libtv_loop:          '循环',
 }
 
+/* ── CircleHandle (same pattern as ScriptNode) ───────────────────── */
+
+function CircleHandle({ type, position, visible, onSourceClick, menuOpen, onMenuClose, nodeId, nodePos }: {
+  type: 'source' | 'target'
+  position: Position
+  visible?: boolean
+  onSourceClick?: () => void
+  menuOpen?: boolean
+  onMenuClose?: () => void
+  nodeId: string
+  nodePos: { x: number; y: number }
+}) {
+  const side = position === Position.Left ? { left: -11 } : { right: -11 }
+  const direction = type === 'source' ? 'right' : 'left'
+  return (
+    <div style={{ position: 'absolute', top: HANDLE_TOP, ...side, transform: 'translateY(-50%)', width: 22, height: 22 }}>
+      <Handle
+        type={type}
+        position={position}
+        style={{
+          width: 22, height: 22,
+          background: '#1a1a1a', border: '1.5px solid #606060',
+          borderRadius: '50%',
+          top: 0, left: 0, transform: 'none',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          opacity: visible ? 1 : 0,
+          pointerEvents: visible ? 'auto' : 'none',
+          position: 'relative',
+          transition: 'opacity 150ms ease',
+        }}
+        onClick={e => { e.stopPropagation(); onSourceClick?.() }}
+      >
+        <span style={{
+          pointerEvents: 'none', fontSize: 16, color: '#888', lineHeight: 1,
+          position: 'absolute', top: '50%', left: '50%',
+          transform: 'translate(-50%, -52%)',
+        }}>+</span>
+      </Handle>
+      {menuOpen && (
+        <NodeAddMenu
+          nodeType="default"
+          sourceNodeId={nodeId}
+          sourcePosition={nodePos}
+          sourceNodeWidth={NODE_W}
+          direction={direction as 'left' | 'right'}
+          onClose={onMenuClose!}
+        />
+      )}
+    </div>
+  )
+}
+
 /* ── GroupNode ──────────────────────────────────────────────────── */
 
 function GroupNode({ data, selected, dragging }: NodeProps<GroupNodeData>) {
   const enterGroup  = useProjectStore(s => s.enterGroup)
   const allNodes    = useProjectStore(s => s.nodes)
+
+  const [menuOpen,       setMenuOpen]       = useState(false)
+  const [targetMenuOpen, setTargetMenuOpen] = useState(false)
 
   // Count child nodes by type
   const children = allNodes.filter(n => n.groupId === data.id)
@@ -59,6 +116,7 @@ function GroupNode({ data, selected, dragging }: NodeProps<GroupNodeData>) {
 
   return (
     <div
+      onDoubleClick={e => { e.stopPropagation(); enterGroup(data.id) }}
       style={{
         width: NODE_W,
         background: selected ? '#1e1e1e' : '#161616',
@@ -68,16 +126,19 @@ function GroupNode({ data, selected, dragging }: NodeProps<GroupNodeData>) {
           ? '0 0 0 2px rgba(124,106,247,0.2), 0 4px 20px rgba(0,0,0,0.5)'
           : '0 2px 12px rgba(0,0,0,0.4)',
         transition: 'border-color 0.15s, background 0.15s',
-        overflow: 'hidden',
+        overflow: 'visible',
         position: 'relative',
+        cursor: 'pointer',
       }}
     >
       {/* Title bar */}
       <div style={{
+        height: HANDLE_TOP * 2,
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: '9px 12px 8px',
-        borderBottom: '1px solid #252525',
+        padding: '0 12px',
         background: '#1a1a1a',
+        borderRadius: '13px 13px 0 0',
+        borderBottom: '1px solid #252525',
       }}>
         <Package size={13} color="#7c6af7" />
         <span style={{
@@ -86,16 +147,16 @@ function GroupNode({ data, selected, dragging }: NodeProps<GroupNodeData>) {
         }}>
           {data.label}
         </span>
-        <span style={{ fontSize: 10, color: '#7c6af7', flexShrink: 0 }}>
+        <span style={{ fontSize: 10, color: '#555', flexShrink: 0 }}>
           {children.length} 个节点
         </span>
       </div>
 
-      {/* Type summary */}
-      <div style={{ padding: '10px 12px 6px' }}>
+      {/* Type tags */}
+      <div style={{ padding: '8px 12px 10px' }}>
         {typeEntries.length === 0 ? (
-          <div style={{ fontSize: 11, color: '#444', textAlign: 'center', padding: '4px 0' }}>
-            空组
+          <div style={{ fontSize: 11, color: '#3a3a3a', textAlign: 'center', padding: '4px 0' }}>
+            空组 · 双击进入
           </div>
         ) : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
@@ -106,8 +167,7 @@ function GroupNode({ data, selected, dragging }: NodeProps<GroupNodeData>) {
                 <div key={type} style={{
                   display: 'flex', alignItems: 'center', gap: 4,
                   padding: '3px 8px', borderRadius: 6,
-                  background: '#252525',
-                  border: '1px solid #333',
+                  background: '#252525', border: '1px solid #333',
                   fontSize: 11, color: '#888',
                 }}>
                   {Icon && <Icon size={10} />}
@@ -119,43 +179,18 @@ function GroupNode({ data, selected, dragging }: NodeProps<GroupNodeData>) {
         )}
       </div>
 
-      {/* Enter button */}
-      <div style={{ padding: '6px 12px 10px' }}>
-        <button
-          className="nodrag nopan"
-          onClick={() => enterGroup(data.id)}
-          style={{
-            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            gap: 6, padding: '6px 0', borderRadius: 8,
-            background: 'transparent',
-            border: '1px solid #333',
-            color: '#888', fontSize: 12, fontWeight: 500,
-            cursor: 'pointer', transition: 'background 0.12s, border-color 0.12s, color 0.12s',
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = '#252525'
-            ;(e.currentTarget as HTMLButtonElement).style.borderColor = '#555'
-            ;(e.currentTarget as HTMLButtonElement).style.color = '#ccc'
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
-            ;(e.currentTarget as HTMLButtonElement).style.borderColor = '#333'
-            ;(e.currentTarget as HTMLButtonElement).style.color = '#888'
-          }}
-        >
-          进入组
-          <ChevronRight size={12} />
-        </button>
-      </div>
-
       {/* Handles */}
-      <Handle
-        type="target" position={Position.Left}
-        style={{ top: 40, background: '#7c6af7', width: 10, height: 10, border: '2px solid #181828', opacity: handlesVisible ? 1 : 0 }}
+      <CircleHandle
+        type="target" position={Position.Left} visible={handlesVisible}
+        onSourceClick={() => setTargetMenuOpen(v => !v)}
+        menuOpen={targetMenuOpen} onMenuClose={() => setTargetMenuOpen(false)}
+        nodeId={data.id} nodePos={data.position}
       />
-      <Handle
-        type="source" position={Position.Right}
-        style={{ top: 40, background: '#7c6af7', width: 10, height: 10, border: '2px solid #181828', opacity: handlesVisible ? 1 : 0 }}
+      <CircleHandle
+        type="source" position={Position.Right} visible={handlesVisible}
+        onSourceClick={() => setMenuOpen(v => !v)}
+        menuOpen={menuOpen} onMenuClose={() => setMenuOpen(false)}
+        nodeId={data.id} nodePos={data.position}
       />
     </div>
   )

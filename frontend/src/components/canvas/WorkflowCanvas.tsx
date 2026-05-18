@@ -135,12 +135,12 @@ function WorkflowCanvasInner() {
 
   // Double-click any node → zoom to fit that node centred in view
   const onNodeDoubleClick = useCallback((_evt: MouseEvent, node: Node) => {
-    fitView({
-      nodes: [node],
-      padding: 0.35,
-      duration: 350,
-    })
-  }, [fitView])
+    if (node.type === 'libtv_group') {
+      enterGroup(node.id)
+    } else {
+      fitView({ nodes: [node], padding: 0.35, duration: 350 })
+    }
+  }, [fitView, enterGroup])
 
   // Track zoom level
   const onMoveEnd = useCallback((_: unknown, vp: { zoom: number }) => {
