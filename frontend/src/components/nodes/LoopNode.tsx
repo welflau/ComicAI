@@ -92,6 +92,8 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
       return
     }
 
+    // Record last pushed content on self (for Log node to read)
+    updateNode(data.id, { _lastPushedLabel: currentItem.label, _lastPushedContent: content } as any)
     downstreamIds.forEach(id => {
       updateNode(id, { content, initialMode: 'content', title: currentItem.label } as any)
     })
@@ -147,7 +149,8 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
         message: `[遍历] 第 ${i + 1}/${items.length}：${item.label}`,
       })
 
-      // Push content + triggerRun to all downstream
+      // Record last pushed content on self + trigger downstream
+      updateNode(data.id, { _lastPushedLabel: item.label, _lastPushedContent: item.content } as any)
       downstreamIds.forEach(id => {
         updateNode(id, { content: item.content, initialMode: 'content', title: item.label, triggerRun: true } as any)
       })

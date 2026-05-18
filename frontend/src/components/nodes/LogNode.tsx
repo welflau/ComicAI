@@ -22,13 +22,16 @@ const NODE_W = 300
 
 function extractOutput(node: any): Record<string, unknown> {
   const out: Record<string, unknown> = { type: node.type, label: node.label, id: node.id }
-  if (node.content)       out.content       = (node.content as string).slice(0, 200)
-  if (node.imageUrl)      out.imageUrl      = node.imageUrl
-  if (node.imagePrompt)   out.imagePrompt   = (node.imagePrompt as string).slice(0, 120)
-  if (node.videoUrl)      out.videoUrl      = node.videoUrl
-  if (node.videoPrompt)   out.videoPrompt   = (node.videoPrompt as string).slice(0, 120)
-  if (node.shots?.length) out.shots         = `${node.shots.length} 个分镜`
-  if (node.chapters?.length) out.chapters   = `${node.chapters.length} 章`
+  if (node.content)              out.content           = (node.content as string).slice(0, 200)
+  if (node.imageUrl)             out.imageUrl          = node.imageUrl
+  if (node.imagePrompt)         out.imagePrompt        = (node.imagePrompt as string).slice(0, 120)
+  if (node.videoUrl)             out.videoUrl          = node.videoUrl
+  if (node.videoPrompt)         out.videoPrompt        = (node.videoPrompt as string).slice(0, 120)
+  if (node.shots?.length)        out.shots             = `${node.shots.length} 个分镜`
+  if (node.chapters?.length)     out.chapters          = `${node.chapters.length} 章`
+  // LoopNode: show last pushed content
+  if (node._lastPushedLabel)     out.lastPushed        = node._lastPushedLabel
+  if (node._lastPushedContent)   out.lastPushedContent = (node._lastPushedContent as string).slice(0, 200)
   return out
 }
 
