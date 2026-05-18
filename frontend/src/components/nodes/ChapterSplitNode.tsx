@@ -65,7 +65,8 @@ function ChapterSplitNode({ data, selected, dragging }: NodeProps<ChapterSplitNo
   const allNodes   = useProjectStore(s => s.nodes)
   const addLog     = useLogStore(s => s.addLog)
 
-  const handlesVisible = !dragging
+  const [hovered, setHovered] = useState(false)
+  const handlesVisible = !dragging && (selected || hovered)
 
   // Restore persisted state
   useEffect(() => {
@@ -260,7 +261,10 @@ function ChapterSplitNode({ data, selected, dragging }: NodeProps<ChapterSplitNo
   const someSelected = selectedIds.size > 0 && !allSelected
 
   return (
-    <div style={{ position: 'relative', width: NODE_W }}>
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ position: 'relative', width: NODE_W }}>
       {/* Title bar */}
       <div style={{
         height: TITLE_H, display: 'flex', alignItems: 'center', gap: 7,

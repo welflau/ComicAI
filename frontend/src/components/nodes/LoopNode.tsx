@@ -39,8 +39,9 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
   const [filterType,   setFilterType]   = useState(data.filterType ?? 'libtv_script')
   const [currentIndex, setCurrentIndex] = useState(data.currentIndex ?? 0)
   const [filterDropOpen, setFilterDropOpen] = useState(false)
+  const [hovered, setHovered] = useState(false)
 
-  const handlesVisible = !dragging
+  const handlesVisible = !dragging && (selected || hovered)
 
   // Find connected group node (upstream)
   const upstreamGroupId = allEdges
@@ -102,7 +103,10 @@ function LoopNode({ data, selected, dragging }: NodeProps<LoopNodeData>) {
   const filterLabel = FILTER_OPTIONS.find(o => o.value === filterType)?.label ?? filterType
 
   return (
-    <div style={{
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
       width: NODE_W,
       background: selected ? '#1e1e1e' : '#161616',
       border: `1.5px solid ${selected ? '#7c6af7' : '#2e2e2e'}`,

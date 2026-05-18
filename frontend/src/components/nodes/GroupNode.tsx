@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { memo, useState, useCallback } from 'react'
 import { Handle, Position, NodeProps } from 'reactflow'
 import { Package, FileText, Image, Video, BookOpen, Film } from 'lucide-react'
 import NodeAddMenu from './shared/NodeAddMenu'
@@ -103,20 +103,24 @@ function GroupNode({ data, selected, dragging }: NodeProps<GroupNodeData>) {
 
   const [menuOpen,       setMenuOpen]       = useState(false)
   const [targetMenuOpen, setTargetMenuOpen] = useState(false)
+  const [hovered,        setHovered]        = useState(false)
 
-  // Count child nodes by type
-  const children = allNodes.filter(n => n.groupId === data.id)
+  const handlesVisible = !dragging && (selected || hovered)
+
+  // Count child nodes by type — exclude internal port nodes
+  const PORT_TYPES = new Set(['libtv_group_input', 'libtv_group_output'])
+  const children = allNodes.filter(n => n.groupId === data.id && !PORT_TYPES.has(n.type))
   const typeCounts = children.reduce<Record<string, number>>((acc, n) => {
     acc[n.type] = (acc[n.type] ?? 0) + 1
     return acc
   }, {})
   const typeEntries = Object.entries(typeCounts)
 
-  const handlesVisible = !dragging
-
   return (
     <div
       onDoubleClick={e => { e.stopPropagation(); enterGroup(data.id) }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       style={{
         width: NODE_W,
         background: selected ? '#1e1e1e' : '#161616',
