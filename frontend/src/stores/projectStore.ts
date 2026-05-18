@@ -318,14 +318,14 @@ export const useProjectStore = create<ProjectState>()(
       const hasInput  = state.nodes.some(n => n.groupId === groupId && n.type === 'libtv_group_input')
       const hasOutput = state.nodes.some(n => n.groupId === groupId && n.type === 'libtv_group_output')
 
-      // Position: centre vertically on existing children, or default 0
-      const children = state.nodes.filter(n => n.groupId === groupId)
+      // Position relative to actual content nodes (exclude port nodes themselves)
+      const PORT_TYPES = new Set(['libtv_group_input', 'libtv_group_output'])
+      const children = state.nodes.filter(n => n.groupId === groupId && !PORT_TYPES.has(n.type))
       const centerY = children.length > 0
         ? children.reduce((s, n) => s + n.position.y, 0) / children.length
         : 0
-      const maxX = children.length > 0
-        ? Math.max(...children.map(n => n.position.x)) + 400
-        : 600
+      const minX = children.length > 0 ? Math.min(...children.map(n => n.position.x)) : 0
+      const maxX = children.length > 0 ? Math.max(...children.map(n => n.position.x)) + 400 : 600
 
       const newNodes: NodeData[] = []
       if (!hasInput) {
@@ -334,7 +334,7 @@ export const useProjectStore = create<ProjectState>()(
           type: 'libtv_group_input',
           label: '输入',
           category: 'input',
-          position: { x: -200, y: centerY },
+          position: { x: minX - 200, y: centerY },
           config: {},
           groupId,
         })
@@ -351,8 +351,29 @@ export const useProjectStore = create<ProjectState>()(
         })
       }
 
-      if (newNodes.length > 0) {
-        set(s => ({ nodes: [...s.nodes, ...newNodes] }))
+      // Also reposition existing port nodes if content has moved
+      const portUpdates: Array<{ id: string; pos: { x: number; y: number } }> = []
+      if (hasInput) {
+        const existingInput = state.nodes.find(n => n.groupId === groupId && n.type === 'libtv_group_input')
+        if (existingInput) portUpdates.push({ id: existingInput.id, pos: { x: minX - 200, y: centerY } })
+      }
+      if (hasOutput) {
+        const existingOutput = state.nodes.find(n => n.groupId === groupId && n.type === 'libtv_group_output')
+        if (existingOutput) portUpdates.push({ id: existingOutput.id, pos: { x: maxX, y: centerY } })
+      }
+
+      if (newNodes.length > 0 || portUpdates.length > 0) {
+        set(s => ({
+          nodes: [
+            ...s.nodes
+              .filter(n => !newNodes.some(nn => nn.id === n.id))
+              .map(n => {
+                const upd = portUpdates.find(u => u.id === n.id)
+                return upd ? { ...n, position: upd.pos } : n
+              }),
+            ...newNodes,
+          ]
+        }))
       }
 
       set(s => ({
