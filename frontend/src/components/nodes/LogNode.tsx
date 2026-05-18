@@ -20,19 +20,23 @@ const NODE_W = 300
 
 /* ── Read node output fields ──────────────────────────────────── */
 
-function extractOutput(node: any): Record<string, unknown> {
-  const out: Record<string, unknown> = { type: node.type, label: node.label, id: node.id }
-  if (node.content)              out.content           = (node.content as string).slice(0, 200)
-  if (node.imageUrl)             out.imageUrl          = node.imageUrl
-  if (node.imagePrompt)         out.imagePrompt        = (node.imagePrompt as string).slice(0, 120)
-  if (node.videoUrl)             out.videoUrl          = node.videoUrl
-  if (node.videoPrompt)         out.videoPrompt        = (node.videoPrompt as string).slice(0, 120)
-  if (node.shots?.length)        out.shots             = `${node.shots.length} 个分镜`
-  if (node.chapters?.length)     out.chapters          = `${node.chapters.length} 章`
-  // LoopNode: show last pushed content
-  if (node._lastPushedLabel)     out.lastPushed        = node._lastPushedLabel
-  if (node._lastPushedContent)   out.lastPushedContent = (node._lastPushedContent as string).slice(0, 200)
-  return out
+/** 提取节点最核心的输出内容（纯文字，用于预览和日志）*/
+function extractContent(node: any): string {
+  // LoopNode — 显示最近推送的内容
+  if (node._lastPushedContent) return node._lastPushedContent as string
+  // 文字节点
+  if (node.content) return node.content as string
+  // 图片节点
+  if (node.imagePrompt) return `[图片] ${node.imagePrompt as string}`
+  if (node.imageUrl)    return `[图片URL] ${node.imageUrl as string}`
+  // 视频节点
+  if (node.videoPrompt) return `[视频] ${node.videoPrompt as string}`
+  if (node.videoUrl)    return `[视频URL] ${node.videoUrl as string}`
+  // 分镜脚本
+  if (node.shots?.length) return `[分镜] ${node.shots.length} 个镜头`
+  // 章节
+  if (node.chapters?.length) return `[章节] ${node.chapters.length} 章`
+  return `(${node.type}) ${node.label ?? ''}`
 }
 
 /* ── LogNode ────────────────────────────────────────────────────── */
@@ -59,21 +63,18 @@ function LogNode({ data, selected, dragging }: NodeProps<LogNodeData>) {
     upstreamIds.forEach(id => {
       const node = allNodes.find(n => n.id === id)
       if (!node) return
-      const out = extractOutput(node)
-      const lines = Object.entries(out)
-        .map(([k, v]) => `  ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
-        .join('\n')
-      const summary = `[Log] ↑ ${node.label || node.type}\n${lines}`
-      results.push(summary)
+      const content = extractContent(node)
+      const header = `↑ ${node.label || node.type}`
+      results.push(`${header}\n${content}`)
       addLog({
         level: 'debug',
         category: 'operation',
         message: `[Log] ${data.label || 'Log'} ← ${node.label || node.type}`,
-        detail: lines,
+        detail: content,
       })
     })
 
-    setLastOutput(results.join('\n\n'))
+    setLastOutput(results.join('\n\n---\n\n'))
   }, [allEdges, allNodes, data.id, data.label, addLog])
 
   // Auto-execute + clear triggerRun when LoopNode triggers this node
