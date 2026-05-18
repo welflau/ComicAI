@@ -376,6 +376,45 @@ export const useProjectStore = create<ProjectState>()(
         }))
       }
 
+      // Auto-connect port nodes to group-internal nodes (only when first created)
+      if (newNodes.length > 0 && children.length > 0) {
+        const freshState = get()
+        const internalEdges = freshState.edges.filter(e => {
+          const src = freshState.nodes.find(n => n.id === e.source)
+          const tgt = freshState.nodes.find(n => n.id === e.target)
+          return src?.groupId === groupId && tgt?.groupId === groupId
+        })
+        const internalNodeIds = new Set(children.map(n => n.id))
+        const hasIncoming = new Set(internalEdges.filter(e => internalNodeIds.has(e.target)).map(e => e.target))
+        const hasOutgoing = new Set(internalEdges.filter(e => internalNodeIds.has(e.source)).map(e => e.source))
+
+        // Source nodes (no incoming inside group) → connect from Input
+        const inputNodeId  = `${groupId}_input`
+        const outputNodeId = `${groupId}_output`
+        const sourceNodes  = children.filter(n => !hasIncoming.has(n.id))
+        const sinkNodes    = children.filter(n => !hasOutgoing.has(n.id))
+
+        // Cap to avoid clutter when there are many isolated nodes
+        const MAX_AUTO = 1
+        const toConnectInput  = sourceNodes.slice(0, MAX_AUTO)
+        const toConnectOutput = sinkNodes.slice(0, MAX_AUTO)
+
+        const autoEdges: EdgeData[] = []
+        if (newNodes.some(n => n.type === 'libtv_group_input')) {
+          toConnectInput.forEach((n, i) => {
+            autoEdges.push({ id: `e_port_in_${groupId}_${i}`, source: inputNodeId, target: n.id })
+          })
+        }
+        if (newNodes.some(n => n.type === 'libtv_group_output')) {
+          toConnectOutput.forEach((n, i) => {
+            autoEdges.push({ id: `e_port_out_${groupId}_${i}`, source: n.id, target: outputNodeId })
+          })
+        }
+        if (autoEdges.length > 0) {
+          set(s => ({ edges: [...s.edges, ...autoEdges] }))
+        }
+      }
+
       set(s => ({
         currentGroupId: groupId,
         groupNavStack: [...s.groupNavStack, { id: groupId, label: group.label }],
