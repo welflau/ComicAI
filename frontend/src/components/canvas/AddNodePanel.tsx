@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   FileText, Image, Video, Scissors, Music, ScrollText,
-  Upload, LayoutGrid, BookOpen, Package, Repeat,
+  Upload, LayoutGrid, BookOpen, Repeat,
 } from 'lucide-react'
 import { useProjectStore } from '@/stores/projectStore'
 import { getViewportCenter } from '@/stores/viewportCenter'
@@ -17,7 +17,6 @@ export const ADD_NODE_ITEMS = [
   { id: 'audio',            icon: <Music size={20} />,     label: '音频',    badge: null,   desc: '音效、配音、音乐' },
   { id: 'libtv_script_gen',    icon: <ScrollText size={20} />, label: '脚本',   badge: 'Beta', desc: '创意脚本、AI 生成故事板' },
   { id: 'libtv_chapter_split', icon: <BookOpen size={20} />,  label: '章节分解', badge: 'Beta', desc: '小说章节自动拆分' },
-  { id: 'libtv_group',         icon: <Package size={20} />,  label: '节点组',   badge: 'Beta', desc: '将多个节点打包收纳' },
   { id: 'libtv_loop',          icon: <Repeat size={20} />,   label: '循环遍历', badge: 'Beta', desc: '逐一推送组内节点内容' },
 ]
 

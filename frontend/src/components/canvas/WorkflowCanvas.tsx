@@ -402,6 +402,18 @@ function WorkflowCanvasInner() {
     })
   }, [nodes, edges, setNodes, saveWorkflow])
 
+  const handleMultiGroup = useCallback(() => {
+    const sel = nodes.filter(n => n.selected)
+    if (sel.length < 2) return
+    const ids = sel.map(n => n.id)
+    // Auto-label from node types
+    const typeSet = [...new Set(sel.map(n => n.type))]
+    const label = typeSet.length === 1
+      ? `${sel.length} 个节点组`
+      : `节点组（${sel.length}）`
+    groupNodes(ids, label)
+  }, [nodes, groupNodes])
+
   const handleMultiCopy = useCallback(() => {
     const selectedNodes = nodes.filter(n => n.selected)
     if (selectedNodes.length > 0) {
@@ -442,32 +454,6 @@ function WorkflowCanvasInner() {
               >{g.label}</span>
             </span>
           ))}
-        </div>
-      )}
-
-      {/* Multi-select group button */}
-      {selectedNodeIds.length >= 2 && currentGroupId === null && (
-        <div style={{
-          position: 'absolute', top: 10, right: 16,
-          zIndex: 20, pointerEvents: 'auto',
-        }}>
-          <button
-            onClick={() => {
-              const label = `组 ${Date.now().toString().slice(-4)}`
-              groupNodes(selectedNodeIds, label)
-            }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '6px 14px', borderRadius: 8,
-              background: '#7c6af7', border: 'none', cursor: 'pointer',
-              color: '#fff', fontSize: 12, fontWeight: 600,
-              boxShadow: '0 2px 8px rgba(124,106,247,0.4)',
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#9077ff' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#7c6af7' }}
-          >
-            📦 打组（{selectedNodeIds.length}）
-          </button>
         </div>
       )}
 
@@ -618,9 +604,10 @@ function WorkflowCanvasInner() {
       {selectedNodes.length > 0 && (
         <MultiSelectionToolbar
           selectedNodes={selectedNodes}
-          onDelete={handleMultiDelete}
+          onSave={() => {}}
+          onDownload={handleMultiCopy}
           onDuplicate={handleMultiDuplicate}
-          onCopy={handleMultiCopy}
+          onGroup={handleMultiGroup}
         />
       )}
 
