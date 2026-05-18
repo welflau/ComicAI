@@ -264,13 +264,22 @@ function ChapterSplitNode({ data, selected, dragging }: NodeProps<ChapterSplitNo
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={{ position: 'relative', width: NODE_W }}>
+      style={{
+        position: 'relative', width: NODE_W,
+        background: '#161616',
+        border: `1.5px solid ${selected ? '#7c6af7' : '#2e2e2e'}`,
+        borderRadius: 14,
+        boxShadow: selected
+          ? '0 0 0 2px rgba(124,106,247,0.2), 0 4px 20px rgba(0,0,0,0.5)'
+          : '0 2px 12px rgba(0,0,0,0.4)',
+        overflow: 'hidden',
+      }}>
       {/* Title bar */}
       <div style={{
         height: TITLE_H, display: 'flex', alignItems: 'center', gap: 7,
         padding: '0 12px',
-        background: '#1a1a1a', borderRadius: '12px 12px 0 0',
-        border: '1px solid #2e2e2e', borderBottom: 'none',
+        background: '#1a1a1a',
+        borderBottom: '1px solid #252525',
       }}>
         <BookOpen size={13} color="#7c6af7" />
         <span style={{ fontSize: 12, color: '#bbb', fontWeight: 600, flex: 1 }}>
@@ -282,34 +291,37 @@ function ChapterSplitNode({ data, selected, dragging }: NodeProps<ChapterSplitNo
       </div>
 
       {/* Body */}
-      <div style={{
-        background: '#161616',
-        border: '1px solid #2e2e2e', borderTop: 'none',
-        borderRadius: splitStatus === 'done' && chapters.length > 0 ? '0' : '0 0 12px 12px',
-        minHeight: 80,
-      }}>
+      <div style={{ minHeight: 80 }}>
         {/* Idle / error state */}
         {(splitStatus === 'idle' || splitStatus === 'error') && (
-          <div style={{ padding: '18px 16px', textAlign: 'center' }}>
+          <div style={{ padding: '16px', textAlign: 'center' }}>
             {errorMsg && (
-              <div style={{ fontSize: 11, color: '#e05050', marginBottom: 10 }}>{errorMsg}</div>
+              <div style={{ fontSize: 11, color: '#e05050', marginBottom: 8 }}>{errorMsg}</div>
             )}
             <button
               className="nodrag nopan"
               onClick={handleSplit}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '7px 18px', borderRadius: 8,
-                background: '#7c6af7', border: 'none', cursor: 'pointer',
-                color: '#fff', fontSize: 12, fontWeight: 600,
+                padding: '5px 14px', borderRadius: 7,
+                background: 'transparent',
+                border: '1px solid rgba(124,106,247,0.4)',
+                color: '#9b8fff', fontSize: 12, fontWeight: 500,
+                cursor: 'pointer',
               }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#9077ff' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = '#7c6af7' }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'rgba(124,106,247,0.15)'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(124,106,247,0.7)'
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+                ;(e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(124,106,247,0.4)'
+              }}
             >
-              <BookOpen size={12} />
+              <BookOpen size={11} />
               {splitStatus === 'error' ? '重新分解' : '开始章节分解'}
             </button>
-            <div style={{ fontSize: 11, color: '#444', marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: '#3a3a3a', marginTop: 8 }}>
               需连接上游剧本节点
             </div>
           </div>
@@ -412,8 +424,7 @@ function ChapterSplitNode({ data, selected, dragging }: NodeProps<ChapterSplitNo
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               padding: '8px 12px',
-              background: '#1a1a1a', border: '1px solid #2e2e2e', borderTop: 'none',
-              borderRadius: '0 0 12px 12px',
+              background: '#1a1a1a', borderTop: '1px solid #252525',
             }}
           >
             <span style={{ fontSize: 11, color: '#555' }}>已选 {selectedIds.size}/{chapters.length} 章</span>
