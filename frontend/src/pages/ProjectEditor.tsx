@@ -503,7 +503,8 @@ const WORKFLOW_PRESETS: WorkflowPreset[] = [
 function LeftSidebar() {
   const [active, setActive] = useState<string | null>(null)
   const [wfTab, setWfTab]   = useState<'mine' | 'basic' | 'examples'>('basic')
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hideTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const tabSwitchingRef = useRef(false)   // blocks scheduleHide during tab switch
   const addBtnRef = useRef<HTMLButtonElement>(null)
   const { nodes, addNode, addEdge } = useProjectStore()
 
@@ -543,6 +544,7 @@ function LeftSidebar() {
   }
 
   const scheduleHide = () => {
+    if (tabSwitchingRef.current) return   // ignore during tab switch
     hideTimerRef.current = setTimeout(() => setActive(null), 80)
   }
 
@@ -680,7 +682,12 @@ function LeftSidebar() {
                   { id: 'basic',    label: '基础工作流' },
                   { id: 'examples', label: '工作流案例' },
                 ] as const).map(tab => (
-                  <button key={tab.id} onClick={() => { cancelHide(); setWfTab(tab.id) }}
+                  <button key={tab.id} onClick={() => {
+                      tabSwitchingRef.current = true
+                      cancelHide()
+                      setWfTab(tab.id)
+                      setTimeout(() => { tabSwitchingRef.current = false }, 300)
+                    }}
                     style={{
                       padding: '6px 14px', borderRadius: '8px 8px 0 0', border: 'none',
                       background: wfTab === tab.id ? '#252525' : 'transparent',
