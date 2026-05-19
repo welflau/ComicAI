@@ -680,7 +680,7 @@ function LeftSidebar() {
                   { id: 'basic',    label: '基础工作流' },
                   { id: 'examples', label: '工作流案例' },
                 ] as const).map(tab => (
-                  <button key={tab.id} onClick={() => setWfTab(tab.id)}
+                  <button key={tab.id} onClick={() => { cancelHide(); setWfTab(tab.id) }}
                     style={{
                       padding: '6px 14px', borderRadius: '8px 8px 0 0', border: 'none',
                       background: wfTab === tab.id ? '#252525' : 'transparent',
