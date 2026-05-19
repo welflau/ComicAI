@@ -502,6 +502,7 @@ const WORKFLOW_PRESETS: WorkflowPreset[] = [
 
 function LeftSidebar() {
   const [active, setActive] = useState<string | null>(null)
+  const [wfTab, setWfTab]   = useState<'mine' | 'basic' | 'examples'>('basic')
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const addBtnRef = useRef<HTMLButtonElement>(null)
   const { nodes, addNode, addEdge } = useProjectStore()
@@ -669,28 +670,37 @@ function LeftSidebar() {
             {/* Header */}
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              padding: '16px 20px',
-              borderBottom: '1px solid #242424',
+              padding: '14px 20px 0',
               flexShrink: 0,
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 15, fontWeight: 600, color: '#e0e0e0' }}>工作流模板</span>
-                <div style={{
-                  width: 18, height: 18, borderRadius: '50%',
-                  border: '1px solid #444',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: 'pointer',
-                }}>
-                  <HelpCircle size={11} color="#666" />
-                </div>
+              {/* Tab bar */}
+              <div style={{ display: 'flex', gap: 2 }}>
+                {([
+                  { id: 'mine',     label: '我的工作流' },
+                  { id: 'basic',    label: '基础工作流' },
+                  { id: 'examples', label: '工作流案例' },
+                ] as const).map(tab => (
+                  <button key={tab.id} onClick={() => setWfTab(tab.id)}
+                    style={{
+                      padding: '6px 14px', borderRadius: '8px 8px 0 0', border: 'none',
+                      background: wfTab === tab.id ? '#252525' : 'transparent',
+                      color: wfTab === tab.id ? '#e0e0e0' : '#666',
+                      fontSize: 13, fontWeight: wfTab === tab.id ? 600 : 400,
+                      cursor: 'pointer',
+                      borderBottom: wfTab === tab.id ? '2px solid #7c6af7' : '2px solid transparent',
+                      transition: 'color 0.12s',
+                    }}
+                    onMouseEnter={e => { if (wfTab !== tab.id) (e.currentTarget as HTMLButtonElement).style.color = '#aaa' }}
+                    onMouseLeave={e => { if (wfTab !== tab.id) (e.currentTarget as HTMLButtonElement).style.color = '#666' }}
+                  >{tab.label}</button>
+                ))}
               </div>
               <button
                 onClick={() => setActive(null)}
                 style={{
                   width: 28, height: 28, background: 'none', border: 'none',
-                  cursor: 'pointer', borderRadius: 6,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: '#666',
+                  cursor: 'pointer', borderRadius: 6, marginBottom: 4,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666',
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = '#2a2a2a'; e.currentTarget.style.color = '#ccc' }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#666' }}
@@ -701,7 +711,27 @@ function LeftSidebar() {
               </button>
             </div>
 
-            {/* Grid */}
+            {/* Tab divider */}
+            <div style={{ height: 1, background: '#242424', flexShrink: 0 }} />
+
+            {/* ── 我的工作流 ── */}
+            {wfTab === 'mine' && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 40, gap: 12 }}>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="1.2">
+                  <rect x="3" y="3" width="18" height="18" rx="3"/>
+                  <path d="M9 9h6M9 12h6M9 15h4"/>
+                </svg>
+                <div style={{ fontSize: 14, color: '#555', textAlign: 'center' }}>
+                  还没有保存的工作流
+                </div>
+                <div style={{ fontSize: 12, color: '#3a3a3a', textAlign: 'center', maxWidth: 240 }}>
+                  在画布中搭建好工作流后，右键画布空白处 → 「保存为工作流」即可收藏到这里
+                </div>
+              </div>
+            )}
+
+            {/* ── 基础工作流（原有 Grid）── */}
+            {wfTab === 'basic' && (
             <div style={{
               overflowY: 'auto',
               padding: 16,
@@ -784,6 +814,101 @@ function LeftSidebar() {
                 </div>
               ))}
             </div>
+            )}
+
+            {/* ── 工作流案例 ── */}
+            {wfTab === 'examples' && (
+              <div style={{ overflowY: 'auto', padding: 16, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                {[
+                  {
+                    id: 'e1', label: '古风爱情漫画', tag: '漫画创作',
+                    desc: '从古风爱情故事剧本，自动生成 5 幕分镜脚本，再批量生成水墨风配图，最终合成完整漫画视频。',
+                    color: '#1e1a2e', accent: '#c8a0ff',
+                    chain: ['剧本', '分镜脚本×5', '配图×5', '视频合成'],
+                    nodes: [
+                      { type: 'libtv_script', label: '古风剧本', dx: 0, dy: 0, extra: { content: '一位江南才女与云游侠客的月下邂逅……', initialMode: 'content' } },
+                      { type: 'libtv_script_gen', label: '分镜脚本', dx: 600, dy: 0 },
+                      { type: 'libtv_image', label: '配图1', dx: 1200, dy: -120, extra: { imagePrompt: '古风，江南水乡，月色朦胧，远景' } },
+                      { type: 'libtv_video_compose', label: '视频合成', dx: 1800, dy: 0 },
+                    ],
+                    edges: [[0,1],[1,2],[2,3]] as [number,number][],
+                  },
+                  {
+                    id: 'e2', label: '小说批量配图', tag: '小说创作',
+                    desc: '导入长篇小说，自动按章节拆分后打组，循环遍历每章生成分镜脚本，实现批量配图。',
+                    color: '#1a2a1e', accent: '#4caf50',
+                    chain: ['小说 .md', '章节分解', '章节组', '循环', '分镜脚本'],
+                    nodes: [
+                      { type: 'libtv_script', label: '小说全文', dx: 0, dy: 0 },
+                      { type: 'libtv_chapter_split', label: '章节分解', dx: 600, dy: 0 },
+                      { type: 'libtv_loop', label: '循环遍历', dx: 1000, dy: 0 },
+                      { type: 'libtv_script_gen', label: '分镜脚本', dx: 1360, dy: 0 },
+                    ],
+                    edges: [[0,1],[1,2],[2,3]] as [number,number][],
+                  },
+                  {
+                    id: 'e3', label: '角色一致性生图', tag: '角色设计',
+                    desc: '先从剧本提取角色外貌描述，生成角色参考图，再以参考图为基准批量生成各场景中的角色形象。',
+                    color: '#2a1a1e', accent: '#ff6b9d',
+                    chain: ['剧本', '角色图×N', '分镜图'],
+                    nodes: [
+                      { type: 'libtv_script', label: '剧本', dx: 0, dy: 0 },
+                      { type: 'libtv_image', label: '角色参考图', dx: 600, dy: -80 },
+                      { type: 'libtv_image', label: '分镜配图', dx: 600, dy: 80 },
+                    ],
+                    edges: [[0,1],[0,2]] as [number,number][],
+                  },
+                  {
+                    id: 'e4', label: '产品宣传视频', tag: '商业应用',
+                    desc: '输入产品描述文案，生成多角度展示图片，再转化为动态视频片段，拼接成完整宣传视频。',
+                    color: '#1a1e2a', accent: '#ffd54f',
+                    chain: ['文案', '产品图×3', '视频×3', '合成'],
+                    nodes: [
+                      { type: 'libtv_script', label: '产品文案', dx: 0, dy: 0 },
+                      { type: 'libtv_image', label: '产品图', dx: 600, dy: 0 },
+                      { type: 'libtv_video', label: '展示视频', dx: 1200, dy: 0 },
+                      { type: 'libtv_video_compose', label: '合成', dx: 1800, dy: 0 },
+                    ],
+                    edges: [[0,1],[1,2],[2,3]] as [number,number][],
+                  },
+                ].map(ex => (
+                  <div key={ex.id} onClick={() => createWorkflow(ex as any)} style={{ cursor: 'pointer' }}>
+                    <div style={{
+                      position: 'relative', borderRadius: 10, overflow: 'hidden',
+                      height: 120, background: ex.color,
+                      border: '1px solid #2a2a2a',
+                      transition: 'border-color 0.15s, transform 0.1s',
+                    }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = ex.accent; (e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#2a2a2a'; (e.currentTarget as HTMLElement).style.transform = 'none' }}
+                    >
+                      <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse at 20% 50%, ${ex.accent}22 0%, transparent 65%)` }} />
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', padding: '0 16px', gap: 4, flexWrap: 'wrap' }}>
+                        {ex.chain.map((n, i) => (
+                          <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ padding: '2px 7px', borderRadius: 5, background: `${ex.accent}22`, border: `1px solid ${ex.accent}55`, fontSize: 10, color: ex.accent, whiteSpace: 'nowrap', fontWeight: 500 }}>{n}</span>
+                            {i < ex.chain.length - 1 && <span style={{ color: '#444', fontSize: 10 }}>→</span>}
+                          </span>
+                        ))}
+                      </div>
+                      <div style={{ position: 'absolute', top: 8, right: 10 }}>
+                        <span style={{ padding: '2px 8px', borderRadius: 4, background: `${ex.accent}33`, fontSize: 10, color: ex.accent }}>{ex.tag}</span>
+                      </div>
+                      <div className="wf-hover" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity 0.15s' }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '0' }}>
+                        <span style={{ padding: '5px 14px', borderRadius: 8, background: ex.accent, color: '#fff', fontSize: 12, fontWeight: 600 }}>一键使用</span>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 7, paddingLeft: 2 }}>
+                      <div style={{ fontSize: 12, color: '#ccc', fontWeight: 500 }}>{ex.label}</div>
+                      <div style={{ fontSize: 10, color: '#555', marginTop: 2, lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{ex.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
           </div>
         </>
       )}
