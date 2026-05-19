@@ -16,6 +16,7 @@ import LogPanel from '@/components/panels/LogPanel'
 import RightPanel from '@/components/panels/RightPanel'
 import SettingsModal from '@/components/settings/SettingsModal'
 import { projectsApi } from '@/api'
+import { getViewportCenter } from '@/stores/viewportCenter'
 
 // ─── Top bar brand/navigation icons ────────────────────────────────────────────
 
@@ -386,16 +387,115 @@ function AssetsPanel({ onClose }: { onClose: () => void }) {
 
 // ─── Toolbox mock data ─────────────────────────────────────────────────────────
 
-const TOOLBOX_ITEMS = [
-  { id: 1, label: '【预设】左弧滑行',     color: '#2a1a1a' },
-  { id: 2, label: '【预设】电商手机弹…',  color: '#1a1a2a' },
-  { id: 3, label: '【预设】咖啡杯出场',   color: '#1a2a1a' },
-  { id: 4, label: '【预设】360旋转展示',  color: '#2a1a2a' },
-  { id: 5, label: '【预设】机械臂视角',   color: '#2a2a1a' },
-  { id: 6, label: '【预设】Live 2D',      color: '#1a2a2a' },
-  { id: 7, label: '【预设】人物特写',     color: '#2a1a1a' },
-  { id: 8, label: '【预设】暗调写真',     color: '#111' },
-  { id: 9, label: '【预设】产品礼盒',     color: '#1a1a2a' },
+interface WorkflowNode { type: string; label: string; dx: number; dy: number; extra?: Record<string, unknown> }
+interface WorkflowPreset {
+  id: number
+  label: string
+  desc: string
+  color: string
+  accent: string
+  chain: string[]   // node labels shown as preview chips
+  nodes: WorkflowNode[]
+  edges: Array<[number, number]>  // [fromIdx, toIdx]
+}
+
+const WORKFLOW_PRESETS: WorkflowPreset[] = [
+  {
+    id: 1, label: '文生图', desc: '输入剧本描述，直接生成一张配图',
+    color: '#1a1a2e', accent: '#7c6af7',
+    chain: ['文本', '图片'],
+    nodes: [
+      { type: 'libtv_script', label: '剧本', dx: 0,   dy: 0 },
+      { type: 'libtv_image',  label: '图片', dx: 600,  dy: 0 },
+    ],
+    edges: [[0, 1]],
+  },
+  {
+    id: 2, label: '文生视频', desc: '从剧本一步生成视频片段',
+    color: '#1a1e2e', accent: '#4a9eff',
+    chain: ['文本', '视频'],
+    nodes: [
+      { type: 'libtv_script', label: '剧本', dx: 0,   dy: 0 },
+      { type: 'libtv_video',  label: '视频', dx: 600,  dy: 0 },
+    ],
+    edges: [[0, 1]],
+  },
+  {
+    id: 3, label: '分镜脚本', desc: '剧本拆解为分镜表，逐镜生成图片',
+    color: '#1e1a2e', accent: '#9b8fff',
+    chain: ['文本', '分镜脚本', '图片'],
+    nodes: [
+      { type: 'libtv_script',     label: '剧本',   dx: 0,    dy: 0 },
+      { type: 'libtv_script_gen', label: '分镜脚本', dx: 600,  dy: 0 },
+      { type: 'libtv_image',      label: '配图',   dx: 1200, dy: 0 },
+    ],
+    edges: [[0, 1], [1, 2]],
+  },
+  {
+    id: 4, label: '图生视频', desc: '上传参考图，生成动态视频',
+    color: '#1e2a1a', accent: '#4caf50',
+    chain: ['图片', '视频'],
+    nodes: [
+      { type: 'libtv_image', label: '参考图', dx: 0,   dy: 0 },
+      { type: 'libtv_video', label: '视频',  dx: 580,  dy: 0 },
+    ],
+    edges: [[0, 1]],
+  },
+  {
+    id: 5, label: '多镜头合成', desc: '多段视频拼接成完整作品',
+    color: '#2a1a1a', accent: '#ff8c42',
+    chain: ['视频1', '视频2', '合成'],
+    nodes: [
+      { type: 'libtv_video',         label: '视频1', dx: 0,    dy: -160 },
+      { type: 'libtv_video',         label: '视频2', dx: 0,    dy: 160  },
+      { type: 'libtv_video_compose', label: '合成',  dx: 600,  dy: 0    },
+    ],
+    edges: [[0, 2], [1, 2]],
+  },
+  {
+    id: 6, label: '角色设计', desc: '从剧本提取角色，批量生成人物设定图',
+    color: '#2a1e1a', accent: '#ff6b9d',
+    chain: ['文本', '角色图×N'],
+    nodes: [
+      { type: 'libtv_script', label: '剧本',     dx: 0, dy: 0 },
+    ],
+    edges: [],
+  },
+  {
+    id: 7, label: '小说转图', desc: '导入小说，按章节自动拆分并生成配图',
+    color: '#1a2a2a', accent: '#26c6da',
+    chain: ['小说文本', '章节分解', '分镜'],
+    nodes: [
+      { type: 'libtv_script',        label: '小说',   dx: 0,    dy: 0 },
+      { type: 'libtv_chapter_split', label: '章节分解', dx: 600,  dy: 0 },
+      { type: 'libtv_script_gen',    label: '分镜脚本', dx: 1200, dy: 0 },
+    ],
+    edges: [[0, 1], [1, 2]],
+  },
+  {
+    id: 8, label: '循环批处理', desc: '遍历组内节点，逐一推送给下游处理',
+    color: '#1e2a1e', accent: '#66bb6a',
+    chain: ['节点组', '循环', '分镜脚本'],
+    nodes: [
+      { type: 'libtv_group',      label: '节点组', dx: 0,    dy: 0 },
+      { type: 'libtv_loop',       label: '循环',   dx: 320,  dy: 0 },
+      { type: 'libtv_script_gen', label: '分镜',   dx: 680,  dy: 0 },
+    ],
+    edges: [[0, 1], [1, 2]],
+  },
+  {
+    id: 9, label: '完整漫画流水线', desc: '从剧本到分镜图到视频的完整链路',
+    color: '#1a1a1a', accent: '#ffd54f',
+    chain: ['文本', '分镜脚本', '图片', '视频', '合成'],
+    nodes: [
+      { type: 'libtv_script',        label: '剧本',   dx: 0,    dy: 0 },
+      { type: 'libtv_script_gen',    label: '分镜脚本', dx: 600,  dy: 0 },
+      { type: 'libtv_image',         label: '配图',   dx: 1200, dy: -120 },
+      { type: 'libtv_video',         label: '视频',   dx: 1800, dy: -120 },
+      { type: 'libtv_video_compose', label: '合成',   dx: 2400, dy: 0 },
+    ],
+    edges: [[0, 1], [1, 2], [2, 3], [3, 4]],
+  },
 ]
 
 // ─── Left icon sidebar ─────────────────────────────────────────────────────────
@@ -404,7 +504,29 @@ function LeftSidebar() {
   const [active, setActive] = useState<string | null>(null)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const addBtnRef = useRef<HTMLButtonElement>(null)
-  const { nodes } = useProjectStore()
+  const { nodes, addNode, addEdge } = useProjectStore()
+
+  // Create a preset workflow at viewport center
+  const createWorkflow = (preset: WorkflowPreset) => {
+    const center = getViewportCenter()
+    const ts = Date.now()
+    const ids: string[] = []
+    preset.nodes.forEach((n, i) => {
+      const id = `${n.type}_${ts}_${i}`
+      ids.push(id)
+      addNode({
+        id, type: n.type as any, label: n.label,
+        category: 'process' as any,
+        position: { x: center.x + n.dx - (preset.nodes.length * 300) / 2, y: center.y + n.dy },
+        config: {},
+        ...n.extra,
+      } as any)
+    })
+    preset.edges.forEach(([from, to], ei) => {
+      addEdge({ id: `e_${ts}_${ei}`, source: ids[from], target: ids[to] })
+    })
+    setActive(null)
+  }
 
   // IDs that have a real flyout panel
   const PANEL_IDS = ['add', 'toolbox', 'assets']
@@ -431,11 +553,11 @@ function LeftSidebar() {
     { id: 'add',     icon: <Plus size={18} />,        label: '添加' },
     { id: 'toolbox', icon: (
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="6" cy="6" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="18" cy="6" r="2"/>
-        <circle cx="6" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="18" cy="12" r="2"/>
-        <circle cx="6" cy="18" r="2"/><circle cx="12" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>
+        <rect x="2" y="7" width="20" height="14" rx="2"/>
+        <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+        <line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/>
       </svg>
-    ), label: '工具箱' },
+    ), label: '工作流' },
     { id: 'assets',  icon: (
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M12 2L2 7l10 5 10-5-10-5z"/>
@@ -552,7 +674,7 @@ function LeftSidebar() {
               flexShrink: 0,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 15, fontWeight: 600, color: '#e0e0e0' }}>我的工具箱</span>
+                <span style={{ fontSize: 15, fontWeight: 600, color: '#e0e0e0' }}>工作流模板</span>
                 <div style={{
                   width: 18, height: 18, borderRadius: '50%',
                   border: '1px solid #444',
@@ -587,49 +709,77 @@ function LeftSidebar() {
               gridTemplateColumns: 'repeat(3, 1fr)',
               gap: 12,
             }}>
-              {TOOLBOX_ITEMS.map(item => (
+              {WORKFLOW_PRESETS.map(preset => (
                 <div
-                  key={item.id}
+                  key={preset.id}
+                  onClick={() => createWorkflow(preset)}
                   style={{ cursor: 'pointer' }}
-                  onMouseEnter={e => (e.currentTarget.querySelector('.tb-overlay') as HTMLElement|null)!.style.opacity = '1'}
-                  onMouseLeave={e => (e.currentTarget.querySelector('.tb-overlay') as HTMLElement|null)!.style.opacity = '0'}
                 >
+                  {/* Card */}
                   <div style={{
-                    position: 'relative',
-                    borderRadius: 8,
-                    overflow: 'hidden',
-                    aspectRatio: '4/3',
-                    background: item.color,
+                    position: 'relative', borderRadius: 10, overflow: 'hidden',
+                    aspectRatio: '4/3', background: preset.color,
                     border: '1px solid #2a2a2a',
-                  }}>
-                    {/* Placeholder gradient */}
+                    transition: 'border-color 0.15s, transform 0.1s',
+                  }}
+                    onMouseEnter={e => {
+                      (e.currentTarget as HTMLElement).style.borderColor = preset.accent
+                      ;(e.currentTarget as HTMLElement).style.transform = 'translateY(-2px)'
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLElement).style.borderColor = '#2a2a2a'
+                      ;(e.currentTarget as HTMLElement).style.transform = 'none'
+                    }}
+                  >
+                    {/* Background gradient */}
                     <div style={{
                       position: 'absolute', inset: 0,
-                      background: `linear-gradient(135deg, ${item.color} 0%, #111 100%)`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="1">
-                        <rect x="3" y="3" width="18" height="18" rx="2"/>
-                        <circle cx="8.5" cy="8.5" r="1.5"/>
-                        <polyline points="21 15 16 10 5 21"/>
-                      </svg>
-                    </div>
-                    {/* Hover overlay */}
-                    <div className="tb-overlay" style={{
-                      position: 'absolute', inset: 0,
-                      background: 'rgba(79,110,247,0.15)',
-                      border: '2px solid #4f6ef7',
-                      borderRadius: 8,
-                      opacity: 0,
-                      transition: 'opacity 0.15s',
+                      background: `radial-gradient(ellipse at 30% 40%, ${preset.accent}22 0%, transparent 70%)`,
                     }} />
+                    {/* Node chain preview */}
+                    <div style={{
+                      position: 'absolute', inset: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      gap: 4, padding: '0 12px', flexWrap: 'wrap',
+                    }}>
+                      {preset.chain.map((name, i) => (
+                        <span key={i} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span style={{
+                            padding: '2px 7px', borderRadius: 5,
+                            background: `${preset.accent}22`,
+                            border: `1px solid ${preset.accent}55`,
+                            fontSize: 10, color: preset.accent, whiteSpace: 'nowrap',
+                            fontWeight: 500,
+                          }}>{name}</span>
+                          {i < preset.chain.length - 1 && (
+                            <span style={{ color: '#444', fontSize: 10 }}>→</span>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                    {/* Hover: 一键创建 */}
+                    <div className="wf-hover" style={{
+                      position: 'absolute', inset: 0,
+                      background: 'rgba(0,0,0,0.5)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      opacity: 0, transition: 'opacity 0.15s',
+                    }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.opacity = '1' }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.opacity = '0' }}
+                    >
+                      <span style={{
+                        padding: '5px 14px', borderRadius: 8,
+                        background: preset.accent, color: '#fff',
+                        fontSize: 12, fontWeight: 600,
+                      }}>一键创建</span>
+                    </div>
                   </div>
-                  <div style={{
-                    fontSize: 12, color: '#aaa',
-                    marginTop: 6, paddingLeft: 2,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
-                    {item.label}
+                  {/* Label + desc */}
+                  <div style={{ marginTop: 7, paddingLeft: 2 }}>
+                    <div style={{ fontSize: 12, color: '#ccc', fontWeight: 500 }}>{preset.label}</div>
+                    <div style={{ fontSize: 10, color: '#555', marginTop: 2, lineHeight: 1.4,
+                      overflow: 'hidden', display: '-webkit-box',
+                      WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' }}>{preset.desc}</div>
                   </div>
                 </div>
               ))}
