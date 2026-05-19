@@ -358,6 +358,54 @@ function WorkflowCanvasInner() {
     saveWorkflow(nodes, edges.filter(e => !ids.has(e.id)))
   }, [nodes, edges, saveWorkflow, pushHistory])
 
+  // File drag-and-drop onto canvas → create ScriptNode
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    }
+  }, [])
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    const files = Array.from(e.dataTransfer.files).filter(
+      f => /\.(md|txt|markdown)$/i.test(f.name)
+    )
+    if (files.length === 0) return
+    e.preventDefault()
+
+    const flowPos = project({ x: e.clientX, y: e.clientY })
+    const SPACING_X = 60
+
+    files.forEach((file, idx) => {
+      const MAX_CHARS = 500_000
+      const reader = new FileReader()
+      reader.onload = ev => {
+        let content = (ev.target?.result as string) ?? ''
+        let truncated = false
+        if (content.length > MAX_CHARS) { content = content.slice(0, MAX_CHARS); truncated = true }
+        const label = file.name.replace(/\.(md|txt|markdown)$/i, '')
+        const newId = `libtv_script_${Date.now()}_${idx}`
+        addNode({
+          id: newId,
+          type: 'libtv_script' as any,
+          label,
+          category: 'input',
+          position: { x: flowPos.x + idx * SPACING_X, y: flowPos.y },
+          config: {},
+          title: label,
+          content,
+          initialMode: 'content',
+        } as any)
+        addLog({
+          level: 'info', category: 'operation',
+          message: `拖入文件：${file.name}`,
+          detail: `${content.length.toLocaleString()} 字符${truncated ? '（已截断）' : ''}`,
+        })
+      }
+      reader.readAsText(file, 'utf-8')
+    })
+  }, [project, addNode])
+
   // Pane right-click
   const onPaneContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -532,6 +580,8 @@ function WorkflowCanvasInner() {
         onEdgesDelete={onEdgesDelete}
         onPaneContextMenu={onPaneContextMenu}
         onNodeContextMenu={onNodeContextMenu}
+        onDrop={onDrop}
+        onDragOver={onDragOver}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
